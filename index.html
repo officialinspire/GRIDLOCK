@@ -69,34 +69,33 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:map"></span>
           <h3>The City</h3>
-          <p>Grid Lock City is a 6&nbsp;×&nbsp;6 grid of city blocks divided by streets. Downtown blocks in the middle are worth more than the suburbs on the edge.</p>
+          <p>Grid Lock City is a 6&nbsp;×&nbsp;6 grid of empty city blocks laid out between intersections. No streets are paved yet.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:road"></span>
+          <h3>Pave a Road</h3>
+          <p>On your turn, tap the gap between two neighbouring intersections to pave one road. Players go in seat order: 1 → 2 → 3 → 4.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:star"></span>
+          <h3>Claim Blocks</h3>
+          <p>Pave the <strong>last</strong> road around a block and it's yours: it gets your colour and flag. One road can close two blocks at once.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:swap"></span>
-          <h3>Taking Turns</h3>
-          <p>2–4 players share one device. On your turn, make your moves, then press <strong>End Turn</strong> to pass play to the next mayor.</p>
-        </article>
-        <article class="paper howto-card">
-          <span class="howto-card__icon" data-sprite="icons:building"></span>
-          <h3>Blocks &amp; Buildings</h3>
-          <p>Buy open blocks to grow your territory, then build homes, shops, parks and civic landmarks on them.</p>
-          <p class="coming-soon">Buying &amp; building arrive in the next phase.</p>
+          <h3>Keep Going</h3>
+          <p>Claiming a block earns you another road straight away, so you can chain captures. If your road closes nothing, play passes on.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:coins"></span>
           <h3>Income</h3>
-          <p>At the end of every round, each player collects income from the blocks and buildings they own.</p>
-        </article>
-        <article class="paper howto-card">
-          <span class="howto-card__icon" data-sprite="icons:clock"></span>
-          <h3>Rounds &amp; Events</h3>
-          <p>The game lasts a set number of rounds. City events like storms and festivals will shake things up.</p>
-          <p class="coming-soon">City events arrive in a later phase.</p>
+          <p>Each time play returns to the first player, everyone collects income from the blocks they own.</p>
+          <p class="coming-soon">Buying &amp; building arrive in a later phase.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When the final round ends, the richest mayor — counting cash and property — wins the keys to the city.</p>
+          <p>When every block is claimed, the mayor with the most blocks wins. Ties go to the higher net worth.</p>
         </article>
       </div>
     </section>
@@ -125,14 +124,6 @@
 
         <fieldset>
           <legend>Game defaults</legend>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>Rounds per game</span>
-            <select name="rounds" class="select">
-              <option value="8">8 — quick</option>
-              <option value="12">12 — standard</option>
-              <option value="16">16 — long</option>
-            </select>
-          </label>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:coins"></span>Starting cash</span>
             <select name="startingCash" class="select">
@@ -189,7 +180,8 @@
         </button>
         <div class="round-badge" aria-live="polite">
           <span class="round-badge__icon" data-sprite="icons:clock"></span>
-          <span>Round <strong id="hud-round">1</strong><span class="round-badge__max"> / <span id="hud-round-max">12</span></span></span>
+          <span>Round <strong id="hud-round">1</strong></span>
+          <span class="round-badge__roads" title="Roads paved"><span class="round-badge__roads-icon" data-sprite="icons:road"></span><span id="hud-roads">0/84</span></span>
         </div>
         <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
         <button class="btn btn--icon btn--sm" data-nav="settings" aria-label="Settings">
@@ -201,7 +193,7 @@
         <div class="hud hud--left" id="hud-left"></div>
 
         <div class="board-area">
-          <div class="board-frame paper">
+          <div class="board-frame paper" id="board-frame">
             <div class="board" id="board" role="group" aria-label="City blocks"></div>
           </div>
         </div>
@@ -218,10 +210,25 @@
         <button class="btn" id="action-build" disabled title="Coming soon">
           <span class="btn__icon" data-sprite="icons:building"></span><span>Build</span>
         </button>
-        <button class="btn btn--gold" id="action-end-turn">
-          <span class="btn__icon" data-sprite="icons:swap"></span><span>End Turn</span>
-        </button>
+        <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
       </footer>
+
+      <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">
+        <span class="results__trophy" data-sprite="icons:trophy"></span>
+        <h3 id="results-heading" class="modal__title">City Complete!</h3>
+        <ol class="results__list" id="results-list"></ol>
+        <div class="modal__actions">
+          <button class="btn btn--gold" data-results-action="rematch">
+            <span class="btn__icon" data-sprite="icons:restart"></span><span>Play Again</span>
+          </button>
+          <button class="btn" data-results-action="board">
+            <span class="btn__icon" data-sprite="icons:map"></span><span>View Board</span>
+          </button>
+          <button class="btn" data-results-action="title">
+            <span class="btn__icon" data-sprite="icons:home"></span><span>Title Screen</span>
+          </button>
+        </div>
+      </dialog>
 
       <dialog class="modal paper" id="pause-dialog" aria-labelledby="pause-heading">
         <h3 id="pause-heading" class="modal__title">Paused</h3>

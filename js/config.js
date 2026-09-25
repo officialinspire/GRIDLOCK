@@ -14,20 +14,11 @@ export const PLAYER_PRESETS = Object.freeze([
   { seat: 4, name: 'Player 4', color: 'green', symbol: 'leaf', hex: '#3a8a3a' },
 ]);
 
-/** Each seat starts in its own corner of the city, clockwise from top-left. */
-export const START_CORNERS = Object.freeze([
-  { row: 0, col: 0 },
-  { row: 0, col: BOARD_COLS - 1 },
-  { row: BOARD_ROWS - 1, col: BOARD_COLS - 1 },
-  { row: BOARD_ROWS - 1, col: 0 },
-]);
-
 export const DEFAULT_SETTINGS = Object.freeze({
   sound: true,
   music: true,
   reducedMotion: false,
   showCoords: false,
-  rounds: 12,
   startingCash: 1500,
 });
 

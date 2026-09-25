@@ -66,6 +66,3 @@ export function getBuilding(id) {
 export function buildingsByCategory(category) {
   return BUILDINGS.filter((x) => x.category === category);
 }
-
-/** Building every player starts with on their corner block. */
-export const STARTER_BUILDING_ID = 'house';

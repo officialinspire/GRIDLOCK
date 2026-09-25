@@ -31,7 +31,17 @@
 }
 .round-badge__icon { width: 32px; }
 .round-badge strong { font-weight: 400; }
-.round-badge__max { color: var(--ink-soft); }
+.round-badge__roads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 2px dashed var(--paper-edge);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.round-badge__roads-icon { width: 18px; }
 
 .turn-banner {
   --player: var(--steel);
@@ -52,6 +62,8 @@
   box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.18), var(--lift);
   transition: background var(--t-med);
 }
+
+.turn-banner[data-color='yellow'] { color: var(--ink); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5); }
 
 /* ---------- Layout: HUD | board | HUD ---------- */
 .game-layout {
@@ -94,35 +106,172 @@
     var(--paper);
 }
 
-/* ---------- Board grid: streets on even tracks, blocks on odd ---------- */
+/* ---------- Board grid: intersections + road slots + blocks ---------- */
+.board-frame {
+  --turn: var(--steel);
+  transition: box-shadow var(--t-med);
+  box-shadow:
+    inset 0 0 0 3px var(--paper-hi),
+    inset 0 0 0 5px var(--paper-edge),
+    0 0 0 4px var(--turn),
+    var(--drop);
+}
+.board-frame[data-turn='red'] { --turn: var(--p-red); }
+.board-frame[data-turn='blue'] { --turn: var(--p-blue); }
+.board-frame[data-turn='yellow'] { --turn: var(--p-yellow); }
+.board-frame[data-turn='green'] { --turn: var(--p-green); }
+.board-frame[data-turn='none'] { --turn: transparent; }
+.board-frame.is-capture { animation: frame-flash 650ms ease-out; }
+@keyframes frame-flash {
+  0% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--paper-edge), 0 0 0 4px var(--turn), 0 0 0 4px var(--turn), var(--drop); }
+  35% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--gold), 0 0 0 4px var(--turn), 0 0 0 16px color-mix(in srgb, var(--turn) 45%, transparent), var(--drop); }
+}
+
 .board {
-  --road: 3.6cqw;
+  --road: 5.2cqw;
+  --road-tap: max(10px, 1.6cqw); /* extra hit area either side of a road slot */
   display: grid;
   grid-template-columns: var(--road) repeat(var(--cols, 6), minmax(0, 1fr) var(--road));
   grid-template-rows: var(--road) repeat(var(--rows, 6), minmax(0, 1fr) var(--road));
   width: 100%;
   height: 100%;
-  background: var(--asphalt);
+  /* Unpaved ground: a surveyor's sheet of kraft paper. */
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.25), transparent 60%),
+    #d8c49a;
   border: var(--outline) solid var(--ink);
   border-radius: 8px;
-  box-shadow: inset 0 0 0 2px var(--curb);
 }
 
-.road { background: var(--asphalt); }
-.road--h {
-  background:
-    linear-gradient(90deg, var(--lane) 55%, transparent 0) 0 50% / 12px 2px repeat-x,
-    var(--asphalt);
+/* Intersections (the Dots & Boxes dots) */
+.node {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
-.road--v {
-  background:
-    linear-gradient(180deg, var(--lane) 55%, transparent 0) 50% 0 / 2px 12px repeat-y,
-    var(--asphalt);
+.node::before {
+  content: '';
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--paper-hi);
+  border: 2px solid var(--ink);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
-.road--x { background: var(--asphalt-2); }
+.node.is-paved { background: var(--asphalt-2); }
+.node.is-paved::before {
+  width: 36%;
+  background: #6f6d6a; /* manhole cover */
+  border-color: #1f1e1d;
+  box-shadow: none;
+}
+
+/* Road slots */
+.road {
+  position: relative;
+  z-index: 4;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.road::before {
+  /* Enlarged touch target across the slot */
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.road--h::before { top: calc(var(--road-tap) * -1); bottom: calc(var(--road-tap) * -1); }
+.road--v::before { left: calc(var(--road-tap) * -1); right: calc(var(--road-tap) * -1); }
+
+.road__surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: background-color var(--t-fast), opacity var(--t-fast);
+}
+/* Unbuilt: pencilled survey line */
+.road:not(.is-built) .road__surface {
+  background-repeat: no-repeat;
+  opacity: 0.7;
+}
+.road--h:not(.is-built) .road__surface {
+  background-image: repeating-linear-gradient(90deg, #7a6848 0 6px, transparent 6px 11px);
+  background-size: 100% 2px;
+  background-position: 0 50%;
+}
+.road--v:not(.is-built) .road__surface {
+  background-image: repeating-linear-gradient(180deg, #7a6848 0 6px, transparent 6px 11px);
+  background-size: 2px 100%;
+  background-position: 50% 0;
+}
+
+/* Ghost preview in the current player's colour */
+.board:not(.is-locked) .road:not(.is-built):hover .road__surface,
+.board:not(.is-locked) .road:not(.is-built):focus-visible .road__surface {
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--turn) 55%, transparent);
+  border-radius: 3px;
+}
+.board:not(.is-locked) .road:not(.is-built):hover,
+.board:not(.is-locked) .road:not(.is-built):focus-visible { z-index: 6; }
+.road:focus-visible { outline-offset: 0; }
+.road.is-built, .board.is-locked .road { cursor: default; }
+
+/* Built: asphalt with lane dashes and a curb in the builder's colour */
+.road.is-built .road__surface { background-color: var(--asphalt); }
+.road--h.is-built .road__surface {
+  background-image:
+    linear-gradient(90deg, var(--lane) 55%, transparent 0),
+    linear-gradient(var(--builder), var(--builder)),
+    linear-gradient(var(--builder), var(--builder));
+  background-size: 12px 2px, 100% 2px, 100% 2px;
+  background-position: 0 50%, 0 0, 0 100%;
+  background-repeat: repeat-x, no-repeat, no-repeat;
+}
+.road--v.is-built .road__surface {
+  background-image:
+    linear-gradient(180deg, var(--lane) 55%, transparent 0),
+    linear-gradient(var(--builder), var(--builder)),
+    linear-gradient(var(--builder), var(--builder));
+  background-size: 2px 12px, 2px 100%, 2px 100%;
+  background-position: 50% 0, 0 0, 100% 0;
+  background-repeat: repeat-y, no-repeat, no-repeat;
+}
+.road--red { --builder: var(--p-red); }
+.road--blue { --builder: var(--p-blue); }
+.road--yellow { --builder: var(--p-yellow); }
+.road--green { --builder: var(--p-green); }
+
+.road.is-last .road__surface { animation: road-pave 420ms var(--ease-pop); }
+.road.is-last::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 3px solid var(--builder);
+  border-radius: 4px;
+  box-shadow: 0 0 10px var(--builder);
+  pointer-events: none;
+  animation: last-pulse 1.4s ease-in-out infinite;
+}
+@keyframes road-pave { from { transform: scale(0.2); opacity: 0; } }
+@keyframes last-pulse { 50% { opacity: 0.35; } }
+
+.road.is-rejected { animation: nope 320ms ease; }
+@keyframes nope {
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
+}
 
 /* ---------- Blocks ---------- */
 .block {
+  --owner: transparent;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -134,9 +283,28 @@
   cursor: pointer;
   transition: transform var(--t-fast) ease, filter var(--t-fast);
 }
-.block > .sprite { position: absolute; }
+.block--red { --owner: var(--p-red); }
+.block--blue { --owner: var(--p-blue); }
+.block--yellow { --owner: var(--p-yellow); }
+.block--green { --owner: var(--p-green); }
+
+.block > .sprite, .block > .block__tint { position: absolute; }
 .block__lot { inset: 0; width: 100%; height: 100%; }
+.block:not(.block--owned) .block__lot { filter: saturate(0.55) brightness(0.97); }
+.block__tint {
+  inset: 6%;
+  border-radius: 10%;
+  background: var(--owner);
+  opacity: 0.42;
+  mix-blend-mode: multiply;
+}
 .block__frame { inset: -2%; width: 104%; height: 104%; opacity: 0.95; }
+.block__seal {
+  left: 28%;
+  top: 28%;
+  width: 44%;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
+}
 .block__building {
   left: 10%;
   bottom: 12%;
@@ -150,6 +318,24 @@
   z-index: 2;
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
 }
+.block__fx {
+  left: -10%;
+  top: -10%;
+  width: 120%;
+  z-index: 3;
+  animation: fx-burst 900ms ease-out forwards;
+}
+@keyframes fx-burst {
+  from { transform: scale(0.4) rotate(-20deg); opacity: 1; }
+  to { transform: scale(1.15) rotate(10deg); opacity: 0; }
+}
+.block.is-captured { animation: capture-pop 520ms var(--ease-pop); }
+@keyframes capture-pop {
+  0% { transform: scale(0.7); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
 .block__coord {
   position: absolute;
   top: 4%;
@@ -166,23 +352,17 @@
 }
 html[data-coords='on'] .block__coord { display: block; }
 
-.block:hover { transform: translateY(-3%); filter: brightness(1.05); z-index: 2; }
-.block.is-selected {
-  z-index: 3;
-  transform: translateY(-5%) scale(1.04);
-  filter: drop-shadow(0 0 0 var(--gold)) drop-shadow(0 6px 6px rgba(0, 0, 0, 0.5));
-}
+.block:hover { filter: brightness(1.05); }
+.block.is-selected { z-index: 3; }
 .block.is-selected::after {
   content: '';
   position: absolute;
-  inset: -5%;
+  inset: 4%;
   border: 3px dashed var(--gold);
-  border-radius: 14%;
+  border-radius: 12%;
   pointer-events: none;
-  animation: march 1.2s linear infinite;
 }
-@keyframes march { to { transform: rotate(0.001deg); border-color: #ffe08a; } }
-.block:focus-visible { outline-offset: 1px; z-index: 3; }
+.block:focus-visible { outline-offset: -2px; z-index: 3; }
 
 /* ---------- Player cards ---------- */
 .player-card {
@@ -275,6 +455,20 @@ html[data-coords='on'] .block__coord { display: block; }
   padding: 10px 12px 14px;
 }
 .action-bar .btn { flex: 0 1 200px; }
+.turn-prompt {
+  --player: var(--steel);
+  order: -1;
+  flex: 1 1 260px;
+  align-self: center;
+  margin: 0;
+  padding: 8px 14px;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  text-align: center;
+  background: color-mix(in srgb, var(--player) 18%, var(--paper-hi));
+  border: 3px solid var(--player);
+  border-radius: var(--radius-sm);
+}
 
 /* ---------- Tablet / phone portrait ---------- */
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
@@ -296,16 +490,21 @@ html[data-coords='on'] .block__coord { display: block; }
     position: sticky;
     bottom: max(8px, env(safe-area-inset-bottom));
     z-index: 5;
-    flex-wrap: nowrap;
   }
+  .action-bar { flex-wrap: wrap; }
   .action-bar .btn { flex: 1 1 0; min-width: 0; padding: 8px 10px; font-size: 1rem; }
+  .turn-prompt { flex-basis: 100%; font-size: 1.05rem; padding: 6px 10px; }
 }
 
 @media (max-width: 560px) {
-  .game-topbar { gap: 6px; }
+  .game-topbar { gap: 6px; flex-wrap: wrap; }
+  .game-topbar .round-badge { flex: 1; justify-content: center; }
+  .turn-banner { order: 5; flex-basis: 100%; }
+  /* Placeholder actions stay out of the way on phones until they do something. */
+  .action-bar .btn:disabled { display: none; }
   .round-badge { font-size: 1rem; padding-right: 10px; }
   .round-badge__icon { width: 26px; }
-  .round-badge__max { display: none; }
+  .round-badge__roads { padding-left: 6px; }
   .turn-banner { font-size: 1rem; padding: 6px 8px; }
   .player-card { padding: 8px 8px 8px; border-left-width: 7px; gap: 6px; }
   .player-card.is-active { transform: none; }
@@ -323,8 +522,15 @@ html[data-coords='on'] .block__coord { display: block; }
 /* Short landscape screens (phones sideways): compact HUD, keep board large. */
 @media (max-height: 560px) and (orientation: landscape) {
   .screen--game { gap: 6px; }
-  .game-layout { grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) minmax(140px, 180px); gap: 8px; }
-  .hud { gap: 8px; }
+  .game-layout {
+    grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) minmax(140px, 180px);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: 'left board right';
+    gap: 8px;
+  }
+  .hud { gap: 8px; min-height: 0; overflow-y: auto; padding: 4px; margin: -4px; }
+  .player-card.is-active { transform: none; }
+  .action-bar .btn:disabled { display: none; }
   .player-card { padding: 6px 8px; gap: 4px; }
   .player-card__token { width: 26px; }
   .player-card__name { font-size: 0.95rem; }
@@ -332,7 +538,37 @@ html[data-coords='on'] .block__coord { display: block; }
   .stat { grid-template-columns: 18px 1fr; }
   .stat__icon { width: 18px; }
   .inspector { display: none; }
-  .action-bar { padding: 6px; }
+  .action-bar { padding: 6px; flex-wrap: nowrap; }
   .action-bar .btn { min-height: 40px; font-size: 1rem; }
+  .turn-prompt { font-size: 1rem; padding: 4px 10px; }
   .btn--icon.btn--sm { width: 40px; min-height: 40px; }
 }
+
+/* ---------- Results ---------- */
+.results { width: min(440px, calc(100vw - 32px)); text-align: center; }
+.results__trophy { width: 72px; margin: -8px auto 4px; display: block; }
+.results__list { display: grid; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+.results__row {
+  --seat: var(--steel);
+  display: grid;
+  grid-template-columns: 30px 30px 1fr auto;
+  grid-template-areas: 'rank token name score' 'rank token name worth';
+  align-items: center;
+  column-gap: 8px;
+  padding: 6px 12px 6px 8px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.45);
+  border: 2px solid var(--paper-edge);
+  border-left: 8px solid var(--seat);
+  border-radius: var(--radius-sm);
+}
+.results__row--red { --seat: var(--p-red); }
+.results__row--blue { --seat: var(--p-blue); }
+.results__row--yellow { --seat: var(--p-yellow); }
+.results__row--green { --seat: var(--p-green); }
+.results__row.is-winner { background: #fdf0c4; border-color: var(--gold); border-left-color: var(--seat); }
+.results__rank { grid-area: rank; font-family: var(--font-display); font-size: 1.2rem; }
+.results__token { grid-area: token; width: 30px; }
+.results__name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
+.results__score { grid-area: score; font-family: var(--font-display); font-size: 1.1rem; text-align: right; }
+.results__worth { grid-area: worth; font-size: 0.8rem; color: var(--ink-soft); text-align: right; }

@@ -5,7 +5,7 @@
  */
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { startServer } from './serve.mjs';
 
@@ -33,6 +33,7 @@ const VIEWPORTS = [
 const server = await startServer(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch(launchOpts);
+await rm('test-results', { recursive: true, force: true });
 await mkdir('test-results', { recursive: true });
 
 let failures = 0;
@@ -87,20 +88,20 @@ for (const vp of VIEWPORTS) {
 
     // Settings (persist across reload)
     await page.getByRole('button', { name: 'Settings' }).click();
-    await page.selectOption('select[name="rounds"]', '8');
+    await page.selectOption('select[name="startingCash"]', '2000');
     await page.locator('label.setting-row', { hasText: 'Show block coordinates' }).click();
     await noHorizontalScroll(page, 'settings');
     await shot('3-settings');
     await page.reload({ waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Settings' }).click();
-    assert.equal(await page.inputValue('select[name="rounds"]'), '8', 'rounds persisted');
+    assert.equal(await page.inputValue('select[name="startingCash"]'), '2000', 'cash persisted');
     assert.equal(await page.isChecked('input[name="showCoords"]'), true, 'coords persisted');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
     // Setup
     await page.getByRole('button', { name: 'New Game' }).click();
     assert.equal(await page.locator('.seat-card').count(), 4);
-    assert.match(await page.textContent('#setup-summary'), /4 players · 8 rounds/);
+    assert.match(await page.textContent('#setup-summary'), /4 players · \$2,000 each/);
     await page.fill('#seat-1-name', 'Ada');
     await page.fill('#seat-2-name', '<b>Bo</b>');
     // Dropping to 1 player disables start.
@@ -115,15 +116,21 @@ for (const vp of VIEWPORTS) {
     await page.click('#setup-start');
 
     // Game board + HUD
+    const road = (id) => page.locator(`#board [data-road="${id}"]`);
+    const block = (id) => page.locator(`#board [data-block="${id}"]`);
+    const banner = () => page.textContent('#turn-banner');
+
     assert.ok(await page.isVisible('[data-screen="game"]'), 'game visible');
     assert.equal(await page.locator('#board .block').count(), 36, '6x6 blocks');
-    assert.equal(await page.locator('#board .road').count(), 13 * 13 - 36, 'streets');
+    assert.equal(await page.locator('#board .road').count(), 84, 'road slots');
+    assert.equal(await page.locator('#board .node').count(), 49, 'intersections');
     assert.equal(await page.locator('.player-card').count(), 4, 'four HUD cards');
     assert.equal(await page.locator('.player-card.is-active').count(), 1);
-    assert.match(await page.textContent('#turn-banner'), /Ada's turn/);
+    assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '1');
-    assert.equal(await page.textContent('#hud-round-max'), '8');
-    assert.ok((await page.textContent('#hud-left')).includes('$1,500'), 'cash shown');
+    assert.equal(await page.textContent('#hud-roads'), '0/84');
+    assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'red');
+    assert.ok((await page.textContent('#hud-left')).includes('$2,000'), 'cash shown');
     // Names are rendered as text, never HTML.
     assert.ok((await page.textContent('#hud-right')).includes('<b>Bo</b>'), 'name escaped');
 
@@ -131,24 +138,68 @@ for (const vp of VIEWPORTS) {
     assert.ok(box.width > 200, `board too small: ${box.width}`);
     assert.ok(Math.abs(box.width - box.height) < 2, 'board is square');
     assert.ok(box.x >= 0 && box.x + box.width <= vp.width + 1, 'board within viewport width');
+    const tap = await road('v-2-3').boundingBox();
+    assert.ok(Math.min(tap.width, tap.height) >= 10, `road slot too thin: ${JSON.stringify(tap)}`);
     await noHorizontalScroll(page, 'game');
     await shot('5-game');
 
-    // Inspect a block
-    await page.locator('#board .block[data-block="r0c0"]').click();
-    assert.match(await page.textContent('#inspector'), /Block A1/);
-    assert.match(await page.textContent('#inspector'), /Ada/);
+    // P1 → P2 → P3 → P4 rotation, building three sides of A1.
+    await road('h-0-0').click();
+    assert.match(await banner(), /<b>Bo<\/b>'s turn/);
+    assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-built') && el.classList.contains('road--red')));
+    assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'blue');
 
-    // Play through one full round
-    for (let i = 0; i < 4; i++) await page.click('#action-end-turn');
+    // Duplicate road is rejected and the turn does not pass.
+    // (dispatchEvent: Playwright won't click an aria-disabled control, but a player can tap it)
+    await road('h-0-0').dispatchEvent('click');
+    assert.match(await banner(), /<b>Bo<\/b>'s turn/, 'duplicate road rejected');
+    assert.match(await page.textContent('#toasts'), /already paved/);
+    assert.equal(await page.textContent('#hud-roads'), '1/84');
+
+    await road('v-0-0').click();
+    assert.match(await banner(), /Player 3's turn/);
+    await road('h-1-0').click();
+    assert.match(await banner(), /Player 4's turn/);
+
+    // P4 paves the final side: claims A1 and keeps the turn.
+    await road('v-0-1').click();
+    assert.ok(await block('r0c0').evaluate((el) => el.classList.contains('block--green')), 'A1 claimed by P4');
+    assert.match(await banner(), /Player 4's turn/, 'bonus road');
+    assert.match(await page.textContent('#turn-prompt'), /bonus road/i);
+    assert.match(await page.textContent('#toasts'), /claims A1/);
+    await shot('6-capture');
+
+    // P4's bonus road closes nothing → round wraps to P1 and income is paid.
+    await road('h-6-5').click();
+    assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
-    assert.ok((await page.textContent('#hud-left')).includes('$1,575'), 'income paid');
-    await shot('6-round2');
+    assert.ok((await page.textContent('#hud-left')).includes('$2,050'), 'P4 paid income for A1');
+
+    // Inspect a block
+    await block('r0c0').click();
+    assert.match(await page.textContent('#inspector'), /Block A1/);
+    assert.match(await page.textContent('#inspector'), /Player 4/);
+
+    // Pave every remaining road; the game must end with all 36 blocks claimed.
+    const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
+    for (const id of remaining) await road(id).click();
+    await page.waitForSelector('#results-dialog[open]');
+    assert.equal(await page.locator('#board .block--owned').count(), 36, 'all blocks claimed');
+    assert.equal(await page.textContent('#hud-roads'), '84/84');
+    assert.equal(await page.locator('#results-list li').count(), 4);
+    assert.match(await banner(), /wins!/);
+    await shot('7-results');
+
+    // Rematch starts a clean board.
+    await page.getByRole('button', { name: 'Play Again' }).click();
+    assert.equal(await page.textContent('#hud-roads'), '0/84', 'rematch reset');
+    assert.equal(await page.locator('#board .block--owned').count(), 0);
+    assert.match(await banner(), /Ada's turn/);
 
     // Pause → quit
     await page.click('#game-menu-btn');
     assert.ok(await page.isVisible('#pause-dialog'));
-    await shot('7-pause');
+    await shot('8-pause');
     await page.getByRole('button', { name: 'Quit to Title' }).click();
     assert.ok(await page.isVisible('[data-screen="title"]'), 'quit to title');
 

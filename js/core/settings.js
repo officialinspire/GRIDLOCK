@@ -4,7 +4,6 @@ import { DEFAULT_SETTINGS } from '../config.js';
 const KEY = 'gridlock.settings.v1';
 
 const ALLOWED = {
-  rounds: [8, 12, 16],
   startingCash: [1000, 1500, 2000],
 };
 

@@ -5,7 +5,7 @@ import { BOARD_ROWS, BOARD_COLS, DEFAULT_SETTINGS } from '../../js/config.js';
 import { createBoard, getBlock, neighbors, districtFor, blockLabel, blocksOwnedBy } from '../../js/core/board.js';
 import { BUILDINGS, getBuilding } from '../../js/core/buildings.js';
 import { formatCash, calculateIncome, BLOCK_BASE_INCOME } from '../../js/core/economy.js';
-import { createGame, endTurn, currentPlayer, playerStats, PHASES, sanitizeName } from '../../js/core/game.js';
+import { createGame, endTurn, currentPlayer, playerStats, sanitizeName } from '../../js/core/game.js';
 import { CITY_EVENTS, drawCityEvent } from '../../js/core/events.js';
 import { normalizeSettings, loadSettings, saveSettings } from '../../js/core/settings.js';
 import { EventBus } from '../../js/core/bus.js';
@@ -58,20 +58,23 @@ test('all sprite rects fit inside their sheets', () => {
   }
 });
 
-test('createGame seats 2–4 players in corners with a starter house', () => {
+test('createGame seats 2–4 players on an empty city', () => {
   const game = createGame({ seats: fourSeats });
   assert.equal(game.players.length, 4);
   assert.equal(game.round, 1);
-  assert.equal(game.maxRounds, DEFAULT_SETTINGS.rounds);
+  assert.deepEqual(Object.keys(game.board.roads), []);
   for (const p of game.players) {
     assert.equal(p.cash, DEFAULT_SETTINGS.startingCash);
-    assert.equal(blocksOwnedBy(game.board, p.seat).length, 1);
+    assert.equal(blocksOwnedBy(game.board, p.seat).length, 0);
   }
-  assert.equal(getBlock(game.board, 0, 0).ownerSeat, 1);
-  assert.equal(getBlock(game.board, 5, 0).ownerSeat, 4);
   assert.throws(() => createGame({ seats: [{ seat: 1 }] }), RangeError);
   assert.throws(() => createGame({ seats: [{ seat: 1 }, { seat: 1 }] }), RangeError);
   assert.throws(() => createGame({ seats: [{ seat: 1 }, { seat: 9 }] }), RangeError);
+});
+
+test('play order is always by seat number', () => {
+  const game = createGame({ seats: [{ seat: 3 }, { seat: 1 }] });
+  assert.deepEqual(game.players.map((p) => p.seat), [1, 3]);
 });
 
 test('names are trimmed, capped and fall back to defaults', () => {
@@ -80,30 +83,28 @@ test('names are trimmed, capped and fall back to defaults', () => {
   assert.equal(sanitizeName('x'.repeat(40), 'y').length, 16);
 });
 
-test('income = base per block + building income', () => {
+test('income = base per owned block + building income', () => {
   const game = createGame({ seats: fourSeats });
-  const expected = BLOCK_BASE_INCOME + getBuilding('house').income;
-  assert.equal(calculateIncome(game.board, 1), expected);
-  assert.equal(playerStats(game, game.players[0]).income, expected);
+  assert.equal(calculateIncome(game.board, 1), 0);
+  getBlock(game.board, 0, 0).ownerSeat = 1;
+  assert.equal(calculateIncome(game.board, 1), BLOCK_BASE_INCOME);
+  getBlock(game.board, 0, 0).buildingId = 'house';
+  assert.equal(playerStats(game, game.players[0]).income, BLOCK_BASE_INCOME + getBuilding('house').income);
   assert.equal(formatCash(1500), '$1,500');
 });
 
-test('endTurn rotates players, pays income at round end, and finishes the game', () => {
-  const game = createGame({ seats: [{ seat: 1 }, { seat: 3 }], settings: { rounds: 8, startingCash: 1000 } });
+test('endTurn rotates seats and pays income when the round wraps', () => {
+  const game = createGame({ seats: [{ seat: 1 }, { seat: 3 }], settings: { startingCash: 1000 } });
+  getBlock(game.board, 2, 2).ownerSeat = 3;
   assert.equal(currentPlayer(game).seat, 1);
-  assert.deepEqual(endTurn(game), { roundEnded: false, gameEnded: false, income: null });
+  assert.deepEqual(endTurn(game), { roundEnded: false, income: null });
   assert.equal(currentPlayer(game).seat, 3);
-
   const r = endTurn(game);
   assert.equal(r.roundEnded, true);
+  assert.deepEqual(r.income, { 1: 0, 3: BLOCK_BASE_INCOME });
   assert.equal(game.round, 2);
   assert.equal(currentPlayer(game).seat, 1);
-  assert.equal(game.players[0].cash, 1000 + calculateIncome(game.board, 1));
-
-  for (let i = 0; i < 2 * 7; i++) endTurn(game);
-  assert.equal(game.phase, PHASES.ENDED);
-  assert.equal(game.round, 8);
-  assert.equal(endTurn(game).gameEnded, true);
+  assert.equal(game.players[1].cash, 1000 + BLOCK_BASE_INCOME);
 });
 
 test('city events draw deterministically from an injected rng', () => {
@@ -112,9 +113,10 @@ test('city events draw deterministically from an injected rng', () => {
 });
 
 test('settings normalize, persist, and survive broken storage', () => {
-  assert.deepEqual(normalizeSettings({ rounds: '16', sound: false, startingCash: 5 }), {
-    ...DEFAULT_SETTINGS, rounds: 16, sound: false,
+  assert.deepEqual(normalizeSettings({ startingCash: '2000', sound: false, rounds: 16 }), {
+    ...DEFAULT_SETTINGS, startingCash: 2000, sound: false,
   });
+  assert.equal(normalizeSettings({ startingCash: 5 }).startingCash, DEFAULT_SETTINGS.startingCash);
   const mem = new Map();
   const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
   assert.equal(saveSettings({ ...DEFAULT_SETTINGS, music: false }, storage), true);

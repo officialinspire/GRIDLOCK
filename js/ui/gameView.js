@@ -2,16 +2,22 @@
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { bus } from '../core/bus.js';
-import { createGame, endTurn, currentPlayer, getPlayer, PHASES } from '../core/game.js';
-import { getBlockById, DISTRICTS } from '../core/board.js';
+import {
+  createGame, placeRoad, currentPlayer, getPlayer, standings, MOVE_ERRORS, PHASES,
+} from '../core/game.js';
+import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { getBuilding } from '../core/buildings.js';
-import { blockIncome, formatCash, propertyValue } from '../core/economy.js';
-import { renderBoard, initBoardView, clearSelection } from './boardView.js';
+import { blockIncome, formatCash } from '../core/economy.js';
+import {
+  renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock,
+} from './boardView.js';
 import { renderHud } from './hud.js';
 import { showScreen, resetTo } from './router.js';
 import { toast } from './toast.js';
 
 let game = null;
+let lastSetup = null;
+let chain = 0; // blocks claimed by the current player during this turn
 
 export const getGame = () => game;
 
@@ -33,63 +39,127 @@ function renderInspector(blockId) {
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
     h('dl', { class: 'inspector__facts' },
       row('District', DISTRICTS[block.district].label),
+      row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
-      row('Owner', owner ? owner.name : 'For sale'),
+      row('Owner', owner ? owner.name : 'Unclaimed'),
       row('Building', building ? building.name : 'Empty lot'),
       row('Income', owner ? `+${formatCash(blockIncome(block))}/round` : '—'),
     ),
   );
 }
 
+function renderPrompt() {
+  const prompt = $('#turn-prompt');
+  if (game.phase === PHASES.ENDED) {
+    prompt.textContent = 'Every block is claimed.';
+    prompt.style.removeProperty('--player');
+    return;
+  }
+  const p = currentPlayer(game);
+  prompt.style.setProperty('--player', p.hex);
+  prompt.textContent = chain > 0
+    ? `${p.name}: bonus road! Pave another.`
+    : `${p.name}: pave a road.`;
+}
+
 function render() {
   renderBoard(game);
   renderHud(game);
-  $('#action-end-turn').disabled = game.phase !== PHASES.PLAYING;
+  renderPrompt();
+  renderInspector(getSelectedBlock());
 }
 
-function winnerSummary() {
-  const ranked = [...game.players]
-    .map((p) => ({ p, worth: p.cash + propertyValue(game.board, p.seat) }))
-    .sort((a, b) => b.worth - a.worth);
-  return `${ranked[0].p.name} wins with ${formatCash(ranked[0].worth)} net worth!`;
+function flashFrame() {
+  const frame = $('#board-frame');
+  frame.classList.remove('is-capture');
+  void frame.offsetWidth;
+  frame.classList.add('is-capture');
 }
 
-function handleEndTurn() {
-  if (!game || game.phase !== PHASES.PLAYING) return;
-  const result = endTurn(game);
-  render();
-  renderInspector(null);
-  clearSelection();
+function showResults() {
+  const list = $('#results-list');
+  list.replaceChildren(...standings(game).map((row) =>
+    h('li', { class: `results__row results__row--${row.player.color}${row.rank === 1 ? ' is-winner' : ''}` },
+      h('span', { class: 'results__rank' }, `#${row.rank}`),
+      createSprite(`markers:chip-${row.player.color}`, { className: 'results__token' }),
+      h('span', { class: 'results__name' }, row.player.name),
+      h('span', { class: 'results__score' }, `${row.blocks} block${row.blocks === 1 ? '' : 's'}`),
+      h('span', { class: 'results__worth' }, formatCash(row.worth)),
+    )));
+  const winners = standings(game).filter((r) => r.rank === 1);
+  $('#results-heading').textContent = winners.length > 1
+    ? 'A tie for Mayor!'
+    : `${winners[0].player.name} runs the city!`;
+  $('#results-dialog').showModal();
+}
 
-  if (result.gameEnded) {
-    toast(`Final round complete. ${winnerSummary()}`, { tone: 'success', duration: 6000 });
-  } else if (result.roundEnded) {
-    toast(`Income paid — Round ${game.round} begins`, { tone: 'success' });
-  } else {
-    toast(`${currentPlayer(game).name}, you're up!`);
+const REJECT_MESSAGES = {
+  [MOVE_ERRORS.TAKEN]: 'That road is already paved.',
+  [MOVE_ERRORS.INVALID]: "That's not a road.",
+  [MOVE_ERRORS.GAME_OVER]: 'The game is over.',
+};
+
+function handleRoad(id) {
+  if (!game) return;
+  const mover = currentPlayer(game);
+  const result = placeRoad(game, id);
+
+  if (!result.ok) {
+    rejectRoad(id);
+    toast(REJECT_MESSAGES[result.error] ?? 'You can’t build there.', { tone: 'warn', duration: 1600 });
+    return;
   }
+
+  const n = result.captured.length;
+  chain = result.extraTurn ? chain + n : 0;
+  render();
+
+  if (n > 0) {
+    flashFrame();
+    const labels = result.captured.map((bid) => getBlockById(game.board, bid).label).join(' & ');
+    toast(`${mover.name} claims ${labels}!${result.extraTurn ? ' Bonus road.' : ''}`, { tone: 'capture', duration: 2200 });
+  }
+  if (result.gameEnded) {
+    setTimeout(showResults, n > 0 ? 700 : 0);
+  } else if (result.roundEnded) {
+    toast(`Income paid · Round ${game.round}`, { tone: 'success' });
+  }
+  bus.emit('game:move', result);
 }
 
-function startGame({ seats, settings }) {
-  game = createGame({ seats, settings });
+function startGame(setup) {
+  lastSetup = setup;
+  game = createGame(setup);
+  chain = 0;
   clearSelection();
   render();
-  renderInspector(null);
   resetTo('game');
   toast(`${currentPlayer(game).name} goes first`);
 }
 
-function initPauseDialog() {
-  const dialog = $('#pause-dialog');
-  $('#game-menu-btn').addEventListener('click', () => dialog.showModal());
-  dialog.addEventListener('click', (e) => {
+function initDialogs() {
+  const pause = $('#pause-dialog');
+  $('#game-menu-btn').addEventListener('click', () => pause.showModal());
+  pause.addEventListener('click', (e) => {
     // Clicking the backdrop closes the dialog.
-    if (e.target === dialog) return dialog.close();
+    if (e.target === pause) return pause.close();
     const action = e.target.closest('[data-dialog-action]')?.dataset.dialogAction;
     if (!action) return;
-    dialog.close();
+    pause.close();
     if (action === 'howto') showScreen('howto');
     if (action === 'quit') {
+      game = null;
+      resetTo('title');
+    }
+  });
+
+  const results = $('#results-dialog');
+  results.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-results-action]')?.dataset.resultsAction;
+    if (!action) return;
+    results.close();
+    if (action === 'rematch') startGame(lastSetup);
+    if (action === 'title') {
       game = null;
       resetTo('title');
     }
@@ -97,10 +167,8 @@ function initPauseDialog() {
 }
 
 export function initGameView() {
-  initBoardView({ onBlockSelect: renderInspector });
-  initPauseDialog();
-  $('#action-end-turn').addEventListener('click', handleEndTurn);
+  initBoardView({ onBlockSelect: renderInspector, onRoadSelect: handleRoad });
+  initDialogs();
   bus.on('game:start', startGame);
   renderInspector(null);
 }
-

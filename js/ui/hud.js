@@ -7,7 +7,8 @@ import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { formatCash } from '../core/economy.js';
-import { currentPlayer, getPlayer, playerStats, PHASES } from '../core/game.js';
+import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
+import { totalRoads } from '../core/board.js';
 
 const LAYOUT = { left: [1, 4], right: [2, 3] };
 
@@ -48,7 +49,7 @@ function playerCard(game, seat) {
     ),
     h('dl', { class: 'player-card__stats' },
       stat('Cash', formatCash(stats.cash), 'icons:coins'),
-      stat('Blocks', stats.blocks, 'icons:map'),
+      stat('Blocks', stats.blocks, 'icons:star'),
       stat('Income', `+${formatCash(stats.income)}`, 'icons:building'),
     ),
   );
@@ -58,15 +59,18 @@ export function renderHud(game) {
   $('#hud-left').replaceChildren(...LAYOUT.left.map((seat) => playerCard(game, seat)));
   $('#hud-right').replaceChildren(...LAYOUT.right.map((seat) => playerCard(game, seat)));
   $('#hud-round').textContent = game.round;
-  $('#hud-round-max').textContent = game.maxRounds;
+  $('#hud-roads').textContent = `${roadsBuilt(game)}/${totalRoads(game.board)}`;
 
   const banner = $('#turn-banner');
   if (game.phase === PHASES.ENDED) {
-    banner.textContent = 'Game over';
-    banner.style.removeProperty('--player');
+    const [top] = standings(game);
+    banner.textContent = `${top.player.name} wins!`;
+    banner.style.setProperty('--player', top.player.hex);
+    banner.dataset.color = top.player.color;
   } else {
     const p = currentPlayer(game);
     banner.textContent = `${p.name}'s turn`;
     banner.style.setProperty('--player', p.hex);
+    banner.dataset.color = p.color;
   }
 }

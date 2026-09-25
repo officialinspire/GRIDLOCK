@@ -204,5 +204,7 @@
   animation: toast-in var(--t-med) var(--ease-pop);
 }
 .toast--success { background: #dff0c9; }
+.toast--capture { background: #fdf0c4; border-color: var(--ink); font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; }
+.toast--warn { background: #f6d4cf; }
 .toast--leaving { opacity: 0; transform: translateY(-8px); transition: all 300ms ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.9); } }

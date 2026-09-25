@@ -45,7 +45,7 @@ function refresh(form) {
   const ok = seats.length >= MIN_PLAYERS;
   $('#setup-start').disabled = !ok;
   $('#setup-summary').textContent = ok
-    ? `${seats.length} players · ${s.rounds} rounds · ${formatCash(s.startingCash)} each`
+    ? `${seats.length} players · ${formatCash(s.startingCash)} each · 6×6 city`
     : `At least ${MIN_PLAYERS} players must join.`;
 }
 
