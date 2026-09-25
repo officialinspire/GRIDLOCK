@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a211a">
+  <meta name="description" content="Grid Lock City — a papercraft tabletop city-building game for 2–4 local players.">
+  <title>Grid Lock City</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/screens.css">
+  <link rel="stylesheet" href="css/game.css">
+
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div class="tabletop" aria-hidden="true"></div>
+
+  <main id="app">
+    <!-- ============ TITLE ============ -->
+    <section class="screen screen--title" data-screen="title" aria-labelledby="title-heading">
+      <h1 id="title-heading" class="visually-hidden">Grid Lock City</h1>
+
+      <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
+
+      <nav class="menu-card paper" aria-label="Main menu">
+        <span class="pin pin--left" data-sprite="title:pin-red"></span>
+        <span class="pin pin--right" data-sprite="title:pin-blue"></span>
+
+        <button class="btn btn--gold btn--xl" data-nav="setup" data-autofocus>
+          <span class="btn__icon" data-sprite="icons:play"></span>
+          <span>New Game</span>
+        </button>
+        <button class="btn btn--xl" data-nav="howto">
+          <span class="btn__icon" data-sprite="icons:info"></span>
+          <span>How To Play</span>
+        </button>
+        <button class="btn btn--xl" data-nav="settings">
+          <span class="btn__icon" data-sprite="icons:gear"></span>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <aside class="title-note sticky-note" aria-label="Game info">
+        <strong>Local play</strong>
+        <span>2–4 players · one device</span>
+        <span class="title-note__ver">v0.1 foundation</span>
+      </aside>
+
+      <div class="title-skyline" data-sprite="title:skyline"></div>
+    </section>
+
+    <!-- ============ HOW TO PLAY ============ -->
+    <section class="screen screen--page" data-screen="howto" aria-labelledby="howto-heading" hidden>
+      <header class="page-header">
+        <button class="btn btn--icon" data-nav="back" aria-label="Back">
+          <span class="btn__icon" data-sprite="icons:back"></span>
+        </button>
+        <h2 id="howto-heading" class="ribbon-title">How To Play</h2>
+      </header>
+
+      <div class="page-body howto-grid">
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:map"></span>
+          <h3>The City</h3>
+          <p>Grid Lock City is a 6&nbsp;×&nbsp;6 grid of city blocks divided by streets. Downtown blocks in the middle are worth more than the suburbs on the edge.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:swap"></span>
+          <h3>Taking Turns</h3>
+          <p>2–4 players share one device. On your turn, make your moves, then press <strong>End Turn</strong> to pass play to the next mayor.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:building"></span>
+          <h3>Blocks &amp; Buildings</h3>
+          <p>Buy open blocks to grow your territory, then build homes, shops, parks and civic landmarks on them.</p>
+          <p class="coming-soon">Buying &amp; building arrive in the next phase.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:coins"></span>
+          <h3>Income</h3>
+          <p>At the end of every round, each player collects income from the blocks and buildings they own.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:clock"></span>
+          <h3>Rounds &amp; Events</h3>
+          <p>The game lasts a set number of rounds. City events like storms and festivals will shake things up.</p>
+          <p class="coming-soon">City events arrive in a later phase.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:trophy"></span>
+          <h3>Winning</h3>
+          <p>When the final round ends, the richest mayor — counting cash and property — wins the keys to the city.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="screen screen--page" data-screen="settings" aria-labelledby="settings-heading" hidden>
+      <header class="page-header">
+        <button class="btn btn--icon" data-nav="back" aria-label="Back">
+          <span class="btn__icon" data-sprite="icons:back"></span>
+        </button>
+        <h2 id="settings-heading" class="ribbon-title">Settings</h2>
+      </header>
+
+      <form class="page-body paper settings-panel" id="settings-form" autocomplete="off">
+        <fieldset>
+          <legend>Audio</legend>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:sound"></span>Sound effects</span>
+            <input type="checkbox" class="toggle" name="sound">
+          </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>Music</span>
+            <input type="checkbox" class="toggle" name="music">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Game defaults</legend>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>Rounds per game</span>
+            <select name="rounds" class="select">
+              <option value="8">8 — quick</option>
+              <option value="12">12 — standard</option>
+              <option value="16">16 — long</option>
+            </select>
+          </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:coins"></span>Starting cash</span>
+            <select name="startingCash" class="select">
+              <option value="1000">$1,000</option>
+              <option value="1500">$1,500</option>
+              <option value="2000">$2,000</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Display</legend>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:star"></span>Reduce motion</span>
+            <input type="checkbox" class="toggle" name="reducedMotion">
+          </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:map"></span>Show block coordinates</span>
+            <input type="checkbox" class="toggle" name="showCoords">
+          </label>
+        </fieldset>
+
+        <p class="settings-panel__note">Settings are saved on this device.</p>
+      </form>
+    </section>
+
+    <!-- ============ NEW GAME SETUP ============ -->
+    <section class="screen screen--page" data-screen="setup" aria-labelledby="setup-heading" hidden>
+      <header class="page-header">
+        <button class="btn btn--icon" data-nav="back" aria-label="Back">
+          <span class="btn__icon" data-sprite="icons:back"></span>
+        </button>
+        <h2 id="setup-heading" class="ribbon-title">New Game</h2>
+      </header>
+
+      <form class="page-body setup" id="setup-form" autocomplete="off" novalidate>
+        <div class="setup__players" id="setup-players"></div>
+
+        <div class="setup__footer paper">
+          <p class="setup__summary" id="setup-summary" aria-live="polite"></p>
+          <button type="submit" class="btn btn--gold btn--lg" id="setup-start">
+            <span class="btn__icon" data-sprite="icons:play"></span>
+            <span>Start Game</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ============ GAME ============ -->
+    <section class="screen screen--game" data-screen="game" aria-label="Game board" hidden>
+      <header class="game-topbar">
+        <button class="btn btn--icon btn--sm" id="game-menu-btn" aria-label="Pause menu">
+          <span class="btn__icon" data-sprite="icons:pause"></span>
+        </button>
+        <div class="round-badge" aria-live="polite">
+          <span class="round-badge__icon" data-sprite="icons:clock"></span>
+          <span>Round <strong id="hud-round">1</strong><span class="round-badge__max"> / <span id="hud-round-max">12</span></span></span>
+        </div>
+        <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
+        <button class="btn btn--icon btn--sm" data-nav="settings" aria-label="Settings">
+          <span class="btn__icon" data-sprite="icons:gear"></span>
+        </button>
+      </header>
+
+      <div class="game-layout">
+        <div class="hud hud--left" id="hud-left"></div>
+
+        <div class="board-area">
+          <div class="board-frame paper">
+            <div class="board" id="board" role="group" aria-label="City blocks"></div>
+          </div>
+        </div>
+
+        <div class="hud hud--right" id="hud-right"></div>
+
+        <aside class="inspector sticky-note" id="inspector" aria-live="polite"></aside>
+      </div>
+
+      <footer class="action-bar paper">
+        <button class="btn" id="action-buy" disabled title="Coming soon">
+          <span class="btn__icon" data-sprite="icons:coins"></span><span>Buy Block</span>
+        </button>
+        <button class="btn" id="action-build" disabled title="Coming soon">
+          <span class="btn__icon" data-sprite="icons:building"></span><span>Build</span>
+        </button>
+        <button class="btn btn--gold" id="action-end-turn">
+          <span class="btn__icon" data-sprite="icons:swap"></span><span>End Turn</span>
+        </button>
+      </footer>
+
+      <dialog class="modal paper" id="pause-dialog" aria-labelledby="pause-heading">
+        <h3 id="pause-heading" class="modal__title">Paused</h3>
+        <div class="modal__actions">
+          <button class="btn btn--gold" value="resume" data-dialog-action="resume">
+            <span class="btn__icon" data-sprite="icons:play"></span><span>Resume</span>
+          </button>
+          <button class="btn" data-dialog-action="howto">
+            <span class="btn__icon" data-sprite="icons:info"></span><span>How To Play</span>
+          </button>
+          <button class="btn btn--danger" data-dialog-action="quit">
+            <span class="btn__icon" data-sprite="icons:home"></span><span>Quit to Title</span>
+          </button>
+        </div>
+      </dialog>
+    </section>
+  </main>
+
+  <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <p class="noscript paper">Grid Lock City needs JavaScript enabled to play.</p>
+  </noscript>
+</body>
+</html>
