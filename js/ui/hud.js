@@ -158,9 +158,29 @@ function playerCard(game, seat) {
   );
 }
 
+/** Moves still-visible delta chips onto freshly rendered cards so a re-render doesn't swallow them. */
+function carryCashDeltas(chipsBySeat) {
+  for (const [seat, chips] of chipsBySeat) {
+    const row = document.querySelector(`.player-card[data-seat="${seat}"] .stat--cash`);
+    if (!row) continue;
+    for (const chip of chips) {
+      row.classList.add(chip.classList.contains('cash-delta--up') ? 'is-up' : 'is-down');
+      row.append(chip);
+    }
+  }
+}
+
 export function renderHud(game) {
+  const chipsBySeat = new Map();
+  if (game === lastGame) {
+    document.querySelectorAll('.player-card .cash-delta').forEach((chip) => {
+      const seat = chip.closest('.player-card').dataset.seat;
+      chipsBySeat.set(seat, [...(chipsBySeat.get(seat) ?? []), chip]);
+    });
+  }
   $('#hud-left').replaceChildren(...LAYOUT.left.map((seat) => playerCard(game, seat)));
   $('#hud-right').replaceChildren(...LAYOUT.right.map((seat) => playerCard(game, seat)));
+  carryCashDeltas(chipsBySeat);
   animateMoney(game);
   $('#hud-round').textContent = game.round;
   $('#hud-roads').textContent = `${roadsBuilt(game)}/${totalRoads(game.board)}`;

@@ -393,6 +393,11 @@ for (const vp of VIEWPORTS) {
     assert.equal(await income.getAttribute('data-normal'), '1080', '3 × ($300 + 20%)');
     assert.equal(await page.locator('#board .block__badge.has-bonus').count(), 3);
     assert.match(await page.textContent('#toasts'), /Bonus income \+\$180\/turn/);
+    // The build panel opens in Manage City: finish P4's bonus road and rotate back to P4.
+    for (const id of ['h-6-5', 'h-6-4', 'h-6-3', 'h-6-2']) {
+      await pave(page, road(id));
+      await dismissEvent(page);
+    }
     await page.locator('[data-block="r0c1"]').click();
     assert.match(await panel.textContent(), /Residential district/);
     await panel.getByRole('button', { name: 'Keep as is' }).click();
