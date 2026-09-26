@@ -33,13 +33,20 @@ function stat(key, label, value, icon, hint = label) {
 
 /** Income (base + bonuses). A small ★ marks bonus income; details live in the tooltip / block info. */
 function incomeStat(stats) {
-  const hint = stats.bonus > 0
-    ? `Income paid at the start of each turn, including ${formatCash(stats.bonus)} adjacency bonus`
-    : 'Income paid at the start of each turn';
-  const el = stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', hint);
+  const notes = ['Income paid at the start of each turn'];
+  if (stats.bonus > 0) notes.push(`includes ${formatCash(stats.bonus)} adjacency bonus`);
+  if (stats.eventDelta) notes.push(`${formatDelta(stats.eventDelta)} from city events (normally ${formatCash(stats.normalIncome)})`);
+  const el = stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', notes.join('; '));
+  el.dataset.normal = stats.normalIncome;
+  const dd = el.querySelector('dd');
   if (stats.bonus > 0) {
     el.classList.add('has-bonus');
-    el.querySelector('dd').append(h('span', { class: 'stat__bonus', 'aria-label': `includes ${formatCash(stats.bonus)} bonus` }, '★'));
+    dd.append(h('span', { class: 'stat__bonus', 'aria-label': `includes ${formatCash(stats.bonus)} bonus` }, '★'));
+  }
+  if (stats.eventDelta) {
+    const up = stats.eventDelta > 0;
+    el.classList.add(up ? 'is-event-up' : 'is-event-down');
+    dd.append(h('span', { class: `stat__event stat__event--${up ? 'up' : 'down'}`, 'aria-label': `${formatDelta(stats.eventDelta)} from city events` }, up ? '▲' : '▼'));
   }
   return el;
 }

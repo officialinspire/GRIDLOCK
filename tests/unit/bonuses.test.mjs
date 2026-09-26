@@ -214,7 +214,7 @@ test('building the 3rd home through real play recalculates everyone\'s bonus and
 });
 
 test('turn income pays bonuses; captures trigger a refresh', () => {
-  const game = createGame({ seats: [1, 2].map((seat) => ({ seat })) });
+  const game = createGame({ seats: [1, 2].map((seat) => ({ seat })), eventPool: [] });
   for (const [r, c] of [[5, 0], [5, 1], [5, 2]]) {
     const b = getBlock(game.board, r, c);
     b.ownerSeat = 2;

@@ -100,6 +100,12 @@
           <p><strong>★ Bonuses:</strong> 3+ connected homes or shops form a district, parks boost the homes next to them, and a connected home + shop + park cluster earns a mixed-use bonus.</p>
         </article>
         <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:clock"></span>
+          <h3>City Events</h3>
+          <p>After every full round a city event is drawn: storms, fires, festivals, booms and recessions change income or building prices for a round or two.</p>
+          <p>Emergencies skip blocks inside a <strong>civic building's</strong> protection zone.</p>
+        </article>
+        <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
           <p>When every block is claimed, the mayor with the most blocks wins. Ties go to the higher net worth (cash + property value).</p>
@@ -184,6 +190,8 @@
         </button>
       </header>
 
+      <div class="event-strip" id="event-strip" aria-label="Active city events"></div>
+
       <div class="game-layout">
         <div class="hud hud--left" id="hud-left"></div>
 
@@ -207,6 +215,13 @@
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
       </footer>
+
+      <dialog class="modal event-card" id="event-dialog" aria-labelledby="event-title">
+        <div class="event-card__body" id="event-body"></div>
+        <button type="button" class="btn btn--gold event-card__continue" id="event-continue">
+          <span class="btn__icon" data-sprite="icons:play"></span><span>Continue</span>
+        </button>
+      </dialog>
 
       <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">
         <div class="build-panel__body" id="build-body"></div>

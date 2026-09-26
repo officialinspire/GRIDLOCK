@@ -9,6 +9,7 @@ import { getBlockById } from './board.js';
 import { VACANT, CATEGORY_ORDER, getCategory } from './buildings.js';
 import { debit, canAfford, TXN, isValidAmount } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
+import { adjustedCost } from './events.js';
 import { currentPlayer, PHASES } from './game.js';
 
 const DEV = ECONOMY.DEVELOPMENT;
@@ -105,9 +106,10 @@ export function quoteBuild(game, blockId, type) {
 
   const next = TABLE[type][1];
   const player = currentPlayer(game);
-  Object.assign(quote, { cost: next.cost, income: next.income, incomeGain: next.income - block.income });
-  if (!canAfford(player, next.cost)) {
-    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: next.cost - player.cash };
+  const cost = adjustedCost(game, type, next.cost); // active city events can change prices
+  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  if (!canAfford(player, cost)) {
+    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
   return { ...quote, ok: true };
 }
@@ -123,9 +125,10 @@ export function quoteUpgrade(game, blockId) {
 
   const next = TABLE[block.type][block.level + 1];
   const player = currentPlayer(game);
-  Object.assign(quote, { cost: next.cost, income: next.income, incomeGain: next.income - block.income });
-  if (!canAfford(player, next.cost)) {
-    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: next.cost - player.cash };
+  const cost = adjustedCost(game, block.type, next.cost);
+  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  if (!canAfford(player, cost)) {
+    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
   return { ...quote, ok: true };
 }

@@ -11,7 +11,7 @@ import {
 import { TXN, isValidAmount, calculateIncome, propertyValue } from '../../js/core/economy.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
 
-const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) });
+const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
 const cash = (game, seat) => getPlayer(game, seat).cash;
 const snapshot = (game) => JSON.stringify({ players: game.players, blocks: game.board.blocks, ledger: game.ledger });
 
@@ -105,7 +105,7 @@ test('building deducts cash immediately and the block stores type/level/value/in
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
-    cash: 11000, blocks: 1, income: 500, bonus: 0, property: 2500, netWorth: 13500,
+    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0, bonus: 0, property: 2500, netWorth: 13500,
   });
 });
 

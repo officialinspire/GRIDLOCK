@@ -12,7 +12,8 @@ import {
   createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES,
 } from '../../js/core/game.js';
 
-const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) });
+// Event-free games: these tests pin exact income flows (events have their own suite).
+const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
 const cash = (game, seat) => getPlayer(game, seat).cash;
 const preset = (game, ids) => ids.forEach((id) => { game.board.roads[id] = 0; });
 
@@ -44,7 +45,7 @@ test('every player starts with $12,000', () => {
   const game = four();
   assert.deepEqual(game.players.map((p) => p.cash), [12000, 12000, 12000, 12000]);
   assert.deepEqual(playerStats(game, game.players[0]), {
-    cash: 12000, blocks: 0, income: 0, bonus: 0, property: 0, netWorth: 12000,
+    cash: 12000, blocks: 0, income: 0, normalIncome: 0, eventDelta: 0, bonus: 0, property: 0, netWorth: 12000,
   });
 });
 

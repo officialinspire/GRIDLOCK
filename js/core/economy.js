@@ -129,9 +129,11 @@ export function payCaptureReward(game, player, blockIds) {
   return total;
 }
 
-/** Pays a player's developed-block income as their turn begins. Returns the amount. */
-export function payTurnIncome(game, player) {
-  const amount = calculateIncome(game.board, player.seat);
+/**
+ * Pays a player's turn income. `amount` is computed by the caller (game.js uses
+ * events.effectiveIncome so active city events apply). Returns the amount.
+ */
+export function payTurnIncome(game, player, amount = calculateIncome(game.board, player.seat)) {
   credit(game, player, amount, TXN.TURN_INCOME);
   return amount;
 }

@@ -11,6 +11,8 @@ import {
   calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
+import { createEventState, onRoundStart, effectiveIncome, EVENT_POOL } from './events.js';
+import { randomSeed } from './rng.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 
@@ -27,11 +29,13 @@ export function sanitizeName(name, fallback) {
 }
 
 /**
- * @param {{ seats: Array<{seat:number, name?:string}> }} options
+ * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, eventPool?: object[] }} options
  *   `seats` lists the joined seats (1–4). Play order is always by seat number.
+ *   `seed` makes city events reproducible (random by default).
+ *   `eventPool` overrides CITY_EVENTS.POOL (e.g. [] for an event-free game in tests).
  *   Economy values come from ECONOMY in config.js.
  */
-export function createGame({ seats } = {}) {
+export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL } = {}) {
   if (!Array.isArray(seats) || seats.length < MIN_PLAYERS || seats.length > MAX_PLAYERS) {
     throw new RangeError(`A game needs ${MIN_PLAYERS}–${MAX_PLAYERS} players`);
   }
@@ -68,6 +72,10 @@ export function createGame({ seats } = {}) {
     log: [],
     ledger: [],
     turnStartIncome: null,
+    seed: seed >>> 0,
+    rngState: seed >>> 0,
+    events: createEventState(),
+    eventPool,
   };
   beginTurn(game);
   return game;
@@ -85,10 +93,14 @@ export function getPlayer(game, seat) {
 export function playerStats(game, player) {
   const property = propertyValue(game.board, player.seat);
   const owned = blocksOwnedBy(game.board, player.seat);
+  const normal = calculateIncome(game.board, player.seat); // base + bonuses
+  const income = effectiveIncome(game, player.seat); // with active city events
   return {
     cash: player.cash,
     blocks: owned.length,
-    income: calculateIncome(game.board, player.seat), // base + bonuses
+    income,
+    normalIncome: normal,
+    eventDelta: income - normal,
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
     property,
     netWorth: player.cash + property,
@@ -118,23 +130,27 @@ export function validateRoad(game, id) {
  */
 export function beginTurn(game) {
   const player = currentPlayer(game);
-  const amount = payTurnIncome(game, player);
+  const amount = payTurnIncome(game, player, effectiveIncome(game, player.seat));
   game.turnStartIncome = { seat: player.seat, amount };
   return game.turnStartIncome;
 }
 
 /**
  * Passes play to the next seat and begins their turn. Wrapping back to the
- * first seat starts a new round. Returns { roundEnded, turnIncome }.
+ * first seat starts a new round: expired city events are removed and one new
+ * event is drawn *before* the first player's income is paid.
+ * Returns { roundEnded, event: { expired, started } | null, turnIncome }.
  */
 export function endTurn(game) {
-  const summary = { roundEnded: false, turnIncome: null };
+  const summary = { roundEnded: false, event: null, turnIncome: null };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
     game.turnIndex = 0;
     summary.roundEnded = true;
     game.log.push({ type: 'round-end', round: game.round });
     game.round += 1;
+    summary.event = onRoundStart(game, game.eventPool);
+    if (summary.event.started) game.log.push({ type: 'event', round: game.round, event: summary.event.started.id });
   }
   summary.turnIncome = beginTurn(game);
   return summary;
@@ -176,7 +192,7 @@ export function placeRoad(game, id) {
 
   const result = {
     ok: true, road: id, seat, captured, reward,
-    extraTurn: false, roundEnded: false, turnIncome: null, gameEnded: false,
+    extraTurn: false, roundEnded: false, event: null, turnIncome: null, gameEnded: false,
   };
 
   if (board.blocks.every((b) => b.ownerSeat != null)) {

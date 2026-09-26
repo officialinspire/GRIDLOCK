@@ -5,7 +5,6 @@ import { BOARD_ROWS, BOARD_COLS, DEFAULT_SETTINGS, ECONOMY } from '../../js/conf
 import { createBoard, getBlock, neighbors, districtFor, blockLabel, blocksOwnedBy } from '../../js/core/board.js';
 import { CATEGORIES, CATEGORY_ORDER, levelArt, getCategory } from '../../js/core/buildings.js';
 import { createGame, sanitizeName } from '../../js/core/game.js';
-import { CITY_EVENTS, drawCityEvent } from '../../js/core/events.js';
 import { normalizeSettings, loadSettings, saveSettings } from '../../js/core/settings.js';
 import { EventBus } from '../../js/core/bus.js';
 import { SHEETS, getSpriteRect } from '../../js/assets.js';
@@ -86,11 +85,6 @@ test('names are trimmed, capped and fall back to defaults', () => {
   assert.equal(sanitizeName('   ', 'Player 1'), 'Player 1');
   assert.equal(sanitizeName('  Ada   Lovelace ', 'x'), 'Ada Lovelace');
   assert.equal(sanitizeName('x'.repeat(40), 'y').length, 16);
-});
-
-test('city events draw deterministically from an injected rng', () => {
-  assert.equal(drawCityEvent(() => 0).id, CITY_EVENTS[0].id);
-  assert.equal(drawCityEvent(() => 0.9999).id, CITY_EVENTS.at(-1).id);
 });
 
 test('settings normalize, persist, and survive broken storage', () => {

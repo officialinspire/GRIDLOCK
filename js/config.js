@@ -98,3 +98,87 @@ export const ECONOMY = Object.freeze({
 });
 
 export const MAX_NAME_LENGTH = 16;
+
+/**
+ * City events (core/events.js). One event is drawn when a full round of play
+ * ends. Effects are *temporary modifiers* computed from the active-event list;
+ * nothing is written into blocks or balances, so expired events leave no trace.
+ *
+ * Event fields:
+ *   id, name, text, sprite      identity + papercraft card art (effects.png)
+ *   kind                        'emergency' | 'boon' | 'downturn' (card colour)
+ *   weight                      relative draw chance (0 disables)
+ *   duration                    rounds the event lasts (≥ 1), starting the round it's drawn
+ *   mitigation                  'civic' → blocks inside a civic protection radius are unaffected
+ *   income: [{ match, multiplier }]   per-block income multipliers while active
+ *   costs:  [{ categories, multiplier }] build/upgrade cost multipliers while active
+ *   targets: { categories, max, perOwner }  pick specific blocks when drawn
+ *                                           (event is skipped if none are eligible)
+ * match: { all: true } | { categories: [...] } | { targets: true }
+ */
+export const CITY_EVENTS = Object.freeze({
+  /** Combined multipliers from overlapping events are clamped to this range. */
+  MIN_MULTIPLIER: 0,
+  MAX_MULTIPLIER: 2,
+
+  POOL: Object.freeze([
+    {
+      id: 'heavy-rain', name: 'Heavy Rain', kind: 'emergency', weight: 12, duration: 1,
+      sprite: 'effects:rain', mitigation: 'civic',
+      text: 'Flooded parks close. Park income stops.',
+      income: [{ match: { categories: ['park'] }, multiplier: 0 }],
+    },
+    {
+      id: 'snowstorm', name: 'Snowstorm', kind: 'emergency', weight: 10, duration: 1,
+      sprite: 'effects:snow', mitigation: 'civic',
+      text: 'Snow slows the whole city. All income −25%.',
+      income: [{ match: { all: true }, multiplier: 0.75 }],
+    },
+    {
+      id: 'fire', name: 'Fire', kind: 'emergency', weight: 8, duration: 2,
+      sprite: 'effects:boom', mitigation: 'civic',
+      text: 'Fire breaks out! Struck blocks earn nothing while they recover.',
+      targets: { categories: ['residential', 'commercial', 'industrial', 'landmark'], max: 2, perOwner: 1 },
+      income: [{ match: { targets: true }, multiplier: 0 }],
+    },
+    {
+      id: 'power-outage', name: 'Power Outage', kind: 'emergency', weight: 10, duration: 1,
+      sprite: 'effects:alert', mitigation: 'civic',
+      text: 'The grid goes dark. Commercial and Industrial income −50%.',
+      income: [{ match: { categories: ['commercial', 'industrial'] }, multiplier: 0.5 }],
+    },
+    {
+      id: 'city-festival', name: 'City Festival', kind: 'boon', weight: 10, duration: 1,
+      sprite: 'effects:confetti',
+      text: 'Crowds pack the streets. Commercial and Landmark income +50%.',
+      income: [{ match: { categories: ['commercial', 'landmark'] }, multiplier: 1.5 }],
+    },
+    {
+      id: 'housing-boom', name: 'Housing Boom', kind: 'boon', weight: 10, duration: 2,
+      sprite: 'effects:boost',
+      text: 'Everyone wants to move in. Residential income +50%, but homes cost 25% more to build.',
+      income: [{ match: { categories: ['residential'] }, multiplier: 1.5 }],
+      costs: [{ categories: ['residential'], multiplier: 1.25 }],
+    },
+    {
+      id: 'beautification-grant', name: 'Beautification Grant', kind: 'boon', weight: 8, duration: 2,
+      sprite: 'effects:sparkle',
+      text: 'City grant money! Parks earn double and cost half to build or upgrade.',
+      income: [{ match: { categories: ['park'] }, multiplier: 2 }],
+      costs: [{ categories: ['park'], multiplier: 0.5 }],
+    },
+    {
+      id: 'economic-boom', name: 'Economic Boom', kind: 'boon', weight: 8, duration: 1,
+      sprite: 'effects:star-burst',
+      text: 'Business is booming. All income +25%.',
+      income: [{ match: { all: true }, multiplier: 1.25 }],
+    },
+    {
+      id: 'recession', name: 'Recession', kind: 'downturn', weight: 8, duration: 2,
+      sprite: 'effects:smoke',
+      text: 'Belts tighten. All income −20%, but construction is 10% cheaper.',
+      income: [{ match: { all: true }, multiplier: 0.8 }],
+      costs: [{ categories: ['residential', 'commercial', 'park', 'civic', 'industrial', 'landmark'], multiplier: 0.9 }],
+    },
+  ].map((e) => Object.freeze(e))),
+});

@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.5 bonuses.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, turn income, the HUD and a results screen. City events come in a later phase.
+> **Status: v0.6 city events.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, turn income, the HUD and a results screen.
 
 ## How it plays
 
@@ -65,6 +65,31 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 
 In the UI: the HUD income includes bonuses, with a small ★ and a tooltip giving the bonus amount. Board badges get a ★ when a block earns a bonus. The details panel and Build panel list each bonus and any civic protection. A toast announces newly gained bonus income.
 
+### City events
+
+After every full round (when play wraps back to the first seat), one event is drawn from a weighted pool, **before** that round's turn income is paid. The whole pool lives in `CITY_EVENTS` in `js/config.js`: weight, duration, text, card art, income multipliers per category, cost multipliers, targeting, and whether civic buildings mitigate it.
+
+| Event | Kind | Rounds | Effect |
+| --- | --- | --- | --- |
+| Heavy Rain | emergency | 1 | Park income stops |
+| Snowstorm | emergency | 1 | All income −25% |
+| Fire | emergency | 2 | Up to 2 developed blocks (max 1 per player) earn nothing |
+| Power Outage | emergency | 1 | Commercial + Industrial income −50% |
+| City Festival | boon | 1 | Commercial + Landmark income +50% |
+| Housing Boom | boon | 2 | Residential income +50%, homes cost 25% more |
+| Beautification Grant | boon | 2 | Parks earn ×2 and cost half |
+| Economic Boom | boon | 1 | All income +25% |
+| Recession | downturn | 2 | All income −20%, construction 10% cheaper |
+
+How it stays safe (`core/events.js`):
+- **Nothing is written:** events never touch blocks, cash or ownership. `game.events.active` holds `{ id, startRound, endRound, targets }`, and income and costs are derived from that list whenever they're needed. An event expires by being removed from the list, so it can't leave a permanent change behind.
+- **No duplicates:** re-drawing an active event refreshes its duration instead of adding a second copy. Overlapping different events multiply, clamped to ×0–×2.
+- **Civic mitigation:** emergencies skip any block inside a civic protection radius (`isProtected`). This is checked live, so building a civic mid-event helps immediately.
+- **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Add `?seed=123` to the URL to replay a game's events. Fire is capped and spread out: at most 2 targets, 1 per player.
+- **Prices:** cost events change what you pay, but block value uses the list price.
+
+In the UI, a papercraft event card lists the affected blocks, anything shielded, and the duration. Active events show as pills under the top bar (tap one to reopen its card). Affected blocks get a red, green or blue outline and the event's icon. The details panel lists each event on a block, the HUD income shows ▲/▼ with a tooltip, and the Build panel shows adjusted prices.
+
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
 
 ## Play locally
@@ -101,7 +126,8 @@ js/
     buildings.js           Development categories: names, blurbs and art per level
     development.js         Build/upgrade rules, quotes and derived cost/income tables
     bonuses.js             Adjacency/district bonuses + civic protection (pure recompute)
-    events.js              City event catalogue (not wired in yet)
+    events.js              City event engine: weighted draw, lifecycle, derived modifiers
+    rng.js                 Seeded PRNG (mulberry32) stored in game state
     settings.js            Persisted settings (localStorage, fails safe)
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
@@ -112,6 +138,7 @@ js/
     gameView.js            Game controller (moves, capture feedback, results, pause)
     buildPanel.js          Build/Upgrade panel for the current player's blocks
     bonusView.js           Shared bonus/protection lines
+    eventView.js           Event card, active-event pills, block event lines
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -121,6 +148,7 @@ tests/
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
+  unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
@@ -152,4 +180,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

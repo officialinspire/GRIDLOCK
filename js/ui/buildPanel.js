@@ -60,8 +60,10 @@ function header(block, player) {
 }
 
 function priceTag(quote) {
+  const changed = quote.baseCost != null && quote.baseCost !== quote.cost;
   return [
-    h('span', { class: 'price__cost' }, formatCash(quote.cost)),
+    h('span', { class: `price__cost${changed ? (quote.cost < quote.baseCost ? ' is-cheaper' : ' is-pricier') : ''}` },
+      changed && h('s', { class: 'price__was' }, formatCash(quote.baseCost)), formatCash(quote.cost)),
     h('span', { class: 'price__income' }, `+${formatCash(quote.income)}/turn`),
     quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
       && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
@@ -116,6 +118,8 @@ function developedView(game, block, player) {
         h('strong', { class: 'upgrade-card__name' }, next.name),
         h('span', { class: 'upgrade-card__gain' },
           `Base income ${formatCash(block.income)} → ${formatCash(quote.income)}/turn (+${formatCash(quote.incomeGain)})`),
+        quote.baseCost != null && quote.baseCost !== quote.cost
+          && h('span', { class: 'price__event' }, `City event price (normally ${formatCash(quote.baseCost)})`),
         quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
           && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
       ),

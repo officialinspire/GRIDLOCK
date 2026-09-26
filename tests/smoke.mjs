@@ -30,6 +30,11 @@ const VIEWPORTS = [
   { name: 'phone-landscape', width: 844, height: 390, isMobile: true, hasTouch: true },
 ];
 
+/** City event cards are modal; close one if it's showing. */
+async function dismissEvent(page) {
+  if (await page.locator('#event-dialog[open]').count()) await page.click('#event-continue');
+}
+
 const server = await startServer(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch(launchOpts);
@@ -80,7 +85,7 @@ for (const vp of VIEWPORTS) {
     // How To Play
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 7);
+    assert.equal(await page.locator('.howto-card').count(), 8);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -196,13 +201,22 @@ for (const vp of VIEWPORTS) {
     assert.equal(await block('r0c0').locator('.block__badge .pip.is-on').count(), 2);
     await shot('8-developed');
 
-    // P4's bonus road closes nothing → round wraps to P1 and income is paid.
+    // P4's bonus road closes nothing → round wraps to P1 and a city event is drawn.
     await road('h-6-5').click();
+    const eventCard = page.locator('#event-dialog');
+    assert.ok(await eventCard.isVisible(), 'event card after the first full round');
+    assert.match(await eventCard.textContent(),
+      /(Heavy Rain|Snowstorm|Fire|Power Outage|City Festival|Housing Boom|Beautification Grant|Economic Boom|Recession)/);
+    assert.match(await eventCard.textContent(), /round(s)? left · Round/);
+    await shot('9-event-card');
+    await page.click('#event-continue');
+    assert.equal(await eventCard.isVisible(), false);
+    assert.equal(await page.locator('#event-strip .event-pill').count(), 1, 'active event pill');
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
     const p4 = page.locator('.player-card[data-seat="4"]');
     assert.equal(await p4.locator('.stat--cash dd').textContent(), '$10,000', '+$500 reward − $2,500 development');
-    assert.equal(await p4.locator('.stat--income dd').textContent(), '+$600', 'Residential L2 income');
+    assert.equal(await p4.locator('.stat--income').getAttribute('data-normal'), '600', 'Residential L2 income (before events)');
     assert.equal(await p4.locator('.stat--property dd').textContent(), '$3,500', 'land + invested');
     assert.equal(await page.locator('.player-card[data-seat="1"] .stat--cash dd').textContent(), '$12,000');
 
@@ -216,13 +230,16 @@ for (const vp of VIEWPORTS) {
 
     // Pave every remaining road; the game must end with all 36 blocks claimed.
     const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
-    for (const id of remaining) await road(id).click();
+    for (const id of remaining) {
+      await road(id).click();
+      await dismissEvent(page);
+    }
     await page.waitForSelector('#results-dialog[open]');
     assert.equal(await page.locator('#board .block--owned').count(), 36, 'all blocks claimed');
     assert.equal(await page.textContent('#hud-roads'), '84/84');
     assert.equal(await page.locator('#results-list li').count(), 4);
     assert.match(await banner(), /wins!/);
-    await shot('9-results');
+    await shot('10-results');
 
     // Rematch starts a clean board.
     await page.getByRole('button', { name: 'Play Again' }).click();
@@ -233,7 +250,7 @@ for (const vp of VIEWPORTS) {
     // Pause → quit
     await page.click('#game-menu-btn');
     assert.ok(await page.isVisible('#pause-dialog'));
-    await shot('10-pause');
+    await shot('11-pause');
     await page.getByRole('button', { name: 'Quit to Title' }).click();
     assert.ok(await page.isVisible('[data-screen="title"]'), 'quit to title');
 
@@ -244,6 +261,53 @@ for (const vp of VIEWPORTS) {
     console.error(`✘ ${vp.name}: ${err.message}`);
     if (errors.length) console.error('  ' + errors.join('\n  '));
     await shot('FAIL').catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// City event (deterministic via ?seed=12: the first event is a Fire hitting P4's only developed block).
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  try {
+    await page.goto(`${base}?seed=12`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    const road = (id) => page.locator(`#board [data-road="${id}"]`);
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await road(id).click(); // P4 claims A1
+    await page.locator('[data-block="r0c0"]').click();
+    await page.locator('#build-dialog [data-build="residential"]').click();
+    await road('h-6-5').click(); // round wraps → event
+
+    const card = page.locator('#event-dialog');
+    assert.ok(await card.isVisible());
+    assert.equal(await card.locator('.event-card__name').textContent(), 'Fire');
+    assert.match(await card.textContent(), /2 rounds left · Rounds 2–3/);
+    assert.match(await card.textContent(), /1 block affected/);
+    assert.match(await card.locator('.event-card__blocks').textContent(), /A1\s*Player 4/);
+    await page.screenshot({ path: 'test-results/event-fire-card.png' });
+    await page.click('#event-continue');
+
+    assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('is-event-hurt')), 'A1 marked');
+    assert.equal(await page.locator('#event-strip .event-pill').textContent(), 'Fire2r');
+    const income = page.locator('.player-card[data-seat="4"] .stat--income');
+    assert.match(await income.locator('dd').textContent(), /^\+\$0/, 'fire zeroes A1 income');
+    assert.equal(await income.getAttribute('data-normal'), '300');
+    assert.equal(await income.locator('.stat__event--down').count(), 1, 'HUD ▼');
+    await page.locator('[data-block="r0c0"]').click();
+    assert.match(await page.textContent('#inspector'), /Fire[\s\S]*no income[\s\S]*2 rounds/);
+    await page.screenshot({ path: 'test-results/event-fire-board.png' });
+
+    assert.deepEqual(errors, []);
+    console.log('✔ city event (seeded fire)');
+  } catch (err) {
+    failures++;
+    console.error(`✘ city event: ${err.message}`);
+    await page.screenshot({ path: 'test-results/event-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }
@@ -262,7 +326,10 @@ for (const vp of VIEWPORTS) {
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     // Set up a 3-block corridor along the top row without anyone capturing…
-    for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'v-0-0']) await road(id).click();
+    for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'v-0-0']) {
+      await road(id).click();
+      await dismissEvent(page);
+    }
     // …then P4 closes A1, B1, C1 in a chain.
     for (const id of ['v-0-1', 'v-0-2', 'v-0-3']) await road(id).click();
     assert.equal(await page.locator('#board .block--green').count(), 3, 'P4 chained 3 captures');
@@ -279,7 +346,7 @@ for (const vp of VIEWPORTS) {
     await panel.locator('[data-build="residential"]').click();
     assert.match(await page.textContent('#toasts'), /Bonus income \+\$180\/turn/);
     assert.equal(await income.locator('.stat__bonus').count(), 1, 'HUD ★');
-    assert.match(await income.locator('dd').textContent(), /\+\$1,080/, '3 × ($300 + 20%)');
+    assert.equal(await income.getAttribute('data-normal'), '1080', '3 × ($300 + 20%)');
     assert.match(await income.getAttribute('title'), /\$180 adjacency bonus/);
     assert.equal(await page.locator('#board .block__badge.has-bonus').count(), 3, 'badge stars');
     assert.match(await page.textContent("#inspector"), /Residential district[\s\S]*\+\$60/);

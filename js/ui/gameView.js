@@ -7,8 +7,10 @@ import {
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
-import { blockIncome, blockValue, bonusIncome, formatCash } from '../core/economy.js';
+import { blockValue, bonusIncome, formatCash } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
+import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
+import { effectiveBlockIncome, getEventDef } from '../core/events.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
@@ -45,10 +47,11 @@ function renderInspector(blockId) {
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
-      row('Income', owner ? `+${formatCash(blockIncome(block))}/turn` : '—'),
+      row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
       owner && row('Value', formatCash(blockValue(block))),
     ),
     owner && bonusList(block),
+    owner && eventLines(game, block),
     owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Vacant: no income until developed.'),
   ].filter(Boolean));
 }
@@ -79,6 +82,7 @@ function render() {
   renderHud(game);
   renderPrompt();
   renderInspector(getSelectedBlock());
+  renderEventStrip(game);
   renderActions();
 }
 
@@ -149,19 +153,36 @@ function handleRoad(id) {
   }
   if (result.gameEnded) {
     setTimeout(showResults, n > 0 ? 700 : 0);
-  } else if (result.turnIncome?.amount > 0) {
+    bus.emit('game:move', result);
+    return;
+  }
+  if (result.event?.started) {
+    showEventCard(game, result.event.started, result.event.expired);
+  } else if (result.event?.expired.length) {
+    toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
+  }
+  if (result.turnIncome?.amount > 0) {
     const payee = getPlayer(game, result.turnIncome.seat);
     toast(`${payee.name} collects ${formatCash(result.turnIncome.amount)} income`, { tone: 'success' });
   }
   bus.emit('game:move', result);
 }
 
+/** Optional ?seed=123 in the URL makes city events reproducible (handy for bug reports). */
+function seedFromUrl() {
+  const raw = new URLSearchParams(window.location.search).get('seed');
+  const n = raw == null ? NaN : Number(raw);
+  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+}
+
 function startGame(setup) {
   closeBuildPanel();
+  $('#event-dialog').close();
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['buildings', 'civic', 'parks', 'effects', 'markers', 'icons']);
   lastSetup = setup;
-  game = createGame(setup);
+  const seed = seedFromUrl();
+  game = createGame(seed === undefined ? setup : { ...setup, seed });
   chain = 0;
   clearSelection();
   render();
@@ -203,6 +224,7 @@ export function initGameView() {
   initBuildPanel({ onChange: handleDevelopment });
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   initDialogs();
+  initEventView({ getGame: () => game });
   bus.on('game:start', startGame);
   renderInspector(null);
 }

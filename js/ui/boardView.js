@@ -12,6 +12,7 @@ import { PLAYER_PRESETS } from '../config.js';
 import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/board.js';
 import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
 import { isDeveloped, MAX_LEVEL } from '../core/development.js';
+import { blockEventState } from './eventView.js';
 import { getPlayer, currentPlayer, PHASES } from '../core/game.js';
 
 let selectedId = null;
@@ -67,6 +68,7 @@ function blockDescription(game, block) {
     owner ? `claimed by ${owner.name}` : `${builtSides(game.board, block)} of 4 roads`,
     owner && describeDevelopment(block),
     block.bonusIncome > 0 && `bonus +$${block.bonusIncome} per turn`,
+    blockEventState(game, block).state && `city event: ${blockEventState(game, block).state}`,
   ].filter(Boolean).join(', ');
 }
 
@@ -95,6 +97,8 @@ function blockCell(game, block) {
   if (selected) cls.push('is-selected');
   if (fresh) cls.push('is-captured');
   if (justBuilt) cls.push('is-just-built');
+  const ev = blockEventState(game, block);
+  if (ev.state) cls.push(`is-event-${ev.state}`);
 
   return h('button', {
     type: 'button',
@@ -109,6 +113,7 @@ function blockCell(game, block) {
     art && createSprite(art.sprite, { className: 'block__building' }),
     color && !art && createSprite(`markers:seal-${color}`, { className: 'block__seal' }),
     developed && levelBadge(block),
+    ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
     color && createSprite(`markers:post-${color}`, { className: 'block__flag' }),
     fresh && createSprite('effects:sparkle', { className: 'block__fx' }),
     justBuilt && createSprite('effects:star-burst', { className: 'block__fx' }),
