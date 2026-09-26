@@ -807,3 +807,56 @@ html[data-coords='on'] .block__coord { display: block; }
   .build-option__art { width: 48%; }
   .build-panel__actions .btn { flex: 1; }
 }
+
+/* ---------- Bonuses ---------- */
+.bonus-list {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+.bonus-line {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background: rgba(253, 240, 196, 0.85);
+  border: 1.5px solid var(--gold-deep);
+  border-radius: 6px;
+}
+.bonus-line__star { color: var(--gold-deep); font-size: 0.9rem; line-height: 1; }
+.bonus-line__label { min-width: 0; font-weight: 800; }
+.bonus-line__pct { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.bonus-line__amt { color: #2d6a2d; font-weight: 900; font-variant-numeric: tabular-nums; }
+.bonus-line--shield {
+  grid-template-columns: 14px 1fr;
+  background: rgba(58, 94, 168, 0.12);
+  border-color: var(--blue);
+}
+.bonus-line__shield { width: 14px; }
+
+.stat__bonus {
+  margin-left: 3px;
+  color: var(--gold-deep);
+  font-size: 0.85em;
+  text-shadow: 0 1px 0 var(--ink);
+}
+.build-panel__bonus { color: var(--gold-deep); font-weight: 900; }
+
+.block__badge.has-bonus::after {
+  content: '★';
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  font-size: clamp(10px, 2cqw, 15px);
+  line-height: 1;
+  color: var(--gold);
+  -webkit-text-stroke: 1px var(--ink);
+  paint-order: stroke fill;
+}
+/* The inspector note is narrow: label + amount only (percentage is in the tooltip). */
+.inspector .bonus-line { grid-template-columns: 14px 1fr auto; }
+.inspector .bonus-line__pct { display: none; }

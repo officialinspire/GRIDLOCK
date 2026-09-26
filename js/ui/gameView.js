@@ -7,7 +7,8 @@ import {
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
-import { blockIncome, blockValue, formatCash } from '../core/economy.js';
+import { blockIncome, blockValue, bonusIncome, formatCash } from '../core/economy.js';
+import { bonusList } from './bonusView.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
@@ -47,6 +48,7 @@ function renderInspector(blockId) {
       row('Income', owner ? `+${formatCash(blockIncome(block))}/turn` : '—'),
       owner && row('Value', formatCash(blockValue(block))),
     ),
+    owner && bonusList(block),
     owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Vacant: no income until developed.'),
   ].filter(Boolean));
 }
@@ -78,6 +80,14 @@ function render() {
   renderPrompt();
   renderInspector(getSelectedBlock());
   renderActions();
+}
+
+/** Re-render after a build/upgrade and celebrate any new bonus income. */
+function handleDevelopment({ bonusBefore }) {
+  render();
+  const player = currentPlayer(game);
+  const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
+  if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
 }
 
 function handleBlockSelect(id) {
@@ -190,7 +200,7 @@ function initDialogs() {
 
 export function initGameView() {
   initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad });
-  initBuildPanel({ onChange: () => render() });
+  initBuildPanel({ onChange: handleDevelopment });
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   initDialogs();
   bus.on('game:start', startGame);

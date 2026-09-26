@@ -105,7 +105,7 @@ test('building deducts cash immediately and the block stores type/level/value/in
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
-    cash: 11000, blocks: 1, income: 500, property: 2500, netWorth: 13500,
+    cash: 11000, blocks: 1, income: 500, bonus: 0, property: 2500, netWorth: 13500,
   });
 });
 

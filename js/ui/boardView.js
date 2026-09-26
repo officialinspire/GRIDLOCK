@@ -66,6 +66,7 @@ function blockDescription(game, block) {
     DISTRICTS[block.district].label,
     owner ? `claimed by ${owner.name}` : `${builtSides(game.board, block)} of 4 roads`,
     owner && describeDevelopment(block),
+    block.bonusIncome > 0 && `bonus +$${block.bonusIncome} per turn`,
   ].filter(Boolean).join(', ');
 }
 
@@ -74,7 +75,8 @@ function levelBadge(block) {
   const cat = getCategory(block.type);
   const pips = Array.from({ length: MAX_LEVEL }, (_, i) =>
     h('span', { class: `pip${i < block.level ? ' is-on' : ''}` }));
-  return h('span', { class: `block__badge block__badge--${block.type}`, 'aria-hidden': 'true', title: describeDevelopment(block) },
+  const bonus = block.bonusIncome > 0;
+  return h('span', { class: `block__badge block__badge--${block.type}${bonus ? ' has-bonus' : ''}`, 'aria-hidden': 'true', title: describeDevelopment(block) },
     createSprite(cat.icon, { className: 'block__badge-icon' }),
     h('span', { class: 'block__badge-pips' }, pips),
   );

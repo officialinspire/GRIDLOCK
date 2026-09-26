@@ -43,7 +43,11 @@ export function createBoard(rows = BOARD_ROWS, cols = BOARD_COLS) {
         type: 'vacant',
         level: 0,
         value: district.price, // land + invested
-        income: ECONOMY.UNDEVELOPED_INCOME,
+        income: ECONOMY.UNDEVELOPED_INCOME, // base income for the level
+        // Derived by core/bonuses.js refreshBonuses() — never edited directly.
+        bonuses: [],
+        bonusIncome: 0,
+        protectedBy: [],
       });
     }
   }

@@ -83,14 +83,24 @@ export function canAfford(player, cost) {
   return isValidAmount(cost) && isValidBalance(player) && player.cash >= cost;
 }
 
-/**
- * Recurring income a block pays its owner at the start of each of their turns.
- * Reads the income stored on the block by core/development.js; a corrupted
- * value counts as $0 rather than poisoning totals with NaN.
- */
-export function blockIncome(block) {
+/** Base income for the block's development level (no bonuses). */
+export function baseIncome(block) {
   if (block.ownerSeat == null) return 0;
   return isValidAmount(block.income) ? block.income : 0;
+}
+
+/** Adjacency/district bonus income stored by core/bonuses.js. */
+export function bonusIncome(block) {
+  if (block.ownerSeat == null) return 0;
+  return isValidAmount(block.bonusIncome) ? block.bonusIncome : 0;
+}
+
+/**
+ * Recurring income a block pays its owner at the start of each of their turns:
+ * base + bonuses. Corrupted values count as $0 rather than poisoning totals with NaN.
+ */
+export function blockIncome(block) {
+  return baseIncome(block) + bonusIncome(block);
 }
 
 /** Income the player will collect at the start of their next turn. */

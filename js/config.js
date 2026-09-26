@@ -72,6 +72,29 @@ export const ECONOMY = Object.freeze({
       3: Object.freeze({ cost: 2, income: 3 }),
     }),
   }),
+
+  /**
+   * Adjacency / district bonuses (core/bonuses.js). Percentages apply to a
+   * block's BASE income (its level income), never to other bonuses, so bonuses
+   * can't compound. Each bonus type applies at most once per block.
+   * "Connected" means orthogonally adjacent (sharing a road), same owner,
+   * developed (Level 1+).
+   */
+  BONUSES: Object.freeze({
+    /** 3+ connected Residential blocks: each gets +percent. */
+    RESIDENTIAL_DISTRICT: Object.freeze({ minSize: 3, percent: 20 }),
+    /** 3+ connected Commercial blocks: each gets +percent. */
+    COMMERCIAL_DISTRICT: Object.freeze({ minSize: 3, percent: 25 }),
+    /** Each directly adjacent Park adds +percentPerPark to a Residential block (up to maxParks). */
+    PARK_ADJACENCY: Object.freeze({ percentPerPark: 10, maxParks: 2, sameOwnerOnly: true }),
+    /** A connected cluster of Residential/Commercial/Park containing all three: each member gets +percent. */
+    MIXED_USE: Object.freeze({ percent: 10 }),
+    /**
+     * Civic protection radius (Manhattan distance, in blocks) by civic level.
+     * Hook only: marks protected blocks for future city events; no income effect.
+     */
+    CIVIC_PROTECTION: Object.freeze({ radiusByLevel: Object.freeze({ 1: 1, 2: 1, 3: 2 }), sameOwnerOnly: true }),
+  }),
 });
 
 export const MAX_NAME_LENGTH = 16;

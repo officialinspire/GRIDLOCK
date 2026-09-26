@@ -11,7 +11,8 @@ import { CATEGORY_ORDER, getCategory, levelArt, describeDevelopment } from '../c
 import {
   quoteBuild, quoteUpgrade, buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL, DEV_ERRORS,
 } from '../core/development.js';
-import { formatCash } from '../core/economy.js';
+import { formatCash, blockIncome, bonusIncome } from '../core/economy.js';
+import { bonusList } from './bonusView.js';
 import { currentPlayer } from '../core/game.js';
 import { toast } from './toast.js';
 
@@ -46,7 +47,8 @@ function header(block, player) {
       ),
       h('p', { class: 'build-panel__stats' },
         pips(block.level),
-        h('span', {}, `+${formatCash(block.income)}/turn`),
+        h('span', {}, `+${formatCash(blockIncome(block))}/turn`),
+        bonusIncome(block) > 0 && h('span', { class: 'build-panel__bonus' }, `★ incl. ${formatCash(bonusIncome(block))} bonus`),
         h('span', {}, `Value ${formatCash(block.value)}`),
       ),
     ),
@@ -99,7 +101,7 @@ function vacantView(game, block, player) {
 
 function developedView(game, block, player) {
   const cat = getCategory(block.type);
-  const nodes = [header(block, player)];
+  const nodes = [header(block, player), bonusList(block)];
   if (block.level >= MAX_LEVEL) {
     nodes.push(h('p', { class: 'build-panel__maxed' },
       createSprite('icons:crown', { className: 'build-panel__maxed-icon' }),
@@ -113,7 +115,7 @@ function developedView(game, block, player) {
         h('span', { class: 'upgrade-card__to' }, `Upgrade to Level ${block.level + 1}`),
         h('strong', { class: 'upgrade-card__name' }, next.name),
         h('span', { class: 'upgrade-card__gain' },
-          `Income ${formatCash(block.income)} → ${formatCash(quote.income)}/turn (+${formatCash(quote.incomeGain)})`),
+          `Base income ${formatCash(block.income)} → ${formatCash(quote.income)}/turn (+${formatCash(quote.incomeGain)})`),
         quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
           && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
       ),
@@ -147,7 +149,12 @@ function refuse(error, shortfall) {
   toast(text, { tone: 'warn', duration: 1800 });
 }
 
-function handleResult(result, verb) {
+function playerBonus() {
+  const seat = currentPlayer(state.game).seat;
+  return state.game.board.blocks.filter((b) => b.ownerSeat === seat).reduce((s, b) => s + bonusIncome(b), 0);
+}
+
+function handleResult(result, verb, bonusBefore) {
   if (!result.ok) {
     refuse(result.error, result.shortfall);
     render();
@@ -156,7 +163,7 @@ function handleResult(result, verb) {
   const block = getBlockById(state.game.board, result.block);
   toast(`${verb} ${describeDevelopment(block)} · −${formatCash(result.cost)}`, { tone: 'success' });
   $('#build-dialog').close();
-  state.onChange(result);
+  state.onChange({ ...result, bonusBefore });
 }
 
 /** True if the current player may open the panel for this block. */
@@ -186,8 +193,9 @@ export function initBuildPanel({ onChange }) {
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) return dialog.close(); // backdrop
     const build = e.target.closest('[data-build]');
-    if (build) return handleResult(buildOnBlock(state.game, state.blockId, build.dataset.build), 'Built');
-    if (e.target.closest('[data-upgrade]')) return handleResult(upgradeBlock(state.game, state.blockId), 'Upgraded to');
+    const bonusBefore = playerBonus();
+    if (build) return handleResult(buildOnBlock(state.game, state.blockId, build.dataset.build), 'Built', bonusBefore);
+    if (e.target.closest('[data-upgrade]')) return handleResult(upgradeBlock(state.game, state.blockId), 'Upgraded to', bonusBefore);
     if (e.target.closest('[data-action="close"]')) dialog.close();
   });
 }

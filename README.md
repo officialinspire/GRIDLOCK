@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.4 development.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), turn income, the HUD and a results screen. City events come in a later phase.
+> **Status: v0.5 bonuses.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, turn income, the HUD and a results screen. City events come in a later phase.
 
 ## How it plays
 
@@ -49,6 +49,22 @@ Only Level 1 is set per category (`ECONOMY.DEVELOPMENT.CATEGORIES`). Levels 2–
 
 Each block stores its `type`, `level`, `value` (land + invested) and `income`. The board shows the building art plus a badge with the category icon and level pips. Names and art per level live in `core/buildings.js`.
 
+### Adjacency & district bonuses
+
+All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means orthogonally adjacent blocks with the same owner that are developed (Level 1+).
+
+| Bonus | Rule | Default |
+| --- | --- | --- |
+| Residential district | 3+ connected Residential | +20% each |
+| Commercial district | 3+ connected Commercial | +25% each |
+| Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +10% per park |
+| Mixed-use | A connected Residential/Commercial/Park cluster containing all three | +10% each member |
+| Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Hook only: `isProtected(block)` for future events |
+
+`core/bonuses.js` → `refreshBonuses(board)` recomputes everything from scratch after every capture and every build/upgrade. The results are stored on each block as `bonuses`, `bonusIncome` and `protectedBy`. There's no incremental state, so nothing goes stale. Bonuses are a percentage of the block's **base** (level) income and never compound on each other. Each bonus type applies at most once per block, and connected groups are found with an iterative flood fill that tracks visited blocks, so cycles can't double count. Turn income pays base plus bonuses.
+
+In the UI: the HUD income includes bonuses, with a small ★ and a tooltip giving the bonus amount. Board badges get a ★ when a block earns a bonus. The details panel and Build panel list each bonus and any civic protection. A toast announces newly gained bonus income.
+
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
 
 ## Play locally
@@ -84,6 +100,7 @@ js/
     economy.js             Safe credit/debit + ledger, rewards, turn income, property value
     buildings.js           Development categories: names, blurbs and art per level
     development.js         Build/upgrade rules, quotes and derived cost/income tables
+    bonuses.js             Adjacency/district bonuses + civic protection (pure recompute)
     events.js              City event catalogue (not wired in yet)
     settings.js            Persisted settings (localStorage, fails safe)
     bus.js                 Pub/sub between core and UI
@@ -94,6 +111,7 @@ js/
     hud.js                 Player cards, round & turn banner
     gameView.js            Game controller (moves, capture feedback, results, pause)
     buildPanel.js          Build/Upgrade panel for the current player's blocks
+    bonusView.js           Shared bonus/protection lines
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -102,6 +120,7 @@ tests/
   unit/dots-and-boxes.test.mjs  Road geometry, rotation, edge/corner/double/chain captures, full games
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
+  unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
@@ -133,4 +152,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

@@ -8,8 +8,9 @@ import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
 } from './board.js';
 import {
-  calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount,
+  calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
 } from './economy.js';
+import { refreshBonuses } from './bonuses.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 
@@ -83,10 +84,12 @@ export function getPlayer(game, seat) {
 /** Everything the HUD shows for a player. `income` is paid at the start of their next turn. */
 export function playerStats(game, player) {
   const property = propertyValue(game.board, player.seat);
+  const owned = blocksOwnedBy(game.board, player.seat);
   return {
     cash: player.cash,
-    blocks: blocksOwnedBy(game.board, player.seat).length,
-    income: calculateIncome(game.board, player.seat),
+    blocks: owned.length,
+    income: calculateIncome(game.board, player.seat), // base + bonuses
+    bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
     property,
     netWorth: player.cash + property,
   };
@@ -165,6 +168,7 @@ export function placeRoad(game, id) {
     }
   }
 
+  if (captured.length) refreshBonuses(board); // ownership changed
   const reward = captured.length ? payCaptureReward(game, currentPlayer(game), captured) : 0;
 
   game.lastMove = { road: id, seat, captured, reward };

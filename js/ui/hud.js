@@ -31,6 +31,19 @@ function stat(key, label, value, icon, hint = label) {
   );
 }
 
+/** Income (base + bonuses). A small ★ marks bonus income; details live in the tooltip / block info. */
+function incomeStat(stats) {
+  const hint = stats.bonus > 0
+    ? `Income paid at the start of each turn, including ${formatCash(stats.bonus)} adjacency bonus`
+    : 'Income paid at the start of each turn';
+  const el = stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', hint);
+  if (stats.bonus > 0) {
+    el.classList.add('has-bonus');
+    el.querySelector('dd').append(h('span', { class: 'stat__bonus', 'aria-label': `includes ${formatCash(stats.bonus)} bonus` }, '★'));
+  }
+  return el;
+}
+
 /** Counts the displayed cash from `from` to `to`, easing out. */
 function tweenCash(seat, el, from, to) {
   cancelAnimationFrame(tweens.get(seat));
@@ -119,7 +132,7 @@ function playerCard(game, seat) {
     h('dl', { class: 'player-card__stats' },
       stat('cash', 'Cash', formatCash(shownCash.get(seat) ?? stats.cash), 'icons:coins'),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
-      stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', 'Income paid at the start of each turn'),
+      incomeStat(stats),
       stat('property', 'Property', formatCash(stats.property), 'icons:building', 'Net property value (land + buildings)'),
     ),
   );

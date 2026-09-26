@@ -8,6 +8,7 @@ import { ECONOMY } from '../config.js';
 import { getBlockById } from './board.js';
 import { VACANT, CATEGORY_ORDER, getCategory } from './buildings.js';
 import { debit, canAfford, TXN, isValidAmount } from './economy.js';
+import { refreshBonuses } from './bonuses.js';
 import { currentPlayer, PHASES } from './game.js';
 
 const DEV = ECONOMY.DEVELOPMENT;
@@ -137,6 +138,7 @@ function commit(game, block, quote, reason) {
   // quote already checked affordability; this guards against state changing in between.
   if (!paid.ok) return { ok: false, error: DEV_ERRORS.INSUFFICIENT_FUNDS };
   applyDevelopment(block, quote.type, quote.level);
+  refreshBonuses(game.board); // development changed
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level };
   game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });
   return { ok: true, block: block.id, type: block.type, level: block.level, cost: quote.cost, income: block.income, value: block.value };

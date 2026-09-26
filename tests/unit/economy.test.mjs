@@ -44,7 +44,7 @@ test('every player starts with $12,000', () => {
   const game = four();
   assert.deepEqual(game.players.map((p) => p.cash), [12000, 12000, 12000, 12000]);
   assert.deepEqual(playerStats(game, game.players[0]), {
-    cash: 12000, blocks: 0, income: 0, property: 0, netWorth: 12000,
+    cash: 12000, blocks: 0, income: 0, bonus: 0, property: 0, netWorth: 12000,
   });
 });
 
