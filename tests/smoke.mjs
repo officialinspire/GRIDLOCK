@@ -19,8 +19,15 @@ async function loadPlaywright() {
   }
 }
 
-const { chromium } = await loadPlaywright();
-const launchOpts = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {};
+const playwright = await loadPlaywright();
+const browserName = process.env.BROWSER ?? 'chromium';
+const browserType = playwright[browserName];
+if (!['chromium', 'webkit', 'firefox'].includes(browserName) || !browserType) {
+  throw new Error(`Unsupported BROWSER=${browserName}; expected chromium, webkit, or firefox`);
+}
+const launchOpts = browserName === 'chromium' && process.env.CHROMIUM_PATH
+  ? { executablePath: process.env.CHROMIUM_PATH }
+  : {};
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -37,7 +44,8 @@ async function dismissEvent(page) {
 
 const server = await startServer(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
-const browser = await chromium.launch(launchOpts);
+const browser = await browserType.launch(launchOpts);
+console.log(`Running smoke tests in ${browserName}`);
 await rm('test-results', { recursive: true, force: true });
 await mkdir('test-results', { recursive: true });
 
@@ -48,10 +56,32 @@ async function noHorizontalScroll(page, label) {
   assert.ok(overflow <= 1, `${label}: horizontal overflow of ${overflow}px`);
 }
 
+function watchForBrowserErrors(page) {
+  const errors = [];
+  const optionalFont = (url) => /fonts\.(?:googleapis|gstatic)\.com/.test(url);
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+  page.on('console', (message) => {
+    const source = message.location().url ?? '';
+    if (message.type() === 'error' && !optionalFont(source)) errors.push(`console: ${message.text()}`);
+    if (message.type() === 'warning' && /\[assets\]/.test(message.text())) errors.push(`asset warning: ${message.text()}`);
+  });
+  page.on('requestfailed', (request) => {
+    if (!optionalFont(request.url())) errors.push(`requestfailed: ${request.url()}`);
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !optionalFont(response.url())) {
+      errors.push(`HTTP ${response.status()}: ${response.url()}`);
+    }
+  });
+  return errors;
+}
+
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
-    isMobile: vp.isMobile ?? false,
+    // Firefox does not implement Playwright's mobile emulation. Touch-specific
+    // coverage still runs there in a touch-enabled desktop context below.
+    ...(browserName === 'firefox' ? {} : { isMobile: vp.isMobile ?? false }),
     hasTouch: vp.hasTouch ?? false,
     deviceScaleFactor: 1,
     reducedMotion: 'reduce', // stable screenshots
@@ -65,12 +95,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => m.type() === 'error' && !/fonts\.g/.test(m.text() + m.location().url) && errors.push(`console: ${m.text()}`));
-  page.on('console', (m) => m.type() === 'warning' && /\[assets\]/.test(m.text()) && errors.push(`warn: ${m.text()}`));
-  page.on('requestfailed', (r) => !/fonts\.g/.test(r.url()) && errors.push(`requestfailed: ${r.url()}`));
-  page.on('response', (r) => r.status() >= 400 && errors.push(`HTTP ${r.status()}: ${r.url()}`));
+  const errors = watchForBrowserErrors(page);
 
   const shot = (step) => page.screenshot({ path: `test-results/${vp.name}-${step}.png` });
 
@@ -310,8 +335,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=5&debug`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -407,8 +431,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=12`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -460,8 +483,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -523,8 +545,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -580,9 +601,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('response', (r) => r.status() >= 400 && errors.push(`HTTP ${r.status()} ${r.url()}`));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
     const btn = await page.locator('[data-nav="setup"]').evaluate((el) => getComputedStyle(el).borderImageSource);
@@ -631,8 +650,7 @@ for (const vp of VIEWPORTS) {
   });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -696,6 +714,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -711,6 +730,7 @@ for (const vp of VIEWPORTS) {
       document.querySelector('.player-card[data-seat="4"] .stat--cash dd')?.textContent === '$12,500');
     await page.waitForTimeout(250);
     await page.screenshot({ path: 'test-results/money-animation.png' });
+    assert.deepEqual(errors, []);
     console.log('✔ money animation');
   } catch (err) {
     failures++;

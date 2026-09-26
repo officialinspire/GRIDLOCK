@@ -146,6 +146,18 @@ export function incomeMultiplier(game, block) {
   return clamp(m);
 }
 
+/** Net board presentation after every active modifier and civic shield is combined. */
+export function blockEventState(game, block) {
+  const impacts = blockImpacts(game, block);
+  if (!impacts.length) return { state: null, lead: null };
+  const live = impacts.filter((impact) => !impact.mitigated);
+  if (!live.length) return { state: 'shielded', lead: impacts[0] };
+  const multiplier = incomeMultiplier(game, block);
+  if (multiplier < 1) return { state: 'hurt', lead: live.find((impact) => impact.multiplier < 1) ?? live[0] };
+  if (multiplier > 1) return { state: 'boost', lead: live.find((impact) => impact.multiplier > 1) ?? live[0] };
+  return { state: null, lead: null };
+}
+
 /** Income a block actually pays this turn: (base + bonuses) × event multiplier, whole dollars. */
 export function effectiveBlockIncome(game, block) {
   return Math.round(blockIncome(block) * incomeMultiplier(game, block));

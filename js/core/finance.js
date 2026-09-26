@@ -58,7 +58,7 @@ export function quoteDowngrade(game, blockId) {
   const block = getBlockById(game.board, blockId);
   const error = ownerCheck(game, block);
   if (error) return { ok: false, error, refund: 0 };
-  const removed = TABLE[block.type][block.level].cost;
+  const removed = block.constructionCosts?.at(-1) ?? TABLE[block.type][block.level].cost;
   return { ok: true, fromLevel: block.level, toLevel: block.level - 1, removed, refund: pct(removed, FIN.SALE_REFUND_PERCENT) };
 }
 
@@ -74,7 +74,9 @@ export function quoteSale(game, blockId) {
 function commitSale(game, block, quote, kind) {
   const player = currentPlayer(game);
   const type = block.type;
-  applyDevelopment(block, quote.toLevel === 0 ? 'vacant' : type, quote.toLevel);
+  applyDevelopment(block, quote.toLevel === 0 ? 'vacant' : type, quote.toLevel, {
+    constructionCosts: (block.constructionCosts ?? []).slice(0, quote.toLevel),
+  });
   refreshBonuses(game.board);
   credit(game, player, quote.refund, TXN.SALE, { block: block.id, type, fromLevel: quote.fromLevel, toLevel: quote.toLevel });
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, sold: true };

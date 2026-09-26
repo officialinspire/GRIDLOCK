@@ -59,7 +59,7 @@ function renderInspector(blockId, panel = $('#inspector')) {
       row('Owner', owner ? owner.name : 'Unclaimed'),
       row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
       owner && row('Upkeep', `−${formatCash(blockUpkeep(block))}/turn`),
-      owner && row('Value', formatCash(blockValue(block))),
+      owner && row('City value', formatCash(blockValue(block))),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),

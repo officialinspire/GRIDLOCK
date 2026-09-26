@@ -67,16 +67,26 @@ export function levelStats(type, level) {
 /* ---------------- block state ---------------- */
 
 /**
- * Sets a block's development and refreshes its stored value and income.
- * value = land price + everything invested in buildings on it.
+ * Sets a block's development and refreshes its accounting values.
+ * `constructionCosts` contains the actual price paid for each retained level.
+ * Direct setup callers omit it and receive the normal list-price basis.
  */
-export function applyDevelopment(block, type, level) {
+export function applyDevelopment(block, type, level, { constructionCosts } = {}) {
   const stats = levelStats(type, level);
   if (!stats) throw new RangeError(`Invalid development ${type} L${level}`);
+  const actualCosts = constructionCosts ?? (level === 0
+    ? []
+    : Array.from({ length: level }, (_, i) => TABLE[type][i + 1].cost));
+  if (actualCosts.length !== level || actualCosts.some((cost) => !isValidAmount(cost))) {
+    throw new RangeError(`Invalid construction cost basis for ${type} L${level}`);
+  }
   block.type = level === 0 ? VACANT : type;
   block.level = level;
   block.income = stats.income;
-  block.value = block.price + stats.invested;
+  block.constructionCosts = [...actualCosts];
+  block.investedCostBasis = actualCosts.reduce((sum, cost) => sum + cost, 0);
+  block.marketValue = block.price + stats.invested;
+  block.value = block.price + block.investedCostBasis;
   return block;
 }
 
@@ -107,7 +117,7 @@ export function quoteBuild(game, blockId, type) {
   const next = TABLE[type][1];
   const player = currentPlayer(game);
   const cost = adjustedCost(game, type, next.cost); // active city events can change prices
-  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  Object.assign(quote, { cost, actualCost: cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
   if (!canAfford(player, cost)) {
     return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
@@ -126,7 +136,7 @@ export function quoteUpgrade(game, blockId) {
   const next = TABLE[block.type][block.level + 1];
   const player = currentPlayer(game);
   const cost = adjustedCost(game, block.type, next.cost);
-  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  Object.assign(quote, { cost, actualCost: cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
   if (!canAfford(player, cost)) {
     return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
@@ -140,7 +150,9 @@ function commit(game, block, quote, reason) {
   const paid = debit(game, player, quote.cost, reason, { block: block.id, type: quote.type, level: quote.level });
   // quote already checked affordability; this guards against state changing in between.
   if (!paid.ok) return { ok: false, error: DEV_ERRORS.INSUFFICIENT_FUNDS };
-  applyDevelopment(block, quote.type, quote.level);
+  applyDevelopment(block, quote.type, quote.level, {
+    constructionCosts: [...(block.constructionCosts ?? []), quote.actualCost],
+  });
   refreshBonuses(game.board); // development changed
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level };
   game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });

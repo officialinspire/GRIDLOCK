@@ -42,7 +42,12 @@ export function createBoard(rows = BOARD_ROWS, cols = BOARD_COLS) {
         // Development (managed by core/development.js). Every block starts Vacant, Level 0.
         type: 'vacant',
         level: 0,
-        value: district.price, // land + invested
+        // Accounting is explicit: constructionCosts are the actual amounts paid,
+        // investedCostBasis is their total, and marketValue uses list prices.
+        constructionCosts: [],
+        investedCostBasis: 0,
+        marketValue: district.price,
+        value: district.price, // land + invested cost basis (legacy/UI convenience)
         income: ECONOMY.UNDEVELOPED_INCOME, // base income for the level
         // Derived by core/bonuses.js refreshBonuses() — never edited directly.
         bonuses: [],

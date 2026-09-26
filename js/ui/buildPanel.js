@@ -54,7 +54,7 @@ function header(block, player) {
         pips(block.level),
         h('span', {}, `+${formatCash(blockIncome(block))}/turn`),
         bonusIncome(block) > 0 && h('span', { class: 'build-panel__bonus' }, `★ incl. ${formatCash(bonusIncome(block))} bonus`),
-        h('span', {}, `Value ${formatCash(block.value)}`),
+        h('span', {}, `City value ${formatCash(block.value)}`),
       ),
     ),
     h('div', { class: 'build-panel__cash' },

@@ -31,7 +31,7 @@ ES modules don't load from `file://`, so open the game through a local server.
 
 **Debt:** if upkeep takes you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** (other players can buy and restore them), the debt is wiped, and you restart with $2,000.
 
-**End:** when every block is enclosed, the highest **City Value** (cash + land + buildings) wins. See [Scoring](#scoring).
+**End:** when every block is enclosed, any players who have not yet received that round's income/upkeep are settled first. The highest **City Value** (cash + land + actual construction cost invested) then wins. See [Scoring](#scoring).
 
 ### Controls
 
@@ -48,7 +48,8 @@ Settings (saved on the device): sound effects, tap twice to pave, reduce motion 
 
 `core/scoring.js` is pure and deterministic.
 
-- **City Value** = cash + land value (price of every owned block) + building value (development invested in them). Debt lowers it, and abandoned blocks count for nobody.
+- **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
+- **City Value** = cash + land value (price of every owned block) + the actual construction cost invested in retained building levels. Event discounts and surcharges change both cash paid and cost basis, so constructing never creates or destroys City Value by itself. Debt lowers it, and abandoned blocks count for nobody.
 - **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
 - **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, and any distinctions. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
 - **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
@@ -63,7 +64,7 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Capture reward | $500 per block claimed (a double capture pays $1,000) |
 | Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
 | Undeveloped blocks | $0 recurring income |
-| Net property value | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus building cost |
+| City value of property | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus actual invested construction cost basis |
 | Net worth | Cash plus net property value |
 
 ### Development
@@ -86,7 +87,7 @@ Only Level 1 is set per category (`ECONOMY.DEVELOPMENT.CATEGORIES`). Levels 2–
 - Cash is deducted immediately.
 - A category can't be changed once built.
 
-Each block stores its `type`, `level`, `value` (land + invested) and `income`. The board shows the building art plus a badge with the category icon and level pips. Names and art per level live in `core/buildings.js`.
+Each block stores its `type`, `level`, `income`, per-level actual `constructionCosts`, cumulative `investedCostBasis`, and optional list-price `marketValue`. Scoring uses land plus `investedCostBasis`; `marketValue` is informational and does not grant free City Value after a discount. The board shows the building art plus a badge with the category icon and level pips. Names and art per level live in `core/buildings.js`.
 
 ### Adjacency & district bonuses
 
@@ -125,9 +126,9 @@ How it stays safe (`core/events.js`):
 - **No duplicates:** re-drawing an active event refreshes its duration instead of adding a second copy. Overlapping different events multiply, clamped to ×0–×2.
 - **Civic mitigation:** emergencies skip any block inside a civic protection radius (`isProtected`). This is checked live, so building a civic mid-event helps immediately.
 - **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Add `?seed=123` to the URL to replay a game's events. Fire is capped and spread out: at most 2 targets, 1 per player.
-- **Prices:** cost events change what you pay, but block value uses the list price.
+- **Prices and value:** cost events change the actual price paid. That amount becomes the level's invested cost basis and is used by upkeep, refunds, property City Value and final scoring. A separate list-price market value is retained only as optional information.
 
-In the UI, a papercraft event card lists the affected blocks, anything shielded, and the duration. Active events show as pills under the top bar (tap one to reopen its card). Affected blocks get a red, green or blue outline and the event's icon. The details panel lists each event on a block, the HUD income shows ▲/▼ with a tooltip, and the Build panel shows adjusted prices.
+In the UI, a papercraft event card lists the affected blocks, anything shielded, and the duration. Active events show as pills under the top bar (tap one to reopen its card). Affected blocks get a red, green or blue outline based on the final combined multiplier across all events (not whichever modifier is listed first). The details panel lists each event on a block, the HUD income shows ▲/▼ with a tooltip, and the Build panel shows adjusted prices.
 
 ### Financial failure & recovery
 
@@ -160,6 +161,12 @@ The repo root **is** the site: `index.html`, `css/`, `js/`, `assets/generated/` 
 2. In the repository, go to **Settings → Pages**.
 3. Under **Build and deployment**, choose **Source: Deploy from a branch**, **Branch: `main`**, **Folder: `/ (root)`**, then **Save**.
 4. After a minute or so the game is live at `https://<user>.github.io/<repo>/`.
+
+Before merging a release, wait for the **CI / Unit tests and Pages checks** job and
+all three **CI / Browser smoke** jobs to pass. The Pages check confirms that
+`index.html` and `.nojekyll` are at the repository root, that every local URL in
+the entry page is relative (so `/GRIDLOCK/` works), and that each referenced file
+is committed. No Pages build command or output directory is required.
 
 Notes:
 - `.nojekyll` is included so GitHub serves every file unchanged. The file names with spaces work because all URLs are encoded.
@@ -282,8 +289,19 @@ Open `dev/sprites.html` through the local server to see every crop.
 ## Tests
 
 ```bash
-npm test             # unit tests (node:test)
-npm run test:smoke   # browser smoke test; screenshots → test-results/
+npm ci                         # install the locked development dependencies
+npm test                       # unit tests + original-art and Pages checks
+npx playwright install         # first-time local browser installation
+npm run test:smoke:chromium    # browser smoke; screenshots → test-results/
+npm run test:smoke:webkit
+npm run test:smoke:firefox
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+`npm run test:smoke` defaults to Chromium; set `BROWSER=chromium`, `webkit`, or
+`firefox` to select an engine. GitHub Actions runs unit tests on every push and
+pull request, then runs the complete smoke suite independently in all three
+engines. A browser job fails on an uncaught JavaScript error, console error,
+asset/request failure, assertion failure, or horizontal page overflow. Failure
+screenshots are uploaded as workflow artifacts.
+
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
