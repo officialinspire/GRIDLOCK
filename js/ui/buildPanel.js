@@ -280,8 +280,11 @@ function handleAuction(mode) {
   }
   const winner = getPlayer(state.game, result.winnerSeat);
   toast(`${winner.name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
+  const reopen = result.mode === ACQUIRE_MODES.REBUILD;
   $('#build-dialog').close();
   state.onChange({ ...result, bonusBefore: Infinity });
+  // A cleared lot goes straight to choosing what to build (only if the winner is on turn).
+  if (reopen) openBuildPanel(state.game, result.block);
 }
 
 /** True if the current player may open the panel: their own block, or an abandoned one. */

@@ -310,12 +310,14 @@ for (const vp of VIEWPORTS) {
     await page.locator('[data-block="r0c0"]').click();
     await panel.locator('[data-auction="restore"]').click();
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')));
+    assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel closes');
     await page.locator('[data-block="r0c1"]').click();
     assert.equal(await panel.locator('[data-auction="restore"]').count(), 0);
     await panel.locator('[data-auction="rebuild"]').click();
     assert.ok(await page.locator('[data-block="r0c1"]').evaluate((el) => el.classList.contains('block--green')), 'auction winner owns cleared lot');
-    await page.locator('[data-block="r0c1"]').click();
-    assert.ok(await panel.isVisible(), 'cleared lot can be developed immediately on the same manage phase');
+    assert.ok(await panel.isVisible(), 'Clear & Rebuild reopens build selection');
+    assert.equal(await panel.locator('[data-auction]').count(), 0, 'reopened on the build choices, not the auction');
+    assert.ok(await panel.locator('[data-build="park"]').count(), 'build categories offered');
     await panel.locator('[data-build="park"]').click();
     assert.equal(await page.locator('#board .block--abandoned').count(), 0);
     assert.deepEqual(errors, []);
