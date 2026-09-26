@@ -63,8 +63,13 @@ function roadCell(game, dir, r, c) {
 
   const who = built ? getPlayer(game, builder)?.name : null;
   const owner = built ? PLAYER_PRESETS[builder - 1] : null;
-  const disabled = built || game.phase !== PHASES.PLAYING
-    || ![TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
+  // MANAGE_CITY intentionally leaves open roads interactive: selecting one is
+  // equivalent to choosing “Pave Road” and the core commits the phase before
+  // placing it. This keeps the explicit phase button while preserving the
+  // direct tabletop gesture. Capture/develop and ended games remain locked.
+  const phaseAllowsRoad = [TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
+  const disabled = built || game.phase !== PHASES.PLAYING || !phaseAllowsRoad;
+  const distress = game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game));
   return h('button', {
     type: 'button',
     class: cls.join(' '),
@@ -74,7 +79,9 @@ function roadCell(game, dir, r, c) {
     'data-owner-symbol': owner?.symbol,
     'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}, ${owner.symbol}` : `Pave ${roadLabel(dir, r, c)}`,
     disabled,
-    'aria-disabled': disabled ? 'true' : null,
+    // Distress is an explanatory lock rather than a native-disabled control:
+    // selecting an open road lets the controller reopen Resolve Debt feedback.
+    'aria-disabled': disabled || distress ? 'true' : null,
   }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
     built && createSprite(ART.road[dir], { className: 'road__tile' }),
     built && h('span', { class: 'road__owner-mark' }, owner.mark)));
@@ -201,8 +208,15 @@ export function renderBoard(game) {
   const focusedMatch = focusKey ? el.querySelector(focusKey) : null;
   const focusTarget = focusedMatch?.matches('.block, .road:not(:disabled)') ? focusedMatch : null;
   const candidates = [...el.querySelectorAll('.block, .road:not(:disabled)')];
-  const roving = focusTarget ?? (rovingKey && el.querySelector(rovingKey)) ?? candidates[0];
+  const remembered = rovingKey ? el.querySelector(rovingKey) : null;
+  const rememberedCandidate = remembered?.matches('.block, .road:not(:disabled)') ? remembered : null;
+  const roving = focusTarget ?? rememberedCandidate ?? candidates[0] ?? null;
   candidates.forEach((cell) => { cell.tabIndex = cell === roving ? 0 : -1; });
+  if (roving) {
+    rovingKey = roving.dataset.road ? `[data-road="${roving.dataset.road}"]` : `[data-block="${roving.dataset.block}"]`;
+  } else {
+    rovingKey = null;
+  }
   if (focusTarget) focusTarget.focus({ preventScroll: true });
 }
 
