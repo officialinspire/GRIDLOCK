@@ -90,8 +90,13 @@
           <span class="howto-card__icon" data-sprite="icons:coins"></span>
           <h3>Money</h3>
           <p>Every mayor starts with <strong data-econ="STARTING_CASH">$12,000</strong>. Each block you claim pays <strong data-econ="CAPTURE_REWARD">$500</strong>.</p>
-          <p>At the start of your turn you collect income from your <em>developed</em> blocks. Empty lots earn nothing.</p>
-          <p class="coming-soon">Building on blocks arrives in a later phase.</p>
+          <p>At the start of your turn you collect income from your <em>developed</em> blocks. Vacant lots earn nothing.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:building"></span>
+          <h3>Develop</h3>
+          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). On your turn, tap one of your blocks to build Residential, Commercial, Park, Civic, Industrial or a Landmark, then upgrade it up to <strong>Level 3</strong> for more income.</p>
+          <p>Costs are paid immediately. You can also leave a block vacant.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
@@ -201,6 +206,10 @@
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
       </footer>
+
+      <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">
+        <div class="build-panel__body" id="build-body"></div>
+      </dialog>
 
       <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">
         <span class="results__trophy" data-sprite="icons:trophy"></span>

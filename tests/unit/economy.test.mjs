@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 
 import { ECONOMY } from '../../js/config.js';
 import { getBlock, allRoadIds } from '../../js/core/board.js';
-import { BUILDINGS, getBuilding } from '../../js/core/buildings.js';
+import { applyDevelopment, TABLE } from '../../js/core/development.js';
 import {
   credit, debit, toAmount, isValidAmount, canAfford, formatCash, formatDelta,
-  blockIncome, calculateIncome, propertyValue, netWorth, isDeveloped, MONEY_ERRORS, TXN,
+  blockIncome, calculateIncome, propertyValue, netWorth, MONEY_ERRORS, TXN,
 } from '../../js/core/economy.js';
 import {
   createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES,
@@ -16,12 +16,11 @@ const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) })
 const cash = (game, seat) => getPlayer(game, seat).cash;
 const preset = (game, ids) => ids.forEach((id) => { game.board.roads[id] = 0; });
 
-/** Claim + develop a block directly (building placement isn't a player action yet). */
-function develop(game, row, col, seat, buildingId) {
+/** Claim + develop a block directly, bypassing turn/cost rules (setup helper). */
+function develop(game, row, col, seat, type, level = 1) {
   const block = getBlock(game.board, row, col);
   block.ownerSeat = seat;
-  block.buildingId = buildingId;
-  return block;
+  return applyDevelopment(block, type, level);
 }
 
 /* ---------------- constants ---------------- */
@@ -33,11 +32,6 @@ test('economy constants are centralized and sane', () => {
   assert.ok(Object.isFrozen(ECONOMY));
   for (const v of [ECONOMY.STARTING_CASH, ECONOMY.CAPTURE_REWARD, ...Object.values(ECONOMY.LAND_VALUE)]) {
     assert.ok(isValidAmount(v), `bad constant ${v}`);
-  }
-  // Every catalogue building has economics, and they flow from the config.
-  for (const b of BUILDINGS) {
-    assert.deepEqual({ cost: b.cost, income: b.income }, ECONOMY.BUILDINGS[b.id], b.id);
-    assert.ok(isValidAmount(b.cost) && isValidAmount(b.income), b.id);
   }
   // Land values come from config too.
   const game = four();
@@ -74,11 +68,11 @@ test('credit/debit never produce NaN or negative balances', () => {
   assert.throws(() => debit(game, p, '100', 'x'), RangeError);
   assert.equal(p.cash, 12000, 'failed calls leave cash untouched');
 
-  assert.deepEqual(debit(game, p, 12001, TXN.PURCHASE), { ok: false, error: MONEY_ERRORS.INSUFFICIENT_FUNDS });
+  assert.deepEqual(debit(game, p, 12001, TXN.BUILD), { ok: false, error: MONEY_ERRORS.INSUFFICIENT_FUNDS });
   assert.equal(p.cash, 12000);
-  assert.equal(debit(game, p, 12000, TXN.PURCHASE).ok, true);
+  assert.equal(debit(game, p, 12000, TXN.BUILD).ok, true);
   assert.equal(p.cash, 0);
-  assert.deepEqual(debit(game, p, 1, TXN.PURCHASE), { ok: false, error: MONEY_ERRORS.INSUFFICIENT_FUNDS });
+  assert.deepEqual(debit(game, p, 1, TXN.BUILD), { ok: false, error: MONEY_ERRORS.INSUFFICIENT_FUNDS });
   assert.equal(p.cash, 0);
 
   // A corrupted balance is detected instead of propagating.
@@ -100,7 +94,7 @@ test('every money change is written to the ledger', () => {
   const e = credit(game, p, 250, 'test', { note: 'hi' });
   assert.deepEqual(e, { seat: 2, delta: 250, balance: 12250, reason: 'test', round: 1, note: 'hi' });
   assert.equal(credit(game, p, 0, 'test'), null, '$0 credits are not logged');
-  debit(game, p, 50, TXN.PURCHASE);
+  debit(game, p, 50, TXN.BUILD);
   assert.deepEqual(game.ledger.map((x) => x.delta), [250, -50]);
 });
 
@@ -113,29 +107,29 @@ test('formatting is safe for bad input', () => {
 
 /* ---------------- income & property ---------------- */
 
-test('undeveloped blocks generate no income; developed blocks pay their building income', () => {
+test('vacant blocks generate no income; developed blocks pay their stored income', () => {
   const game = four();
   const lot = getBlock(game.board, 0, 0);
   lot.ownerSeat = 1;
-  assert.equal(isDeveloped(lot), false);
+  assert.deepEqual([lot.type, lot.level, lot.income, lot.value], ['vacant', 0, 0, ECONOMY.LAND_VALUE.suburbs]);
   assert.equal(blockIncome(lot), 0);
   assert.equal(calculateIncome(game.board, 1), 0);
 
-  develop(game, 0, 1, 1, 'diner');
-  assert.equal(calculateIncome(game.board, 1), getBuilding('diner').income);
+  develop(game, 0, 1, 1, 'commercial');
+  assert.equal(calculateIncome(game.board, 1), 500);
 
-  // Unknown building ids don't count as developed (no NaN income).
-  const ghost = develop(game, 0, 2, 1, 'not-a-building');
-  assert.equal(isDeveloped(ghost), false);
-  assert.equal(blockIncome(ghost), 0);
-  assert.equal(calculateIncome(game.board, 1), getBuilding('diner').income);
+  // A corrupted stored income counts as $0 rather than NaN.
+  const bad = develop(game, 0, 2, 1, 'park');
+  bad.income = NaN;
+  assert.equal(blockIncome(bad), 0);
+  assert.equal(calculateIncome(game.board, 1), 500);
 });
 
 test('net property value = land + building cost; net worth adds cash', () => {
   const game = four();
-  getBlock(game.board, 0, 0).ownerSeat = 2; // suburbs lot
-  develop(game, 2, 2, 2, 'office'); // downtown office
-  const expected = ECONOMY.LAND_VALUE.suburbs + ECONOMY.LAND_VALUE.downtown + ECONOMY.BUILDINGS.office.cost;
+  getBlock(game.board, 0, 0).ownerSeat = 2; // vacant suburbs lot
+  develop(game, 2, 2, 2, 'landmark', 2); // downtown landmark, level 2
+  const expected = ECONOMY.LAND_VALUE.suburbs + ECONOMY.LAND_VALUE.downtown + TABLE.landmark[2].invested;
   assert.equal(propertyValue(game.board, 2), expected);
   assert.equal(netWorth(game, getPlayer(game, 2)), 12000 + expected);
   assert.equal(playerStats(game, getPlayer(game, 2)).property, expected);
@@ -177,10 +171,10 @@ test('non-capturing roads cost and pay nothing', () => {
 test('income is paid at the start of each player\'s own turn, from developed blocks only', () => {
   const game = four();
   // Seat 2 owns a developed house + an empty lot; seat 3 owns only an empty lot.
-  develop(game, 5, 5, 2, 'house');
+  develop(game, 5, 5, 2, 'residential');
   getBlock(game.board, 5, 4).ownerSeat = 2;
   getBlock(game.board, 5, 3).ownerSeat = 3;
-  const houseIncome = ECONOMY.BUILDINGS.house.income;
+  const houseIncome = ECONOMY.DEVELOPMENT.CATEGORIES.residential.income;
 
   const r1 = placeRoad(game, 'h-0-0'); // P1 → P2's turn begins
   assert.deepEqual(r1.turnIncome, { seat: 2, amount: houseIncome });
@@ -204,8 +198,8 @@ test('income is paid at the start of each player\'s own turn, from developed blo
 
 test('bonus roads after a capture do not pay turn income again', () => {
   const game = four();
-  develop(game, 5, 5, 1, 'market');
-  const marketIncome = ECONOMY.BUILDINGS.market.income;
+  develop(game, 5, 5, 1, 'commercial');
+  const marketIncome = ECONOMY.DEVELOPMENT.CATEGORIES.commercial.income;
 
   preset(game, ['h-0-0', 'v-0-0', 'h-1-0']);
   const r = placeRoad(game, 'v-0-1'); // P1 captures → bonus road, same turn
@@ -235,7 +229,7 @@ test('full 4-player games keep every balance valid and reconcile with the ledger
     while (game.phase === PHASES.PLAYING) {
       // Once someone has captured a block, put a building on it so turn income flows.
       const owned = !developed && game.board.blocks.find((b) => b.ownerSeat != null);
-      if (owned) { owned.buildingId = 'apartments'; developed = true; }
+      if (owned) { applyDevelopment(owned, 'industrial', 3); developed = true; }
       const [id] = pool.splice(Math.floor(rand() * pool.length), 1);
       assert.equal(placeRoad(game, id).ok, true);
       for (const p of game.players) assert.ok(isValidAmount(p.cash), `seat ${p.seat} cash ${p.cash}`);

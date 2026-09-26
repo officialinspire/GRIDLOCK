@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.3 basic economy.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, turn income, the HUD and a results screen. Construction and city events come in later phases.
+> **Status: v0.4 development.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), turn income, the HUD and a results screen. City events come in a later phase.
 
 ## How it plays
 
@@ -16,7 +16,7 @@ The city is a 6×6 grid of blocks on a 7×7 lattice of intersections, with 84 po
 
 ## Economy
 
-All money values live in the `ECONOMY` block in `js/config.js`. That covers starting cash, the capture reward, land values by district, and each building's cost and income. The building catalog, land values, How To Play copy and setup summary all read from it.
+All money values live in the `ECONOMY` block in `js/config.js`. That covers starting cash, the capture reward, land values by district, and development costs and income. Land values, the development tables, the How To Play copy and the setup summary all read from it.
 
 | Rule | Default |
 | --- | --- |
@@ -27,7 +27,29 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Net property value | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus building cost |
 | Net worth | Cash plus net property value |
 
-Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Buildings aren't placeable yet, but blocks already carry a `buildingId` and the building catalog already has cost and income, so income and property value will work as soon as placement lands.
+### Development
+
+A captured block starts **Vacant, Level 0** (no income). On their own turn, the owner taps the block (or selects it and presses **Build**) to open the Build/Upgrade panel.
+
+| Category | Level 1 cost | Income/turn | Level 2 (upgrade cost / income) | Level 3 |
+| --- | --- | --- | --- | --- |
+| Residential | $1,000 | $300 | $1,500 / $600 | $2,000 / $900 |
+| Commercial | $1,500 | $500 | $2,250 / $1,000 | $3,000 / $1,500 |
+| Park | $800 | $100 | $1,200 / $200 | $1,600 / $300 |
+| Civic | $2,000 | $250 | $3,000 / $500 | $4,000 / $750 |
+| Industrial | $1,750 | $600 | $2,625 / $1,200 | $3,500 / $1,800 |
+| Landmark | $3,000 | $700 | $4,500 / $1,400 | $6,000 / $2,100 |
+
+Only Level 1 is set per category (`ECONOMY.DEVELOPMENT.CATEGORIES`). Levels 2–3 come from multipliers in `ECONOMY.DEVELOPMENT.LEVELS` (cost ×1 / ×1.5 / ×2, income ×1 / ×2 / ×3), and `core/development.js` rejects any config that produces fractional dollars. The rules:
+- Only the owner can develop, and only on their turn.
+- The player must be able to afford it; the panel shows how much more they need.
+- "Leave Vacant" is always an option.
+- Cash is deducted immediately.
+- A category can't be changed once built.
+
+Each block stores its `type`, `level`, `value` (land + invested) and `income`. The board shows the building art plus a badge with the category icon and level pips. Names and art per level live in `core/buildings.js`.
+
+Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
 
 ## Play locally
 
@@ -60,7 +82,8 @@ js/
     board.js               6×6 block grid, districts, road/edge geometry
     game.js                placeRoad(): validation, captures, bonus roads, turns, standings
     economy.js             Safe credit/debit + ledger, rewards, turn income, property value
-    buildings.js           Building catalogue (costs/income are placeholders)
+    buildings.js           Development categories: names, blurbs and art per level
+    development.js         Build/upgrade rules, quotes and derived cost/income tables
     events.js              City event catalogue (not wired in yet)
     settings.js            Persisted settings (localStorage, fails safe)
     bus.js                 Pub/sub between core and UI
@@ -70,6 +93,7 @@ js/
     boardView.js           Board renderer (intersections, road slots, blocks)
     hud.js                 Player cards, round & turn banner
     gameView.js            Game controller (moves, capture feedback, results, pause)
+    buildPanel.js          Build/Upgrade panel for the current player's blocks
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -77,6 +101,7 @@ tests/
   unit/core.test.mjs       Node unit tests for core modules
   unit/dots-and-boxes.test.mjs  Road geometry, rotation, edge/corner/double/chain captures, full games
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
+  unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
@@ -108,4 +133,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

@@ -10,10 +10,15 @@ import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/board.js';
-import { getBuilding } from '../core/buildings.js';
+import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
+import { isDeveloped, MAX_LEVEL } from '../core/development.js';
 import { getPlayer, currentPlayer, PHASES } from '../core/game.js';
 
 let selectedId = null;
+// One-shot effects play only on the render right after the move/build that caused them.
+let seenMove = null;
+let seenDevelopment = null;
+let fx = { move: false, development: false };
 let handlers = { onBlockSelect() {}, onRoadSelect() {} };
 
 const colorOf = (seat) => (seat ? PLAYER_PRESETS[seat - 1].color : null);
@@ -42,6 +47,7 @@ function roadCell(game, dir, r, c) {
   const cls = ['road', `road--${dir}`];
   if (built) cls.push('is-built', `road--${colorOf(builder)}`);
   if (last) cls.push('is-last');
+  if (last && fx.move) cls.push('is-new');
 
   const who = built ? getPlayer(game, builder)?.name : null;
   return h('button', {
@@ -55,24 +61,38 @@ function roadCell(game, dir, r, c) {
 
 function blockDescription(game, block) {
   const owner = block.ownerSeat ? getPlayer(game, block.ownerSeat) : null;
-  const building = block.buildingId ? getBuilding(block.buildingId) : null;
   return [
     `Block ${block.label}`,
     DISTRICTS[block.district].label,
     owner ? `claimed by ${owner.name}` : `${builtSides(game.board, block)} of 4 roads`,
-    building?.name,
+    owner && describeDevelopment(block),
   ].filter(Boolean).join(', ');
+}
+
+/** Category icon + level pips, e.g. [🏠 ●●○]. */
+function levelBadge(block) {
+  const cat = getCategory(block.type);
+  const pips = Array.from({ length: MAX_LEVEL }, (_, i) =>
+    h('span', { class: `pip${i < block.level ? ' is-on' : ''}` }));
+  return h('span', { class: `block__badge block__badge--${block.type}`, 'aria-hidden': 'true', title: describeDevelopment(block) },
+    createSprite(cat.icon, { className: 'block__badge-icon' }),
+    h('span', { class: 'block__badge-pips' }, pips),
+  );
 }
 
 function blockCell(game, block) {
   const color = colorOf(block.ownerSeat);
-  const building = block.buildingId ? getBuilding(block.buildingId) : null;
+  const developed = isDeveloped(block);
+  const art = developed ? levelArt(block.type, block.level) : null;
   const selected = block.id === selectedId;
-  const fresh = game.lastMove?.captured.includes(block.id);
+  const fresh = fx.move && game.lastMove?.captured.includes(block.id);
+  const justBuilt = fx.development && game.lastDevelopment?.block === block.id;
   const cls = ['block', `block--${block.district}`];
   if (color) cls.push('block--owned', `block--${color}`);
+  if (developed) cls.push('block--developed', `block--lv${block.level}`);
   if (selected) cls.push('is-selected');
   if (fresh) cls.push('is-captured');
+  if (justBuilt) cls.push('is-just-built');
 
   return h('button', {
     type: 'button',
@@ -84,10 +104,12 @@ function blockCell(game, block) {
     createSprite('parks:empty-lot', { className: 'block__lot' }),
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
     color && createSprite(`markers:frame-${color}`, { className: 'block__frame' }),
-    building && createSprite(building.sprite, { className: 'block__building' }),
-    color && !building && createSprite(`markers:seal-${color}`, { className: 'block__seal' }),
+    art && createSprite(art.sprite, { className: 'block__building' }),
+    color && !art && createSprite(`markers:seal-${color}`, { className: 'block__seal' }),
+    developed && levelBadge(block),
     color && createSprite(`markers:post-${color}`, { className: 'block__flag' }),
     fresh && createSprite('effects:sparkle', { className: 'block__fx' }),
+    justBuilt && createSprite('effects:star-burst', { className: 'block__fx' }),
     h('span', { class: 'block__coord', 'aria-hidden': 'true' }, block.label),
   );
 }
@@ -101,6 +123,10 @@ export function renderBoard(game) {
   const focused = el.contains(document.activeElement) ? document.activeElement : null;
   const focusKey = focused?.dataset.road ? `[data-road="${focused.dataset.road}"]`
     : focused?.dataset.block ? `[data-block="${focused.dataset.block}"]` : null;
+
+  fx = { move: game.lastMove !== seenMove, development: game.lastDevelopment !== seenDevelopment };
+  seenMove = game.lastMove;
+  seenDevelopment = game.lastDevelopment;
 
   el.style.setProperty('--rows', board.rows);
   el.style.setProperty('--cols', board.cols);
@@ -163,6 +189,6 @@ export function initBoardView(opts) {
     }
     const block = e.target.closest('.block');
     if (!block) return;
-    selectBlock(block.dataset.block === selectedId ? null : block.dataset.block);
+    selectBlock(block.dataset.block);
   });
 }

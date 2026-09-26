@@ -1,13 +1,15 @@
 /** Game screen controller: wires core game state to board, HUD and actions. */
 import { $, h } from './dom.js';
-import { createSprite } from '../assets.js';
+import { createSprite, preloadSheets } from '../assets.js';
 import { bus } from '../core/bus.js';
 import {
   createGame, placeRoad, currentPlayer, getPlayer, standings, MOVE_ERRORS, PHASES,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
-import { getBuilding } from '../core/buildings.js';
-import { blockIncome, blockValue, formatCash, isDeveloped } from '../core/economy.js';
+import { describeDevelopment } from '../core/buildings.js';
+import { blockIncome, blockValue, formatCash } from '../core/economy.js';
+import { isDeveloped } from '../core/development.js';
+import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
   renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock,
 } from './boardView.js';
@@ -33,20 +35,19 @@ function renderInspector(blockId) {
     return;
   }
   const owner = block.ownerSeat ? getPlayer(game, block.ownerSeat) : null;
-  const building = block.buildingId ? getBuilding(block.buildingId) : null;
   const row = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
   panel.replaceChildren(...[
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
+    owner && h('p', { class: 'inspector__dev', dataset: { type: block.type } }, describeDevelopment(block)),
     h('dl', { class: 'inspector__facts' },
       row('District', DISTRICTS[block.district].label),
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
-      row('Building', building ? building.name : 'Undeveloped'),
       row('Income', owner ? `+${formatCash(blockIncome(block))}/turn` : '—'),
       owner && row('Value', formatCash(blockValue(block))),
     ),
-    owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Undeveloped: no income until built on.'),
+    owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Vacant: no income until developed.'),
   ].filter(Boolean));
 }
 
@@ -64,11 +65,25 @@ function renderPrompt() {
     : `${p.name}: pave a road.`;
 }
 
+function renderActions() {
+  const build = $('#action-build');
+  const manageable = game && canManage(game, getSelectedBlock());
+  build.disabled = !manageable;
+  build.title = manageable ? 'Develop the selected block' : 'Select one of your blocks to develop it';
+}
+
 function render() {
   renderBoard(game);
   renderHud(game);
   renderPrompt();
   renderInspector(getSelectedBlock());
+  renderActions();
+}
+
+function handleBlockSelect(id) {
+  renderInspector(id);
+  renderActions();
+  if (id && game) openBuildPanel(game, id);
 }
 
 function flashFrame() {
@@ -132,6 +147,9 @@ function handleRoad(id) {
 }
 
 function startGame(setup) {
+  closeBuildPanel();
+  // Development art and effects are needed as soon as blocks are captured.
+  preloadSheets(['buildings', 'civic', 'parks', 'effects', 'markers', 'icons']);
   lastSetup = setup;
   game = createGame(setup);
   chain = 0;
@@ -171,7 +189,9 @@ function initDialogs() {
 }
 
 export function initGameView() {
-  initBoardView({ onBlockSelect: renderInspector, onRoadSelect: handleRoad });
+  initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad });
+  initBuildPanel({ onChange: () => render() });
+  $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   initDialogs();
   bus.on('game:start', startGame);
   renderInspector(null);

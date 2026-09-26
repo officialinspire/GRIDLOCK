@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { BOARD_ROWS, BOARD_COLS, DEFAULT_SETTINGS, ECONOMY } from '../../js/config.js';
 import { createBoard, getBlock, neighbors, districtFor, blockLabel, blocksOwnedBy } from '../../js/core/board.js';
-import { BUILDINGS, getBuilding } from '../../js/core/buildings.js';
+import { CATEGORIES, CATEGORY_ORDER, levelArt, getCategory } from '../../js/core/buildings.js';
 import { createGame, sanitizeName } from '../../js/core/game.js';
 import { CITY_EVENTS, drawCityEvent } from '../../js/core/events.js';
 import { normalizeSettings, loadSettings, saveSettings } from '../../js/core/settings.js';
@@ -37,14 +37,20 @@ test('neighbors are orthogonal and clipped to the board', () => {
   assert.equal(neighbors(board, getBlock(board, 2, 2)).length, 4);
 });
 
-test('buildings have unique ids and valid sprite refs', () => {
-  const ids = new Set(BUILDINGS.map((b) => b.id));
-  assert.equal(ids.size, BUILDINGS.length);
-  for (const b of BUILDINGS) {
-    const [sheet, name] = b.sprite.split(':');
-    assert.ok(getSpriteRect(sheet, name), `sprite for ${b.id}`);
+test('every development category has valid art for every level', () => {
+  assert.deepEqual(Object.keys(CATEGORIES).sort(), [...CATEGORY_ORDER].sort());
+  for (const type of CATEGORY_ORDER) {
+    for (let level = 1; level <= 3; level++) {
+      const art = levelArt(type, level);
+      const [sheet, name] = art.sprite.split(':');
+      assert.ok(getSpriteRect(sheet, name), `sprite for ${type} L${level}`);
+      assert.ok(art.name);
+    }
+    assert.ok(getSpriteRect(...getCategory(type).icon.split(':')), `icon for ${type}`);
   }
-  assert.equal(getBuilding('nope'), null);
+  assert.equal(levelArt('vacant', 0), null);
+  assert.equal(getCategory('nope'), null);
+  assert.equal(getCategory('__proto__'), null);
 });
 
 test('all sprite rects fit inside their sheets', () => {

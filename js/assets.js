@@ -273,3 +273,17 @@ export function hydrateSprites(root = document) {
     el.removeAttribute('data-sprite');
   });
 }
+
+const preloaded = new Set();
+
+/** Starts downloading sprite sheets ahead of use (e.g. the build panel's art). */
+export function preloadSheets(keys) {
+  for (const key of keys) {
+    const sheet = SHEETS[key];
+    if (!sheet || preloaded.has(key)) continue;
+    preloaded.add(key);
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = sheet.url;
+  }
+}

@@ -7,7 +7,6 @@
  */
 import { ECONOMY } from '../config.js';
 import { blocksOwnedBy } from './board.js';
-import { getBuilding } from './buildings.js';
 
 export const MONEY_ERRORS = Object.freeze({
   INSUFFICIENT_FUNDS: 'insufficient-funds',
@@ -17,7 +16,8 @@ export const MONEY_ERRORS = Object.freeze({
 export const TXN = Object.freeze({
   CAPTURE: 'capture',
   TURN_INCOME: 'turn-income',
-  PURCHASE: 'purchase',
+  BUILD: 'build',
+  UPGRADE: 'upgrade',
 });
 
 const cashFormat = new Intl.NumberFormat('en-US', {
@@ -83,14 +83,14 @@ export function canAfford(player, cost) {
   return isValidAmount(cost) && isValidBalance(player) && player.cash >= cost;
 }
 
-/** A block is developed once it has a building. */
-export const isDeveloped = (block) => block.buildingId != null && getBuilding(block.buildingId) != null;
-
-/** Recurring income a block pays its owner at the start of each of their turns. */
+/**
+ * Recurring income a block pays its owner at the start of each of their turns.
+ * Reads the income stored on the block by core/development.js; a corrupted
+ * value counts as $0 rather than poisoning totals with NaN.
+ */
 export function blockIncome(block) {
   if (block.ownerSeat == null) return 0;
-  if (!isDeveloped(block)) return ECONOMY.UNDEVELOPED_INCOME;
-  return getBuilding(block.buildingId).income;
+  return isValidAmount(block.income) ? block.income : 0;
 }
 
 /** Income the player will collect at the start of their next turn. */
@@ -98,12 +98,12 @@ export function calculateIncome(board, seat) {
   return blocksOwnedBy(board, seat).reduce((sum, block) => sum + blockIncome(block), 0);
 }
 
+/** Stored block value: land price + everything invested in development. */
 export function blockValue(block) {
-  const building = isDeveloped(block) ? getBuilding(block.buildingId) : null;
-  return block.price + (building?.cost ?? 0);
+  return isValidAmount(block.value) ? block.value : block.price;
 }
 
-/** Land + building value of everything a player owns. */
+/** Net property value: land + development of everything a player owns. */
 export function propertyValue(board, seat) {
   return blocksOwnedBy(board, seat).reduce((sum, block) => sum + blockValue(block), 0);
 }

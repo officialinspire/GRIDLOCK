@@ -80,7 +80,7 @@ for (const vp of VIEWPORTS) {
     // How To Play
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 6);
+    assert.equal(await page.locator('.howto-card').count(), 7);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -168,21 +168,51 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#toasts'), /claims A1/);
     await shot('6-capture');
 
+    // Development: P4 (still on their bonus turn) opens the Build panel on A1.
+    const panel = page.locator('#build-dialog');
+    const p4cash = () => page.locator('.player-card[data-seat="4"] .stat--cash dd').textContent();
+    await block('r0c0').click();
+    assert.ok(await panel.isVisible(), 'build panel opens for owner');
+    assert.match(await panel.textContent(), /Vacant · Level 0/);
+    assert.equal(await panel.locator('[data-build]').count(), 6, 'six categories');
+    await shot('7-build-panel');
+    await panel.getByRole('button', { name: 'Leave Vacant' }).click();
+    assert.equal(await panel.isVisible(), false, 'Leave Vacant closes the panel');
+    assert.equal(await p4cash(), '$12,500', 'leaving vacant costs nothing');
+
+    await block('r0c0').click();
+    await panel.locator('[data-build="residential"]').click();
+    assert.equal(await panel.isVisible(), false);
+    assert.equal(await p4cash(), '$11,500', 'Level 1 residential costs $1,000');
+    assert.equal(await block('r0c0').locator('.block__badge .pip.is-on').count(), 1, 'badge shows level 1');
+    assert.match(await block('r0c0').getAttribute('aria-label'), /Residential · Level 1 · House/);
+    assert.match(await page.textContent('#inspector'), /Residential · Level 1/);
+
+    // Upgrade via the action-bar Build button (block still selected).
+    await page.click('#action-build');
+    assert.match(await panel.textContent(), /Upgrade to Level 2/);
+    await panel.locator('[data-upgrade]').click();
+    assert.equal(await p4cash(), '$10,000', 'upgrade to L2 costs $1,500');
+    assert.equal(await block('r0c0').locator('.block__badge .pip.is-on').count(), 2);
+    await shot('8-developed');
+
     // P4's bonus road closes nothing → round wraps to P1 and income is paid.
     await road('h-6-5').click();
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
     const p4 = page.locator('.player-card[data-seat="4"]');
-    assert.equal(await p4.locator('.stat--cash dd').textContent(), '$12,500', 'P4 paid $500 capture reward');
-    assert.equal(await p4.locator('.stat--income dd').textContent(), '+$0', 'undeveloped block: no income');
-    assert.equal(await p4.locator('.stat--property dd').textContent(), '$1,000', 'suburbs land value');
+    assert.equal(await p4.locator('.stat--cash dd').textContent(), '$10,000', '+$500 reward − $2,500 development');
+    assert.equal(await p4.locator('.stat--income dd').textContent(), '+$600', 'Residential L2 income');
+    assert.equal(await p4.locator('.stat--property dd').textContent(), '$3,500', 'land + invested');
     assert.equal(await page.locator('.player-card[data-seat="1"] .stat--cash dd').textContent(), '$12,000');
 
     // Inspect a block
     await block('r0c0').click();
     assert.match(await page.textContent('#inspector'), /Block A1/);
     assert.match(await page.textContent('#inspector'), /Player 4/);
-    assert.match(await page.textContent('#inspector'), /Undeveloped/);
+    assert.match(await page.textContent('#inspector'), /Residential · Level 2 · Rowhouses/);
+    assert.equal(await panel.isVisible(), false, 'non-owners get the inspector, not the build panel');
+    assert.equal(await page.isDisabled('#action-build'), true);
 
     // Pave every remaining road; the game must end with all 36 blocks claimed.
     const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
@@ -192,7 +222,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.textContent('#hud-roads'), '84/84');
     assert.equal(await page.locator('#results-list li').count(), 4);
     assert.match(await banner(), /wins!/);
-    await shot('7-results');
+    await shot('9-results');
 
     // Rematch starts a clean board.
     await page.getByRole('button', { name: 'Play Again' }).click();
@@ -203,7 +233,7 @@ for (const vp of VIEWPORTS) {
     // Pause → quit
     await page.click('#game-menu-btn');
     assert.ok(await page.isVisible('#pause-dialog'));
-    await shot('8-pause');
+    await shot('10-pause');
     await page.getByRole('button', { name: 'Quit to Title' }).click();
     assert.ok(await page.isVisible('[data-screen="title"]'), 'quit to title');
 

@@ -39,7 +39,11 @@ export function createBoard(rows = BOARD_ROWS, cols = BOARD_COLS) {
         district: district.id,
         price: district.price,
         ownerSeat: null,
-        buildingId: null,
+        // Development (managed by core/development.js). Every block starts Vacant, Level 0.
+        type: 'vacant',
+        level: 0,
+        value: district.price, // land + invested
+        income: ECONOMY.UNDEVELOPED_INCOME,
       });
     }
   }

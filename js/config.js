@@ -43,51 +43,34 @@ export const ECONOMY = Object.freeze({
   }),
 
   /**
-   * Building economics: purchase cost and income paid at the start of the
-   * owner's turn. Keyed by building id (see core/buildings.js). Buildings are
-   * not placeable yet; these are the data hooks for that phase.
+   * Block development. A captured block starts Vacant (Level 0). The owner can
+   * build one category on it (Level 1) and upgrade it to MAX_LEVEL.
+   * Everything below is derived by core/development.js — edit numbers here only.
    */
-  BUILDINGS: Object.freeze({
-    // Residential
-    house: { cost: 1000, income: 100 },
-    duplex: { cost: 1600, income: 160 },
-    rowhouses: { cost: 2200, income: 220 },
-    apartments: { cost: 3200, income: 320 },
-    // Commercial
-    'corner-store': { cost: 1400, income: 150 },
-    diner: { cost: 1800, income: 190 },
-    'convenience-store': { cost: 2000, income: 210 },
-    cafe: { cost: 1700, income: 180 },
-    shop: { cost: 2000, income: 220 },
-    market: { cost: 2800, income: 300 },
-    'gas-station': { cost: 2600, income: 280 },
-    office: { cost: 4000, income: 440 },
-    // Civic
-    school: { cost: 3000, income: 150 },
-    library: { cost: 2600, income: 120 },
-    hospital: { cost: 5000, income: 300 },
-    'fire-station': { cost: 3000, income: 150 },
-    police: { cost: 3000, income: 150 },
-    'city-hall': { cost: 6000, income: 500 },
-    'train-station': { cost: 4500, income: 450 },
-    theater: { cost: 3800, income: 400 },
-    museum: { cost: 3800, income: 350 },
-    stadium: { cost: 7000, income: 800 },
-    monument: { cost: 2500, income: 100 },
-    'parking-garage': { cost: 2600, income: 280 },
-    // Industrial
-    warehouse: { cost: 2600, income: 280 },
-    factory: { cost: 4500, income: 520 },
-    substation: { cost: 3000, income: 250 },
-    // Parks
-    plaza: { cost: 1200, income: 60 },
-    garden: { cost: 800, income: 40 },
-    playground: { cost: 1000, income: 50 },
-    'basketball-court': { cost: 1000, income: 60 },
-    fountain: { cost: 1500, income: 80 },
-    'dog-park': { cost: 800, income: 40 },
-    'picnic-grove': { cost: 800, income: 40 },
-    skatepark: { cost: 1200, income: 60 },
+  DEVELOPMENT: Object.freeze({
+    MAX_LEVEL: 3,
+
+    /** Level 1 purchase cost and income paid at the start of the owner's turn. */
+    CATEGORIES: Object.freeze({
+      residential: Object.freeze({ cost: 1000, income: 300 }),
+      commercial: Object.freeze({ cost: 1500, income: 500 }),
+      park: Object.freeze({ cost: 800, income: 100 }),
+      civic: Object.freeze({ cost: 2000, income: 250 }),
+      industrial: Object.freeze({ cost: 1750, income: 600 }),
+      landmark: Object.freeze({ cost: 3000, income: 700 }),
+    }),
+
+    /**
+     * Per level, as multiples of the category base:
+     *   cost   = price to reach this level from the one below
+     *   income = the block's total income at this level
+     * Results must come out as whole dollars (checked at load).
+     */
+    LEVELS: Object.freeze({
+      1: Object.freeze({ cost: 1, income: 1 }),
+      2: Object.freeze({ cost: 1.5, income: 2 }),
+      3: Object.freeze({ cost: 2, income: 3 }),
+    }),
   }),
 });
 

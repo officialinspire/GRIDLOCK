@@ -63,6 +63,7 @@ export function createGame({ seats } = {}) {
     turnIndex: 0,
     phase: PHASES.PLAYING,
     lastMove: null,
+    lastDevelopment: null,
     log: [],
     ledger: [],
     turnStartIncome: null,
