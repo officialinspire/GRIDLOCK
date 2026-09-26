@@ -25,6 +25,7 @@ import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { play } from './sfx.js';
+import { getSettings } from './settingsView.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -152,6 +153,18 @@ function showCaptureChoice() {
   render();
 }
 
+let handoffReady = null;
+function showHandoff(player, onReady) {
+  if (getSettings().quickHandoff) return onReady();
+  const dialog = $('#handoff-dialog');
+  dialog.style.setProperty('--player', player.hex);
+  $('#handoff-title').textContent = `Pass to ${player.name}`;
+  $('#handoff-copy').textContent = `${player.symbol} · Hand the device to ${player.name}, then continue.`;
+  handoffReady = onReady;
+  if (!dialog.open) dialog.showModal();
+  $('#handoff-ready').focus();
+}
+
 function leaveCapturedBlock(blockId) {
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
   resolveCapture(game, blockId);
@@ -171,7 +184,7 @@ function handleBlockSelect(id) {
 }
 
 function handleRoadArmed() {
-  play('pave');
+  play('tick');
   if (!armHintShown) {
     armHintShown = true;
     toast('Tap the highlighted road again to pave it.', { duration: 2200 });
@@ -237,27 +250,31 @@ function handleRoad(id) {
     return;
   }
   if (n > 0) showCaptureChoice();
-  if (result.event?.started) {
-    play('event');
-    showEventCard(game, result.event.started, result.event.expired);
-  } else if (result.event?.expired.length) {
-    toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
-  } else if (result.event?.calm) {
-    toast('Calm round · no new city event', { tone: 'success' });
-  }
-  const paid = result.turnIncome?.amount ?? 0;
-  const owed = result.turnUpkeep?.amount ?? 0;
-  const repairs = result.turnRepair?.amount ?? 0;
-  if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
-    const payee = getPlayer(game, result.turnIncome.seat);
-    const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
-      repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
-    toast(`${payee.name}: ${parts.join(', ')}`, {
-      tone: result.turnUpkeep?.distress || result.turnRepair?.distress ? 'warn' : 'success',
-    });
-  }
-  checkDistress();
-  bus.emit('game:move', result);
+  const finishTransition = () => {
+    if (result.event?.started) {
+      play('event');
+      showEventCard(game, result.event.started, result.event.expired);
+    } else if (result.event?.expired.length) {
+      toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
+    } else if (result.event?.calm) {
+      toast('Calm round · no new city event', { tone: 'success' });
+    }
+    const paid = result.turnIncome?.amount ?? 0;
+    const owed = result.turnUpkeep?.amount ?? 0;
+    const repairs = result.turnRepair?.amount ?? 0;
+    if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
+      const payee = getPlayer(game, result.turnIncome.seat);
+      const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
+        repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
+      toast(`${payee.name}: ${parts.join(', ')}`, {
+        tone: result.turnUpkeep?.distress || result.turnRepair?.distress ? 'warn' : 'success',
+      });
+    }
+    checkDistress();
+    bus.emit('game:move', result);
+  };
+  if (result.turnIncome && result.turnIncome.seat !== mover.seat) showHandoff(currentPlayer(game), finishTransition);
+  else finishTransition();
 }
 
 /** Optional ?seed=123 in the URL makes city events reproducible (handy for bug reports). */
@@ -342,6 +359,13 @@ export function initGameView() {
     $('#capture-choice-dialog').close();
     if (action === 'develop') openBuildPanel(game, blockId);
     if (action === 'vacant') leaveCapturedBlock(blockId);
+  });
+  $('#handoff-dialog').addEventListener('cancel', (e) => e.preventDefault());
+  $('#handoff-ready').addEventListener('click', () => {
+    $('#handoff-dialog').close();
+    const ready = handoffReady;
+    handoffReady = null;
+    ready?.();
   });
   initDialogs();
   $('#action-results').addEventListener('click', showResults);

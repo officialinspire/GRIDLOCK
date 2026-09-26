@@ -233,6 +233,11 @@
 .road--blue { --builder: var(--p-blue); }
 .road--yellow { --builder: var(--p-yellow); }
 .road--green { --builder: var(--p-green); }
+.road[data-owner-symbol='triangle'] .road__surface { background-image: repeating-linear-gradient(45deg, transparent 0 5px, color-mix(in srgb, var(--builder) 38%, transparent) 5px 7px); }
+.road[data-owner-symbol='diamond'] .road__surface { background-image: repeating-linear-gradient(-45deg, transparent 0 5px, color-mix(in srgb, var(--builder) 38%, transparent) 5px 7px); }
+.road[data-owner-symbol='circle'] .road__surface { background-image: radial-gradient(circle, var(--builder) 1px, transparent 1.5px); background-size: 7px 7px; }
+.road[data-owner-symbol='leaf'] .road__surface { background-image: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--builder) 38%, transparent) 6px 8px); }
+.road__owner-mark { position: absolute; z-index: 3; inset: 50% auto auto 50%; translate: -50% -50%; color: var(--ink); font-size: clamp(6px, 0.7vw, 10px); line-height: 1; text-shadow: 0 1px var(--paper-hi); pointer-events: none; }
 
 .road.is-new .road__surface { animation: road-pave 420ms var(--ease-pop); }
 .road.is-last::after {
@@ -272,6 +277,11 @@
 .block--blue { --owner: var(--p-blue); }
 .block--yellow { --owner: var(--p-yellow); }
 .block--green { --owner: var(--p-green); }
+.block[data-owner-symbol='triangle'] .block__tint { background-image: repeating-linear-gradient(45deg, transparent 0 9px, rgba(255,255,255,.2) 9px 12px); }
+.block[data-owner-symbol='diamond'] .block__tint { background-image: repeating-linear-gradient(-45deg, transparent 0 9px, rgba(255,255,255,.2) 9px 12px); }
+.block[data-owner-symbol='circle'] .block__tint { background-image: radial-gradient(circle, rgba(255,255,255,.35) 1.5px, transparent 2px); background-size: 10px 10px; }
+.block[data-owner-symbol='leaf'] .block__tint { background-image: repeating-linear-gradient(90deg, transparent 0 10px, rgba(255,255,255,.2) 10px 13px); }
+.block__owner-mark { position: absolute; z-index: 9; left: 5%; bottom: 4%; width: 18%; aspect-ratio: 1; display: grid; place-items: center; color: var(--ink); background: var(--paper-hi); border: 1px solid var(--ink); border-radius: 50%; font-size: clamp(7px, 1vw, 13px); line-height: 1; pointer-events: none; }
 
 .block > .sprite, .block > .block__tint { position: absolute; }
 /*
@@ -507,6 +517,9 @@ html[data-coords='on'] .block__coord { display: block; }
 .capture-choice { width: min(440px, calc(100vw - 28px)); text-align: center; }
 .capture-choice h3 { margin-top: 0; font-family: var(--font-display); font-size: 1.6rem; }
 .capture-choice__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.handoff-card { width: min(400px, calc(100vw - 28px)); text-align: center; border-top: 10px solid var(--player, var(--gold)); }
+.handoff-card__eyebrow { margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+.handoff-card h3 { margin: 8px 0; font-family: var(--font-display); font-size: 2rem; }
 .auction-bid { display: grid; grid-template-columns: 1fr minmax(90px, 130px); align-items: center; gap: 8px; width: 100%; }
 .auction-bid input { min-width: 0; padding: 6px 8px; font: inherit; }
 

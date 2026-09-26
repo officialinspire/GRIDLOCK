@@ -26,6 +26,7 @@ let fx = { move: false, development: false };
 let handlers = { onBlockSelect() {}, onRoadSelect() {}, onRoadArmed() {} };
 // Touch screens: the first tap "arms" a road (preview), a second tap on it paves.
 let armedId = null;
+let rovingKey = null;
 const coarsePointer = () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false;
 export const needsConfirmTap = () => coarsePointer() && getSettings().confirmTaps;
 
@@ -60,17 +61,22 @@ function roadCell(game, dir, r, c) {
   if (id === armedId && !built) cls.push('is-armed');
 
   const who = built ? getPlayer(game, builder)?.name : null;
+  const owner = built ? PLAYER_PRESETS[builder - 1] : null;
   const disabled = built || game.phase !== PHASES.PLAYING
     || ![TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
   return h('button', {
     type: 'button',
     class: cls.join(' '),
     dataset: { road: id },
-    'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}` : `Pave ${roadLabel(dir, r, c)}`,
+    'data-grid-row': dir === 'h' ? r * 2 : r * 2 + 1,
+    'data-grid-col': dir === 'h' ? c * 2 + 1 : c * 2,
+    'data-owner-symbol': owner?.symbol,
+    'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}, ${owner.symbol}` : `Pave ${roadLabel(dir, r, c)}`,
     disabled,
     'aria-disabled': disabled ? 'true' : null,
   }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
-    built && createSprite(ART.road[dir], { className: 'road__tile' })));
+    built && createSprite(ART.road[dir], { className: 'road__tile' }),
+    built && h('span', { class: 'road__owner-mark' }, owner.mark)));
 }
 
 function blockDescription(game, block) {
@@ -78,7 +84,7 @@ function blockDescription(game, block) {
   return [
     `Block ${block.label}`,
     DISTRICTS[block.district].label,
-    owner ? `claimed by ${owner.name}` : block.abandoned ? 'abandoned' : `${builtSides(game.board, block)} of 4 roads`,
+    owner ? `claimed by ${owner.name}, ${owner.symbol}` : block.abandoned ? 'abandoned' : `${builtSides(game.board, block)} of 4 roads`,
     (owner || block.abandoned) && describeDevelopment(block),
     block.bonusIncome > 0 && `bonus +$${block.bonusIncome} per turn`,
     blockEventState(game, block).state && `city event: ${blockEventState(game, block).state}`,
@@ -119,6 +125,9 @@ function blockCell(game, block) {
     type: 'button',
     class: cls.join(' '),
     dataset: { block: block.id },
+    'data-grid-row': block.row * 2 + 1,
+    'data-grid-col': block.col * 2 + 1,
+    'data-owner-symbol': block.ownerSeat ? PLAYER_PRESETS[block.ownerSeat - 1].symbol : null,
     'aria-label': blockDescription(game, block),
     'aria-pressed': selected ? 'true' : 'false',
   },
@@ -134,6 +143,7 @@ function blockCell(game, block) {
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
     color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
+    color && h('span', { class: 'block__owner-mark', 'aria-hidden': 'true' }, PLAYER_PRESETS[block.ownerSeat - 1].mark),
     fresh && createSprite(ART.fx.capture, { className: 'block__fx' }),
     justBuilt && createSprite(ART.fx.build, { className: 'block__fx' }),
     h('span', { class: 'block__coord', 'aria-hidden': 'true' }, block.label),
@@ -175,8 +185,12 @@ export function renderBoard(game) {
     }
   }
   el.replaceChildren(...cells);
-
-  if (focusKey) el.querySelector(focusKey)?.focus({ preventScroll: true });
+  const focusedMatch = focusKey ? el.querySelector(focusKey) : null;
+  const focusTarget = focusedMatch?.matches('.block, .road:not(:disabled)') ? focusedMatch : null;
+  const candidates = [...el.querySelectorAll('.block, .road:not(:disabled)')];
+  const roving = focusTarget ?? (rovingKey && el.querySelector(rovingKey)) ?? candidates[0];
+  candidates.forEach((cell) => { cell.tabIndex = cell === roving ? 0 : -1; });
+  if (focusTarget) focusTarget.focus({ preventScroll: true });
 }
 
 /** Brief "nope" wiggle on a road that can't be built. */
@@ -217,6 +231,8 @@ export function initBoardView(opts) {
   $('#board').addEventListener('click', (e) => {
     const road = e.target.closest('.road');
     if (road) {
+      if (road.disabled || road.classList.contains('is-built')) return;
+      rovingKey = `[data-road="${road.dataset.road}"]`;
       const id = road.dataset.road;
       const pavable = !road.classList.contains('is-built') && !$('#board').classList.contains('is-locked');
       if (pavable && needsConfirmTap() && armedId !== id) {
@@ -233,6 +249,37 @@ export function initBoardView(opts) {
     disarm();
     const block = e.target.closest('.block');
     if (!block) return;
+    rovingKey = `[data-block="${block.dataset.block}"]`;
     selectBlock(block.dataset.block);
+  });
+  $('#board').addEventListener('keydown', (e) => {
+    const cell = e.target.closest('.road, .block');
+    if (!cell) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      disarm();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      cell.click();
+      return;
+    }
+    const directions = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    const delta = directions[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    let row = Number(cell.dataset.gridRow);
+    let col = Number(cell.dataset.gridCol);
+    let next = null;
+    for (let i = 0; i < 13 && !next; i++) {
+      row += delta[0]; col += delta[1];
+      next = document.querySelector(`#board .road:not(:disabled)[data-grid-row="${row}"][data-grid-col="${col}"], #board .block[data-grid-row="${row}"][data-grid-col="${col}"]`);
+    }
+    if (!next) return;
+    cell.tabIndex = -1;
+    next.tabIndex = 0;
+    rovingKey = next.dataset.road ? `[data-road="${next.dataset.road}"]` : `[data-block="${next.dataset.block}"]`;
+    next.focus({ preventScroll: true });
   });
 }

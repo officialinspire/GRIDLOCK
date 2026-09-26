@@ -83,7 +83,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:road"></span>
           <h3>Pave a Road</h3>
-          <p><strong>Standard Game is for exactly four players.</strong> Each turn starts at MANAGE CITY; when ready, choose PAVE ROAD and tap a gap between neighbouring intersections. Play goes 1 → 2 → 3 → 4.</p>
+          <p><strong>Standard Game is for exactly four players.</strong> Each turn starts at MANAGE CITY; when ready, choose PAVE ROAD and tap a gap. A “Pass to…” card protects hot-seat turns unless Quick Handoff is enabled.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:star"></span>
@@ -148,6 +148,10 @@
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
             <input type="checkbox" class="toggle" name="confirmTaps">
+          </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
+            <input type="checkbox" class="toggle" name="quickHandoff">
           </label>
         </fieldset>
 
@@ -253,6 +257,13 @@
           </button>
           <button type="button" class="btn" data-capture-choice="vacant">Leave Vacant</button>
         </div>
+      </dialog>
+
+      <dialog class="modal paper handoff-card" id="handoff-dialog" aria-labelledby="handoff-title">
+        <p class="handoff-card__eyebrow">Next mayor</p>
+        <h3 id="handoff-title">Pass to Player</h3>
+        <p id="handoff-copy">Hand the device to the next player.</p>
+        <button type="button" class="btn btn--gold" id="handoff-ready">I'm Ready</button>
       </dialog>
 
       <dialog class="modal paper finance-panel" id="finance-dialog" aria-labelledby="finance-title">

@@ -24,11 +24,12 @@ function readForm(form) {
     confirmTaps: data.has('confirmTaps'),
     reducedMotion: data.has('reducedMotion'),
     showCoords: data.has('showCoords'),
+    quickHandoff: data.has('quickHandoff'),
   });
 }
 
 function writeForm(form, s) {
-  for (const key of ['sound', 'confirmTaps', 'reducedMotion', 'showCoords']) form.elements[key].checked = s[key];
+  for (const key of ['sound', 'confirmTaps', 'reducedMotion', 'showCoords', 'quickHandoff']) form.elements[key].checked = s[key];
 }
 
 export function initSettingsView() {

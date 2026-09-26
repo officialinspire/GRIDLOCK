@@ -103,7 +103,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -180,6 +180,17 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.textContent('#hud-roads'), '0/84');
     assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'red');
     assert.ok((await page.textContent('#hud-left')).includes('$12,000'), 'cash shown');
+    const firstTabStop = page.locator('#board [tabindex="0"]');
+    assert.equal(await firstTabStop.count(), 1, 'board uses one roving tab stop');
+    await firstTabStop.focus();
+    const beforeArrow = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+    await page.keyboard.press('ArrowRight');
+    const afterArrow = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+    assert.notEqual(afterArrow, beforeArrow, 'arrow key moves board focus');
+    const keyboardBlock = await page.evaluate(() => document.activeElement?.dataset.block);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator(`[data-block="${keyboardBlock}"]`).getAttribute('aria-pressed'), 'true', 'Enter activates focused block');
+    if (await page.isVisible('#info-dialog')) await page.click('[data-info-close]');
     assert.match(await page.textContent('[data-screen="howto"]'), /\$12,000[\s\S]*\$500/, 'rules copy filled from ECONOMY');
     // Names are rendered as text, never HTML.
     assert.ok((await page.textContent('#hud-right')).includes('<b>Bo</b>'), 'name escaped');
@@ -200,12 +211,14 @@ for (const vp of VIEWPORTS) {
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-built') && el.classList.contains('road--red')));
     assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'blue');
 
-    // Duplicate road is rejected and the turn does not pass.
-    // (dispatchEvent: Playwright won't click an aria-disabled control, but a player can tap it)
+    // Built roads are inert: even a synthetic click gives no rejection feedback.
+    const toastBeforeLockedRoad = await page.textContent('#toasts');
     await road('h-0-0').dispatchEvent('click');
-    assert.match(await banner(), /<b>Bo<\/b>'s turn/, 'duplicate road rejected');
-    assert.match(await page.textContent('#toasts'), /already paved/);
+    assert.match(await banner(), /<b>Bo<\/b>'s turn/, 'locked road does not pass the turn');
+    assert.equal(await page.textContent('#toasts'), toastBeforeLockedRoad, 'locked road gives no error feedback');
+    assert.equal(await road('h-0-0').evaluate((el) => el.classList.contains('is-rejected')), false);
     assert.equal(await page.textContent('#hud-roads'), '1/84');
+    assert.equal(await road('h-0-0').getAttribute('data-owner-symbol'), 'triangle');
 
     await pave(page, road('v-0-0'));
     assert.match(await banner(), /Player 3's turn/);
@@ -339,7 +352,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -435,7 +448,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -487,7 +500,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -549,7 +562,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -605,7 +618,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();
@@ -678,10 +691,20 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#turn-banner'), /Player 1/, 'turn not passed on first tap');
     await road('h-4-4').tap(); // re-arms another road instead
     assert.equal(await page.locator('.road.is-armed').count(), 1);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.road.is-armed').count(), 0, 'Escape cancels an armed road');
+    await road('h-4-4').tap(); // arm again
     await road('h-4-4').tap(); // second tap paves
     assert.ok(await road('h-4-4').evaluate((e) => e.classList.contains('is-built')), 'second tap paves');
     assert.match(await page.textContent('#turn-banner'), /Player 2/);
+    assert.ok(await page.isVisible('#handoff-dialog'));
+    assert.match(await page.textContent('#handoff-title'), /Pass to Player 2/);
+    await page.click('#handoff-ready');
     assert.equal(await road('h-3-3').evaluate((e) => e.classList.contains('is-built')), false);
+    await page.setViewportSize({ width: 667, height: 375 });
+    await noHorizontalScroll(page, 'touch rotation landscape');
+    assert.equal(await page.locator('#board [tabindex="0"]').count(), 1, 'roving tab stop survives resize');
+    await page.setViewportSize({ width: 375, height: 667 });
 
     // Tapping an unowned block opens the details sheet (inspector is hidden on phones).
     await page.locator('[data-block="r2c2"]').tap();
@@ -719,7 +742,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
   const page = await context.newPage();

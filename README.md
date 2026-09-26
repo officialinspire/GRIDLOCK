@@ -41,10 +41,10 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 | --- | --- | --- |
 | Pave a road | Click the gap between two intersections (hover previews it in your colour) | **Tap twice**: the first tap highlights the road, the second paves it. This prevents misplaced roads on small screens and can be turned off in Settings. |
 | Inspect / develop a block | Click it: your blocks open the Build panel; others show in the side panel | Tap it: your blocks open the Build panel; others open a details sheet |
-| Keyboard | Tab to any road or block, then Enter/Space | n/a |
+| Keyboard | Tab into the board, use arrow keys between cells, Enter/Space to activate, Escape to cancel an armed road | n/a |
 | Pause, How To Play, quit | ⏸ button (top left) | same |
 
-Settings (saved on the device): sound effects, tap twice to pave, reduce motion (the OS setting is also respected), and show block coordinates.
+Settings (saved on the device): sound effects, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
 
 ## Scoring
 
@@ -193,6 +193,8 @@ Notes:
 - **Touch targets:** road slots have enlarged hit areas, and all buttons are at least about 44px tall.
 - **Hover effects only where hover exists** (`@media (hover: none)`), so taps don't leave items looking stuck in a hover state.
 - **Clear states:** the current player's colour appears on the board frame, banner, card and prompt. Roads show an armed/preview state, disabled roads look disabled when the board is locked, and focus rings are visible.
+- **Not colour alone:** every player also has a persistent symbol and distinct road/block pattern, repeated in accessible labels.
+- **Keyboard board:** one board cell is tabbable at a time; arrow keys move spatially, Enter/Space activates, and Escape clears a road preview. Built and otherwise locked roads are inert.
 - **Screen readers:** every road and block has a spoken label, dialogs are native `<dialog>` elements, and the HUD, prompts and toasts announce changes politely.
 - **Safe areas:** iPhone notches and home indicators are respected (`viewport-fit=cover` plus `env(safe-area-inset-*)`).
 

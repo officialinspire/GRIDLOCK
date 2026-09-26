@@ -98,6 +98,8 @@ test('settings normalize, persist, and survive broken storage', () => {
   const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
   assert.equal(saveSettings({ ...DEFAULT_SETTINGS, confirmTaps: false }, storage), true);
   assert.equal(loadSettings(storage).confirmTaps, false);
+  assert.equal(loadSettings(storage).quickHandoff, false);
+  assert.equal(normalizeSettings({ quickHandoff: true }).quickHandoff, true);
   const broken = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
   assert.deepEqual(loadSettings(broken), DEFAULT_SETTINGS);
   assert.equal(saveSettings(DEFAULT_SETTINGS, broken), false);

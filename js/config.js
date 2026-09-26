@@ -8,10 +8,10 @@ export const MAX_PLAYERS = 4;
 
 /** Seat presets match the four colours/symbols in "ownership markers.png". */
 export const PLAYER_PRESETS = Object.freeze([
-  { seat: 1, name: 'Player 1', color: 'red', symbol: 'triangle', hex: '#c8322b' },
-  { seat: 2, name: 'Player 2', color: 'blue', symbol: 'diamond', hex: '#1f4f9c' },
-  { seat: 3, name: 'Player 3', color: 'yellow', symbol: 'circle', hex: '#e9a91e' },
-  { seat: 4, name: 'Player 4', color: 'green', symbol: 'leaf', hex: '#3a8a3a' },
+  { seat: 1, name: 'Player 1', color: 'red', symbol: 'triangle', mark: '▲', hex: '#c8322b' },
+  { seat: 2, name: 'Player 2', color: 'blue', symbol: 'diamond', mark: '◆', hex: '#1f4f9c' },
+  { seat: 3, name: 'Player 3', color: 'yellow', symbol: 'circle', mark: '●', hex: '#e9a91e' },
+  { seat: 4, name: 'Player 4', color: 'green', symbol: 'leaf', mark: '✦', hex: '#3a8a3a' },
 ]);
 
 export const DEFAULT_SETTINGS = Object.freeze({
@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
   reducedMotion: false,
   showCoords: false,
+  quickHandoff: false,
 });
 
 /**

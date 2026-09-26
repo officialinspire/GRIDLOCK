@@ -8,6 +8,7 @@ let enabled = true;
 
 /** name → list of [frequency Hz, start s, duration s, type, gain] notes. */
 const SOUNDS = {
+  tick: [[720, 0, 0.035, 'sine', 0.035]],
   pave: [[180, 0, 0.06, 'triangle', 0.18], [120, 0.03, 0.08, 'triangle', 0.12]],
   capture: [[523, 0, 0.1, 'triangle', 0.16], [659, 0.08, 0.1, 'triangle', 0.16], [784, 0.16, 0.16, 'triangle', 0.16]],
   build: [[392, 0, 0.08, 'square', 0.07], [523, 0.07, 0.12, 'square', 0.07]],
