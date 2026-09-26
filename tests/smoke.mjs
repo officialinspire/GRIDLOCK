@@ -293,6 +293,7 @@ for (const vp of VIEWPORTS) {
       await dismissEvent(page);
     }
     await page.waitForSelector('#results-dialog[open]');
+    assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null, 'completed match clears active save');
     assert.equal(await page.locator('#board .block--owned').count(), 36, 'all blocks claimed');
     assert.equal(await page.textContent('#hud-roads'), '84/84');
     const cards = page.locator('#results-list .result-card');
@@ -326,12 +327,13 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.locator('#board .block--owned').count(), 0);
     assert.match(await banner(), /Ada's turn/);
 
-    // Pause → quit
+    // Pause → save and quit; title offers continuation.
     await page.click('#game-menu-btn');
     assert.ok(await page.isVisible('#pause-dialog'));
     await shot('11-pause');
-    await page.getByRole('button', { name: 'Quit to Title' }).click();
+    await page.getByRole('button', { name: 'Save & Quit' }).click();
     assert.ok(await page.isVisible('[data-screen="title"]'), 'quit to title');
+    assert.ok(await page.isVisible('#continue-game'), 'valid active save can be continued');
 
     assert.deepEqual(errors, [], 'no runtime errors');
     console.log(`✔ ${vp.name} (${vp.width}×${vp.height})`);
@@ -715,7 +717,7 @@ for (const vp of VIEWPORTS) {
 
     // Restart resets everything: pause → quit → new game.
     await page.click('#game-menu-btn');
-    await page.getByRole('button', { name: 'Quit to Title' }).click();
+    await page.getByRole('button', { name: 'Save & Quit' }).click();
     await page.getByRole('button', { name: 'New Game' }).click();
     await page.click('#setup-start');
     assert.equal(await page.locator('#board .road.is-built').count(), 0, 'fresh board');
@@ -730,6 +732,47 @@ for (const vp of VIEWPORTS) {
     failures++;
     console.error(`✘ touch: ${err.message}`);
     await page.screenshot({ path: 'test-results/touch-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Active game persistence survives a full browser reload without transient UI.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    await pave(page, page.locator('[data-road="h-0-0"]'));
+    assert.match(await page.textContent('#turn-banner'), /Player 2/);
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.ok(await page.isVisible('[data-screen="title"]'));
+    await page.click('#continue-game');
+    assert.ok(await page.locator('[data-road="h-0-0"]').evaluate((el) => el.classList.contains('is-built')));
+    assert.match(await page.textContent('#turn-banner'), /Player 2/);
+    assert.equal(await page.textContent('#hud-roads'), '1/84');
+    assert.equal(await page.locator('dialog[open]').count(), 0, 'transient dialogs are not persisted');
+    assert.equal(await page.locator('.is-new, .is-just-built, .is-armed').count(), 0, 'transient effects are not restored');
+    await page.click('#game-menu-btn');
+    await page.locator('#pause-dialog').getByRole('button', { name: 'Abandon Game' }).click();
+    assert.ok(await page.isVisible('#abandon-dialog'), 'abandon requires confirmation');
+    await page.getByRole('button', { name: 'Keep Playing' }).click();
+    assert.ok(await page.isVisible('[data-screen="game"]'));
+    await page.click('#game-menu-btn');
+    await page.locator('#pause-dialog').getByRole('button', { name: 'Abandon Game' }).click();
+    await page.locator('#abandon-dialog').getByRole('button', { name: 'Abandon Game' }).click();
+    assert.ok(await page.isVisible('[data-screen="title"]'));
+    assert.equal(await page.isVisible('#continue-game'), false, 'abandon clears active save');
+    assert.deepEqual(errors, []);
+    console.log('✔ persistence: reload and continue');
+  } catch (err) {
+    failures++;
+    console.error(`✘ persistence: ${err.message}`);
   } finally {
     await context.close();
   }

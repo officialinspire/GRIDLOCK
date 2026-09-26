@@ -41,10 +41,15 @@
         <span class="pin pin--left" data-sprite="title:pin-red"></span>
         <span class="pin pin--right" data-sprite="title:pin-blue"></span>
 
+        <button class="btn btn--gold btn--xl" id="continue-game" hidden>
+          <span class="btn__icon" data-sprite="icons:play"></span>
+          <span>Continue Game</span>
+        </button>
         <button class="btn btn--gold btn--xl" data-nav="setup" data-autofocus>
           <span class="btn__icon" data-sprite="icons:play"></span>
           <span>New Game</span>
         </button>
+        <button class="btn btn--sm" id="discard-save" hidden>Discard Saved Game</button>
         <button class="btn btn--xl" data-nav="howto">
           <span class="btn__icon" data-sprite="icons:info"></span>
           <span>How To Play</span>
@@ -322,9 +327,21 @@
           <button class="btn" data-dialog-action="howto">
             <span class="btn__icon" data-sprite="icons:info"></span><span>How To Play</span>
           </button>
-          <button class="btn btn--danger" data-dialog-action="quit">
-            <span class="btn__icon" data-sprite="icons:home"></span><span>Quit to Title</span>
+          <button class="btn" data-dialog-action="save-quit">
+            <span class="btn__icon" data-sprite="icons:home"></span><span>Save &amp; Quit</span>
           </button>
+          <button class="btn btn--danger" data-dialog-action="abandon">
+            <span class="btn__icon" data-sprite="icons:undo"></span><span>Abandon Game</span>
+          </button>
+        </div>
+      </dialog>
+
+      <dialog class="modal paper" id="abandon-dialog" aria-labelledby="abandon-heading">
+        <h3 id="abandon-heading" class="modal__title">Abandon this game?</h3>
+        <p>This permanently deletes the active save.</p>
+        <div class="modal__actions">
+          <button class="btn" data-abandon-action="cancel">Keep Playing</button>
+          <button class="btn btn--danger" data-abandon-action="confirm">Abandon Game</button>
         </div>
       </dialog>
     </section>

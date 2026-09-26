@@ -46,6 +46,10 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 Settings (saved on the device): sound effects, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
 
+### Saving a local game
+
+Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely.
+
 ## Scoring
 
 `core/scoring.js` is pure and deterministic.
@@ -224,6 +228,7 @@ js/
     scoring.js             City Value, ranking/tie-breakers, distinctions, final results
     finance.js             Distress, selling/downgrading, bankruptcy, abandoned-block redevelopment
     settings.js            Persisted settings (localStorage, fails safe)
+    persistence.js         Versioned active-game save, migration, validation and reset
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
@@ -256,6 +261,7 @@ tests/
   unit/assets.test.mjs     Originals unmodified (SHA-256), every sheet used, generated files exist, ART roles resolve
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
+  unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)

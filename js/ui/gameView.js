@@ -26,6 +26,7 @@ import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { play } from './sfx.js';
 import { getSettings } from './settingsView.js';
+import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -37,6 +38,18 @@ let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
 
 export const getGame = () => game;
+
+function refreshSavedGameControls() {
+  const saved = loadActiveGame();
+  $('#continue-game').hidden = !saved;
+  $('#discard-save').hidden = !saved;
+  return saved;
+}
+
+function autosave() {
+  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+  refreshSavedGameControls();
+}
 
 function renderInspector(blockId, panel = $('#inspector')) {
   const block = blockId && game ? getBlockById(game.board, blockId) : null;
@@ -131,6 +144,7 @@ function render() {
 function handleDevelopment({ bonusBefore }) {
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
+  autosave();
   render();
   play('build');
   const player = currentPlayer(game);
@@ -168,6 +182,7 @@ function showHandoff(player, onReady) {
 function leaveCapturedBlock(blockId) {
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
   resolveCapture(game, blockId);
+  autosave();
   showCaptureChoice();
 }
 
@@ -242,6 +257,8 @@ function handleRoad(id) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
+    clearActiveGame();
+    refreshSavedGameControls();
     setTimeout(() => {
       if (game?.results) play('win');
       showResults();
@@ -249,6 +266,7 @@ function handleRoad(id) {
     bus.emit('game:move', result);
     return;
   }
+  autosave();
   if (n > 0) showCaptureChoice();
   const finishTransition = () => {
     if (result.event?.started) {
@@ -293,22 +311,53 @@ function startGame(setup) {
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
+  clearActiveGame();
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
   chain = 0;
   clearSelection();
   render();
   resetTo('game');
+  autosave();
   toast(`${currentPlayer(game).name} goes first`);
 }
 
-function quitToTitle() {
+function leaveForTitle() {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
   clearSelection();
   game = null;
   resetTo('title');
+  refreshSavedGameControls();
+}
+
+function saveAndQuit() {
+  autosave();
+  leaveForTitle();
+}
+
+function abandonGame() {
+  clearActiveGame();
+  leaveForTitle();
+}
+
+function continueGame(saved = loadActiveGame()) {
+  if (!saved) return refreshSavedGameControls();
+  closeBuildPanel();
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  clearToasts();
+  disarm();
+  clearSelection();
+  game = saved.game;
+  lastSetup = saved.setup;
+  chain = 0;
+  preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
+  render();
+  resetTo('game');
+  if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length) showCaptureChoice();
+  checkDistress();
+  toast('Game restored', { tone: 'success' });
 }
 
 function initDialogs() {
@@ -321,7 +370,8 @@ function initDialogs() {
     if (!action) return;
     pause.close();
     if (action === 'howto') showScreen('howto');
-    if (action === 'quit') quitToTitle();
+    if (action === 'save-quit') saveAndQuit();
+    if (action === 'abandon') $('#abandon-dialog').showModal();
   });
 
   const results = $('#results-dialog');
@@ -330,7 +380,14 @@ function initDialogs() {
     if (!action) return;
     results.close();
     if (action === 'rematch') startGame(lastSetup);
-    if (action === 'title') quitToTitle();
+    if (action === 'title') leaveForTitle();
+  });
+  const abandon = $('#abandon-dialog');
+  abandon.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-abandon-action]')?.dataset.abandonAction;
+    if (!action) return;
+    abandon.close();
+    if (action === 'confirm') abandonGame();
   });
 }
 
@@ -341,7 +398,7 @@ export function initGameView() {
     if (e.target === info || e.target.closest('[data-info-close]')) info.close();
   });
   initBuildPanel({ onChange: handleDevelopment, onLeave: ({ blockId }) => leaveCapturedBlock(blockId) });
-  initFinanceView({ onChange: () => render() });
+  initFinanceView({ onChange: () => { autosave(); render(); } });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   $('#action-pave').addEventListener('click', () => {
@@ -349,6 +406,7 @@ export function initGameView() {
       clearSelection();
       disarm();
       render();
+      autosave();
     }
   });
   $('#capture-choice-dialog').addEventListener('cancel', (e) => e.preventDefault());
@@ -371,5 +429,12 @@ export function initGameView() {
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });
   bus.on('game:start', startGame);
+  $('#continue-game').addEventListener('click', () => continueGame());
+  $('#discard-save').addEventListener('click', () => {
+    clearActiveGame();
+    refreshSavedGameControls();
+  });
+  bus.on('screen:shown', ({ name }) => { if (name === 'title') refreshSavedGameControls(); });
+  refreshSavedGameControls();
   renderInspector(null);
 }
