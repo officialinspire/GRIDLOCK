@@ -301,6 +301,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null, 'completed match clears active save');
     assert.equal(await page.locator('#board .block--owned').count(), 36, 'all blocks claimed');
     assert.equal(await page.textContent('#hud-roads'), '84/84');
+    assert.ok(await page.locator('#board-frame.is-city-complete').count(), 'completed city remains highlighted');
     const cards = page.locator('#results-list .result-card');
     assert.equal(await cards.count(), 4, 'all four players on the results screen');
     for (let i = 0; i < 4; i++) {
@@ -317,6 +318,10 @@ for (const vp of VIEWPORTS) {
     assert.equal(Number((await winnerCards.first().locator('.result-card__city-value').textContent()).replace(/[^0-9-]/g, '')), nums[0]);
     assert.ok(await page.locator('#results-awards .award').count() >= 1, 'distinctions awarded');
     assert.match(await page.textContent('#results-awards'), /Most Blocks/);
+    for (const label of ['Longest Capture Chain', 'Biggest District', 'Best Single Block', 'Events Survived', 'Bankruptcies']) {
+      assert.ok((await page.textContent('#match-stats')).includes(label), `match stats show ${label}`);
+    }
+    assert.equal(await page.locator('.result-card[style*="animation-delay"]').count(), 4, 'standings reveal progressively');
     assert.match(await banner(), /wins!|Tie:/);
     await shot('10-results');
 

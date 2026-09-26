@@ -11,6 +11,14 @@
 }
 @keyframes screen-in { from { opacity: 0; transform: translateY(6px); } }
 
+/* Each menu arrives as a short paper deal; nothing loops after settling. */
+.screen--page:not([hidden]) .page-header { animation: paper-deal 320ms var(--ease-pop) both; }
+.screen--page:not([hidden]) .page-body,
+.screen--page:not([hidden]) .howto-grid { animation: paper-deal 420ms 80ms var(--ease-pop) both; }
+@keyframes paper-deal {
+  from { opacity: 0; transform: translateY(18px) rotate(-1.5deg) scale(.97); }
+}
+
 /* ---------- Title ---------- */
 .screen--title {
   position: relative;
@@ -28,6 +36,15 @@
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
   animation: logo-drop 600ms var(--ease-pop) both;
 }
+.screen--title:not([hidden]) .city-edition { animation: sign-settle 520ms 180ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card { animation: paper-deal 460ms 280ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card .pin--left { animation: pin-settle 380ms 650ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card .pin--right { animation: pin-settle-right 380ms 700ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .title-skyline { animation: skyline-settle 900ms 100ms ease-out both; }
+@keyframes sign-settle { from { opacity: 0; transform: translateY(-14px) rotate(4deg); } }
+@keyframes pin-settle { from { opacity: 0; transform: translateY(-18px) rotate(-28deg) scale(1.15); } }
+@keyframes pin-settle-right { from { opacity: 0; transform: translateY(-18px) rotate(26deg) scale(1.15); } }
+@keyframes skyline-settle { from { opacity: 0; transform: translateX(-50%) translateY(18px); } }
 .city-edition {
   display: grid;
   place-items: center;

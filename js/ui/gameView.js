@@ -309,6 +309,7 @@ function handleRoad(id) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
+    $('#board-frame').classList.add('is-city-complete');
     clearActiveGame();
     refreshSavedGameControls();
     setTimeout(() => {
@@ -367,6 +368,7 @@ function startGame(setup) {
   clearActiveGame();
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
+  $('#board-frame').classList.remove('is-city-complete');
   chain = 0;
   renderChain();
   clearSelection();

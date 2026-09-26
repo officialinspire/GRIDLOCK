@@ -7,7 +7,7 @@ import { applyDevelopment, buildOnBlock, TABLE } from '../../js/core/development
 import { refreshBonuses } from '../../js/core/bonuses.js';
 import { calculateIncome } from '../../js/core/economy.js';
 import {
-  scorePlayer, rankScores, awardDistinctions, computeResults, DISTINCTIONS,
+  scorePlayer, rankScores, awardDistinctions, computeResults, computeMatchStats, DISTINCTIONS,
 } from '../../js/core/scoring.js';
 import { createGame, placeRoad, beginTurn, currentPlayer, getPlayer, standings, isCityComplete, PHASES } from '../../js/core/game.js';
 import { distressStatus, declareBankruptcy, sellDevelopment } from '../../js/core/finance.js';
@@ -187,6 +187,28 @@ test('the game ends when every block is enclosed; results are frozen at that mom
   assert.equal(standings(game)[0].seat, game.results.rows[0].seat);
   assert.equal(game.results.rows.length, 4);
   assert.deepEqual(game.results.winners, game.results.rows.filter((x) => x.rank === 1).map((x) => x.seat));
+});
+
+test('match stats summarize chains, districts, blocks, events, and bankruptcies', () => {
+  const game = calm();
+  own(game, 0, 0, 2, 'commercial', 2);
+  own(game, 0, 1, 2, 'commercial', 1);
+  own(game, 0, 2, 2, 'commercial', 1);
+  own(game, 5, 5, 1, 'landmark', 3);
+  game.log.push(
+    { type: 'road', seat: 2, captured: ['r0c0'] },
+    { type: 'road', seat: 2, captured: ['r0c1', 'r0c2'] },
+    { type: 'road', seat: 2, captured: [] },
+    { type: 'road', seat: 1, captured: ['r5c5'] },
+  );
+  game.events.history.push({ id: 'heavy-rain' }, { id: 'city-festival' });
+  game.players[0].bankruptcies = 1;
+  const stats = computeMatchStats(game);
+  assert.deepEqual(stats.longestCaptureChain, { seat: 2, count: 3 });
+  assert.deepEqual(stats.biggestDistrict, { seat: 2, type: 'commercial', size: 3 });
+  assert.deepEqual(stats.bestSingleBlock, { seat: 1, label: 'F6', value: 14500 });
+  assert.equal(stats.eventsSurvived, 2);
+  assert.equal(stats.bankruptcies, 1);
 });
 
 test('full random games: 4 ranked rows, consistent totals, deterministic from the seed', () => {

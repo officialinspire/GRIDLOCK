@@ -14,11 +14,12 @@ function stat(label, value, cls = '') {
   return [h('dt', {}, label), h('dd', { class: cls }, value)];
 }
 
-function playerCard(row, awardsBySeat, isWinner) {
+function playerCard(row, awardsBySeat, isWinner, index) {
   const hi = row.highest;
   return h('li', {
     class: `result-card result-card--${row.color}${isWinner ? ' is-winner' : ''}`,
-    dataset: { seat: row.seat, rank: row.rank },
+    dataset: { seat: row.seat, rank: row.rank, cityValue: row.cityValue },
+    style: { animationDelay: `${160 + index * 120}ms` },
     'aria-label': `${ordinal(row.rank)}: ${row.name}, City Value ${formatCash(row.cityValue)}`,
   },
     h('div', { class: 'result-card__head' },
@@ -66,7 +67,7 @@ export function renderResults(game) {
     awardsBySeat.get(seat).push(a);
   }
 
-  $('#results-list').replaceChildren(...res.rows.map((row) => playerCard(row, awardsBySeat, winners.has(row.seat))));
+  $('#results-list').replaceChildren(...res.rows.map((row, index) => playerCard(row, awardsBySeat, winners.has(row.seat), index)));
   $('#results-awards').replaceChildren(...(res.distinctions.length
     ? res.distinctions.map((a) => h('li', { class: 'award', dataset: { award: a.id } },
       createSprite(a.icon, { className: 'award__icon' }),
@@ -79,11 +80,47 @@ export function renderResults(game) {
   $('.results__formula').textContent = tie
     ? `City Value = weighted cash + land + building investment · ties broken by ${TIEBREAKERS.slice(1).map((t) => t.label).join(', then ')}`
     : 'City Value = weighted cash + land + building investment';
+
+  const stats = res.matchStats;
+  const statName = (seat) => seat ? nameOf(seat) : 'None';
+  const category = (type) => type ? `${type[0].toUpperCase()}${type.slice(1)}` : 'None';
+  const facts = [
+    ['Longest Capture Chain', stats.longestCaptureChain.count
+      ? `${statName(stats.longestCaptureChain.seat)} · ${stats.longestCaptureChain.count}` : 'None'],
+    ['Biggest District', stats.biggestDistrict
+      ? `${statName(stats.biggestDistrict.seat)} · ${stats.biggestDistrict.size} ${category(stats.biggestDistrict.type)}` : 'None'],
+    ['Best Single Block', stats.bestSingleBlock
+      ? `${statName(stats.bestSingleBlock.seat)} · ${stats.bestSingleBlock.label} · ${formatCash(stats.bestSingleBlock.value)}` : 'None'],
+    ['Events Survived', stats.eventsSurvived],
+    ['Bankruptcies', stats.bankruptcies],
+  ];
+  $('#match-stats').replaceChildren(...facts.map(([label, value]) =>
+    h('div', { class: 'match-stat' }, h('dt', {}, label), h('dd', {}, value))));
+}
+
+const reducedMotion = () => document.documentElement.dataset.motion === 'reduced'
+  || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+function countCityValues(dialog) {
+  for (const el of dialog.querySelectorAll('.result-card__city-value')) {
+    const target = Number(el.closest('.result-card').dataset.cityValue);
+    if (reducedMotion()) continue;
+    el.textContent = formatCash(0);
+    const start = performance.now();
+    const tick = (now) => {
+      if (!dialog.open) return;
+      const progress = Math.min(1, (now - start) / 850);
+      el.textContent = formatCash(Math.round(target * (1 - (1 - progress) ** 3)));
+      if (progress < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 }
 
 export function showResults(game) {
   renderResults(game);
   const dialog = $('#results-dialog');
   if (!dialog.open) dialog.showModal();
+  requestAnimationFrame(() => countCityValues(dialog));
   dialog.querySelector('[data-results-action="rematch"]').focus();
 }

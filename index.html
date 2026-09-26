@@ -305,6 +305,9 @@
       </dialog>
 
       <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">
+        <div class="results__confetti" aria-hidden="true">
+          <span data-sprite="effects:confetti"></span><span data-sprite="effects:confetti"></span>
+        </div>
         <header class="results__head">
           <span class="results__trophy" data-sprite="icons:trophy"></span>
           <p class="results__kicker">City complete · final results</p>
@@ -312,6 +315,7 @@
           <p class="results__formula">City Value = cash + land + invested construction cost</p>
         </header>
         <ol class="results__grid" id="results-list"></ol>
+        <dl class="match-stats" id="match-stats" aria-label="Match statistics"></dl>
         <section class="results__awards" aria-labelledby="awards-heading">
           <h4 id="awards-heading" class="results__awards-title">City Distinctions</h4>
           <ul class="awards" id="results-awards"></ul>

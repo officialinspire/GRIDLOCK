@@ -128,6 +128,60 @@ export function awardDistinctions(scores) {
   return awards;
 }
 
+function largestDistrict(game) {
+  const eligible = game.board.blocks.filter((b) => b.ownerSeat != null && isDev(b));
+  const seen = new Set();
+  let best = null;
+  for (const start of eligible) {
+    if (seen.has(start.id)) continue;
+    const stack = [start];
+    const group = [];
+    seen.add(start.id);
+    while (stack.length) {
+      const block = stack.pop();
+      group.push(block);
+      for (const other of eligible) {
+        if (seen.has(other.id) || other.ownerSeat !== start.ownerSeat || other.type !== start.type) continue;
+        if (Math.abs(other.row - block.row) + Math.abs(other.col - block.col) !== 1) continue;
+        seen.add(other.id);
+        stack.push(other);
+      }
+    }
+    if (!best || group.length > best.size) best = { seat: start.ownerSeat, type: start.type, size: group.length };
+  }
+  return best;
+}
+
+/** Match-wide facts derived from the frozen board/log; these never affect ranking. */
+export function computeMatchStats(game) {
+  let runSeat = null;
+  let run = 0;
+  let longest = { seat: null, count: 0 };
+  for (const entry of game.log) {
+    if (entry.type !== 'road') continue;
+    if (entry.captured.length) {
+      run = entry.seat === runSeat ? run + entry.captured.length : entry.captured.length;
+      runSeat = entry.seat;
+      if (run > longest.count) longest = { seat: entry.seat, count: run };
+    } else {
+      runSeat = null;
+      run = 0;
+    }
+  }
+  const owned = game.board.blocks.filter((b) => b.ownerSeat != null);
+  const best = owned.reduce((top, block) => {
+    const value = block.price + investedIn(block);
+    return !top || value > top.value ? { seat: block.ownerSeat, label: block.label, value } : top;
+  }, null);
+  return {
+    longestCaptureChain: longest,
+    biggestDistrict: largestDistrict(game),
+    bestSingleBlock: best,
+    eventsSurvived: game.events.history.length,
+    bankruptcies: game.players.reduce((sum, player) => sum + (player.bankruptcies ?? 0), 0),
+  };
+}
+
 /** Full results: ranked rows, winners (seats), distinctions. */
 export function computeResults(game) {
   const rows = rankScores(game.players.map((p) => scorePlayer(game, p)));
@@ -136,5 +190,6 @@ export function computeResults(game) {
     rows,
     winners: rows.filter((r) => r.rank === 1).map((r) => r.seat),
     distinctions: awardDistinctions(rows),
+    matchStats: computeMatchStats(game),
   };
 }
