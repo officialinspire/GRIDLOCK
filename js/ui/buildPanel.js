@@ -17,7 +17,8 @@ import { bonusList } from './bonusView.js';
 import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
 import { toast } from './toast.js';
 import {
-  quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned, ACQUIRE_MODES, FIN_ERRORS,
+  quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned,
+  quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES, FIN_ERRORS,
 } from '../core/finance.js';
 import { ECONOMY } from '../config.js';
 
@@ -164,21 +165,22 @@ function abandonedView(game, block, player) {
   const former = block.abandonedBy ? getPlayer(game, block.abandonedBy) : null;
   const art = levelArt(block.type, block.level);
   const option = (mode, title, detail) => {
-    const q = quoteAcquire(game, block.id, mode);
-    const blocked = q.error && q.error !== FIN_ERRORS.INSUFFICIENT_FUNDS;
+    const q = quoteRedevelopment(game, block.id, mode);
+    const blocked = !q.ok;
     if (blocked && q.error === FIN_ERRORS.NOT_DEVELOPED) return null;
-    return h('button', {
-      type: 'button',
-      class: `acquire-option${q.ok ? '' : ' is-unaffordable'}`,
-      dataset: { acquire: mode },
-      'aria-disabled': q.ok ? null : 'true',
-    },
+    const bidders = eligibleRedevelopers(game, block);
+    return h('section', { class: 'acquire-option', dataset: { auctionMode: mode } },
       h('strong', { class: 'acquire-option__title' }, title),
-      h('span', { class: 'acquire-option__detail' }, detail(q)),
-      h('span', { class: 'price__cost' }, formatCash(q.cost)),
-      q.error === FIN_ERRORS.INSUFFICIENT_FUNDS && h('span', { class: 'price__short' }, `Need ${formatCash(q.shortfall)} more`),
-      q.error === FIN_ERRORS.FORMER_OWNER && h('span', { class: 'price__short' }, 'You abandoned this block'),
-      q.error === FIN_ERRORS.IN_DISTRESS && h('span', { class: 'price__short' }, 'Clear your debt first'),
+      h('span', { class: 'acquire-option__detail' }, detail({ ...q, cost: q.reserve })),
+      h('span', { class: 'price__cost' }, `Reserve ${formatCash(q.reserve)}`),
+      ...bidders.map((bidder) => h('label', { class: 'auction-bid' },
+        h('span', {}, bidder.name),
+        h('input', {
+          type: 'number', min: q.reserve, step: ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT,
+          max: bidder.cash, name: `bid-${bidder.seat}`, placeholder: 'Pass',
+          value: bidder.seat === player.seat && bidder.cash >= q.reserve ? q.reserve : null,
+        }))),
+      h('button', { type: 'button', class: 'btn btn--sm', dataset: { auction: mode } }, 'Resolve bids'),
     );
   };
   return [
@@ -266,6 +268,22 @@ function handleAcquire(result) {
   if (reopen) openBuildPanel(state.game, result.block); // go straight to choosing what to build
 }
 
+function handleAuction(mode) {
+  const panel = document.querySelector(`[data-auction-mode="${mode}"]`);
+  const bids = [...panel.querySelectorAll('[name^="bid-"]')]
+    .filter((input) => input.value !== '')
+    .map((input) => ({ seat: Number(input.name.slice(4)), bid: Number(input.value) }));
+  const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
+  if (!result.ok) {
+    toast('No eligible affordable bid met the reserve.', { tone: 'warn' });
+    return;
+  }
+  const winner = getPlayer(state.game, result.winnerSeat);
+  toast(`${winner.name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
+  $('#build-dialog').close();
+  state.onChange({ ...result, bonusBefore: Infinity });
+}
+
 /** True if the current player may open the panel: their own block, or an abandoned one. */
 export function canManage(game, blockId) {
   const block = game && getBlockById(game.board, blockId);
@@ -310,6 +328,8 @@ export function initBuildPanel({ onChange, onLeave = () => {} }) {
     if (sell) return handleSale(sellDevelopment(state.game, sell.dataset.sell), 'Sold development');
     const acquire = e.target.closest('[data-acquire]');
     if (acquire) return handleAcquire(acquireAbandoned(state.game, state.blockId, acquire.dataset.acquire));
+    const auction = e.target.closest('[data-auction]');
+    if (auction) return handleAuction(auction.dataset.auction);
     if (e.target.closest('[data-action="close"]')) {
       dialog.close();
       state.onLeave({ blockId: state.blockId });

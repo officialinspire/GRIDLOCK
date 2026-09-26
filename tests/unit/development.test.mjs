@@ -117,7 +117,9 @@ test('building deducts cash immediately and the block stores type/level/value/in
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
-    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0, upkeep: 50 + 75, distress: false, bankruptcies: 0,
+    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0,
+    upkeep: Math.round(1000 * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100) + Math.round(1500 * ECONOMY.FINANCE.UPKEEP_PERCENT / 100),
+    distress: false, bankruptcies: 0,
     bonus: 0, property: 2500, netWorth: 13500,
   });
 });
@@ -248,7 +250,8 @@ test('developed income is paid at the start of the owner\'s next turn', () => {
   placeRoad(game, 'h-6-4'); // → P3
   placeRoad(game, 'h-6-3'); // → P4
   const upkeep = upkeepFor(game.board, 1); // land tax + development upkeep
-  assert.equal(upkeep, 50 + Math.round((1750 + 2625) * ECONOMY.FINANCE.UPKEEP_PERCENT / 100));
+  assert.equal(upkeep, Math.round(1000 * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100)
+    + Math.round((1750 + 2625) * ECONOMY.FINANCE.UPKEEP_PERCENT / 100));
   const r = placeRoad(game, 'h-6-2'); // → P1's turn begins
   assert.deepEqual(r.turnIncome, { seat: 1, amount: 1200 });
   assert.deepEqual(r.turnUpkeep, { seat: 1, amount: upkeep, distress: false });

@@ -242,13 +242,19 @@ function handleRoad(id) {
     showEventCard(game, result.event.started, result.event.expired);
   } else if (result.event?.expired.length) {
     toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
+  } else if (result.event?.calm) {
+    toast('Calm round · no new city event', { tone: 'success' });
   }
   const paid = result.turnIncome?.amount ?? 0;
   const owed = result.turnUpkeep?.amount ?? 0;
-  if (result.turnIncome && (paid > 0 || owed > 0)) {
+  const repairs = result.turnRepair?.amount ?? 0;
+  if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
     const payee = getPlayer(game, result.turnIncome.seat);
-    const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`].filter(Boolean);
-    toast(`${payee.name}: ${parts.join(', ')}`, { tone: result.turnUpkeep?.distress ? 'warn' : 'success' });
+    const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
+      repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
+    toast(`${payee.name}: ${parts.join(', ')}`, {
+      tone: result.turnUpkeep?.distress || result.turnRepair?.distress ? 'warn' : 'success',
+    });
   }
   checkDistress();
   bus.emit('game:move', result);

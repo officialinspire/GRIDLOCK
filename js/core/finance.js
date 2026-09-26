@@ -155,6 +155,26 @@ export function declareBankruptcy(game) {
 
 export const ACQUIRE_MODES = Object.freeze({ RESTORE: 'restore', REBUILD: 'rebuild' });
 
+function redevelopmentPrice(block, mode) {
+  const land = pct(block.price, FIN.REDEVELOP_LAND_PERCENT);
+  const restore = mode === ACQUIRE_MODES.RESTORE ? pct(investedIn(block), FIN.RESTORE_PERCENT) : 0;
+  return { land, restore, reserve: land + restore };
+}
+
+export function quoteRedevelopment(game, blockId, mode) {
+  const block = getBlockById(game.board, blockId);
+  if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
+  if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
+  if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
+  return { ok: true, ...redevelopmentPrice(block, mode) };
+}
+
+/** Players allowed to contest a ruin; former owners and distressed players sit out. */
+export function eligibleRedevelopers(game, block) {
+  return game.players.filter((player) =>
+    (FIN.FORMER_OWNER_MAY_BUY || block.abandonedBy !== player.seat) && !isInDistress(player));
+}
+
 /**
  * Price to take over an abandoned block:
  *   rebuild  land only (the ruin is cleared to Vacant)
@@ -172,12 +192,54 @@ export function quoteAcquire(game, blockId, mode) {
   if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) return { ...base, error: FIN_ERRORS.FORMER_OWNER };
   if (isInDistress(player)) return { ...base, error: FIN_ERRORS.IN_DISTRESS };
 
-  const land = pct(block.price, FIN.REDEVELOP_LAND_PERCENT);
-  const restore = mode === ACQUIRE_MODES.RESTORE ? pct(investedIn(block), FIN.RESTORE_PERCENT) : 0;
-  const cost = land + restore;
+  const { land, restore, reserve: cost } = redevelopmentPrice(block, mode);
   const quote = { ...base, cost, land, restore };
   if (!canAfford(player, cost)) return { ...quote, error: FIN_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   return { ...quote, ok: true };
+}
+
+/**
+ * Resolve a fast sealed-bid redevelopment contest. Invalid, unaffordable and
+ * former-owner bids are reported but cannot win. Highest bid wins; configured
+ * seat order resolves ties deterministically.
+ */
+export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
+  const block = getBlockById(game.board, blockId);
+  if (game.phase !== PHASES.PLAYING) return { ok: false, error: FIN_ERRORS.GAME_OVER };
+  if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
+  if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
+  if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
+  const { land, restore, reserve } = redevelopmentPrice(block, mode);
+  const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
+  const rejected = [];
+  const valid = [];
+  const seen = new Set();
+  for (const offer of Array.isArray(bids) ? bids : []) {
+    const player = game.players.find((p) => p.seat === offer?.seat);
+    const bid = offer?.bid;
+    let error = null;
+    if (!player || seen.has(player.seat)) error = FIN_ERRORS.BAD_MODE;
+    else if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) error = FIN_ERRORS.FORMER_OWNER;
+    else if (isInDistress(player)) error = FIN_ERRORS.IN_DISTRESS;
+    else if (!Number.isSafeInteger(bid) || bid < reserve || (bid - reserve) % increment !== 0) error = FIN_ERRORS.BAD_MODE;
+    else if (!canAfford(player, bid)) error = FIN_ERRORS.INSUFFICIENT_FUNDS;
+    seen.add(player?.seat);
+    if (error) rejected.push({ seat: offer?.seat, bid, error });
+    else valid.push({ player, bid });
+  }
+  if (!valid.length) return { ok: false, error: FIN_ERRORS.INSUFFICIENT_FUNDS, reserve, land, restore, rejected };
+  const seatOrder = FIN.REDEVELOPMENT.TIE_BREAKER === 'highest-seat' ? -1 : 1;
+  valid.sort((a, b) => b.bid - a.bid || seatOrder * (a.player.seat - b.player.seat));
+  const winner = valid[0];
+  debit(game, winner.player, winner.bid, TXN.ACQUIRE, { block: block.id, mode, auction: true });
+  block.ownerSeat = winner.player.seat;
+  block.abandoned = false;
+  block.abandonedBy = null;
+  if (mode === ACQUIRE_MODES.REBUILD) applyDevelopment(block, 'vacant', 0);
+  refreshBonuses(game.board);
+  game.lastDevelopment = { block: block.id, seat: winner.player.seat, type: block.type, level: block.level, acquired: mode };
+  game.log.push({ type: 'redevelopment-auction', seat: winner.player.seat, block: block.id, mode, bid: winner.bid });
+  return { ok: true, block: block.id, mode, winnerSeat: winner.player.seat, cost: winner.bid, reserve, land, restore, rejected };
 }
 
 /** Buys an abandoned block for the current player and restores or clears it. */

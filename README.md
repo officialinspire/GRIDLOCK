@@ -29,11 +29,11 @@ ES modules don't load from `file://`, so open the game through a local server.
 
 Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
-**Each full round:** a **city event** is drawn, such as storms, fire, festivals, booms or a recession. These change income or building prices for 1–2 rounds. Civic buildings shield nearby blocks from emergencies.
+**Each full round:** there is a 65% chance of a **city event** and otherwise a calm round. At most two events overlap. Civic buildings shield nearby blocks from emergencies and their repair bills.
 
-**Debt:** if upkeep takes you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** (other players can buy and restore them), the debt is wiped, and you restart with $2,000.
+**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with $2,000.
 
-**End:** when every block is enclosed, any players who have not yet received that round's income/upkeep are settled first. The highest **City Value** (cash + land + actual construction cost invested) then wins. See [Scoring](#scoring).
+**End:** when every block is enclosed, unfinished income, upkeep and repairs are settled first. Highest **City Value** uses all cash and land plus 75% of actual construction investment. See [Scoring](#scoring).
 
 ### Controls
 
@@ -51,7 +51,7 @@ Settings (saved on the device): sound effects, tap twice to pave, reduce motion 
 `core/scoring.js` is pure and deterministic.
 
 - **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
-- **City Value** = cash + land value (price of every owned block) + the actual construction cost invested in retained building levels. Event discounts and surcharges change both cash paid and cost basis, so constructing never creates or destroys City Value by itself. Debt lowers it, and abandoned blocks count for nobody.
+- **City Value** uses configurable coefficients: 100% cash + 100% land + 75% of actual construction cost invested in retained levels. Development earns income and bonuses, but no longer converts spending automatically into equal score. Debt lowers value, and abandoned blocks count for nobody.
 - **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
 - **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, and any distinctions. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
 - **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
@@ -66,7 +66,8 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Capture reward | $500 per block claimed (a double capture pays $1,000) |
 | Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
 | Undeveloped blocks | $0 recurring income |
-| City value of property | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus actual invested construction cost basis |
+| Property shown in HUD | Land value plus actual invested construction cost basis |
+| Final building score | 75% of actual invested construction cost basis |
 | Net worth | Cash plus net property value |
 
 ### Development
@@ -109,13 +110,13 @@ In the UI: the HUD income includes bonuses, with a small ★ and a tooltip givin
 
 ### City events
 
-After every full round (when play wraps back to the first seat), one event is drawn from a weighted pool, **before** that round's turn income is paid. The whole pool lives in `CITY_EVENTS` in `js/config.js`: weight, duration, text, card art, income multipliers per category, cost multipliers, targeting, and whether civic buildings mitigate it.
+After every full round, a configured probability check happens before turn income. A calm round starts no event, and no more than two different events can be active. The pool and pacing controls live in `CITY_EVENTS` in `js/config.js`.
 
 | Event | Kind | Rounds | Effect |
 | --- | --- | --- | --- |
 | Heavy Rain | emergency | 1 | Park income stops |
 | Snowstorm | emergency | 1 | All income −25% |
-| Fire | emergency | 2 | Up to 2 developed blocks (max 1 per player) earn nothing |
+| Fire | emergency | 2 | Up to 2 developed blocks earn nothing and owe $400 repairs next owner turn |
 | Power Outage | emergency | 1 | Commercial + Industrial income −50% |
 | City Festival | boon | 1 | Commercial + Landmark income +50% |
 | Housing Boom | boon | 2 | Residential income +50%, homes cost 25% more |
@@ -124,8 +125,9 @@ After every full round (when play wraps back to the first seat), one event is dr
 | Recession | downturn | 2 | All income −20%, construction 10% cheaper |
 
 How it stays safe (`core/events.js`):
-- **Nothing is written:** events never touch blocks, cash or ownership. `game.events.active` holds `{ id, startRound, endRound, targets }`, and income and costs are derived from that list whenever they're needed. An event expires by being removed from the list, so it can't leave a permanent change behind.
+- **Temporary effects:** events never rewrite blocks or ownership. Income and construction modifiers are derived from the active list; one-time repair bills are queued explicitly and charged once at the owner's next turn.
 - **No duplicates:** re-drawing an active event refreshes its duration instead of adding a second copy. Overlapping different events multiply, clamped to ×0–×2.
+- **Calm pacing:** `ROUND_PROBABILITY` controls whether a round draws anything and `MAX_ACTIVE` caps simultaneous events.
 - **Civic mitigation:** emergencies skip any block inside a civic protection radius (`isProtected`). This is checked live, so building a civic mid-event helps immediately.
 - **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Add `?seed=123` to the URL to replay a game's events. Fire is capped and spread out: at most 2 targets, 1 per player.
 - **Prices and value:** cost events change the actual price paid. That amount becomes the level's invested cost basis and is used by upkeep, refunds, property City Value and final scoring. A separate list-price market value is retained only as optional information.
@@ -136,15 +138,14 @@ In the UI, a papercraft event card lists the affected blocks, anything shielded,
 
 Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 
-- **Upkeep:** charged at the start of each turn, **after** income. It's 5% of each owned block's land value (idle land costs money) plus 5% of the development cost invested in it. This is the only way cash can go below $0; voluntary spending never overdraws.
+- **Upkeep:** charged after income: 6% of owned land value plus 7% of invested construction cost. Idle expansion and aggressive building now carry meaningful risk without making ordinary developed blocks unprofitable.
+- **Emergency repairs:** targeted emergencies can queue a modest configured expense at the affected owner's next turn. Civic protection prevents both the income loss and repair charge.
 - **Financial distress:** cash < $0. This is derived from cash, not stored as a flag. While in distress, a player can't pave or buy. The distress panel opens automatically, after any event card is dismissed, and can be reopened with the **Resolve Debt** button.
 - **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
   - Roads stay as they are, the debt is written off, and the player stays in the game with **$2,000 Fresh Start** capital.
-- **Abandoned blocks:** any other player can buy one from the Build panel:
-  - **Restore**: land plus 40% of the ruin's invested cost; keeps its type and level.
-  - **Clear & rebuild**: land only; the block starts Vacant.
+- **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.

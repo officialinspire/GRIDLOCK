@@ -507,6 +507,8 @@ html[data-coords='on'] .block__coord { display: block; }
 .capture-choice { width: min(440px, calc(100vw - 28px)); text-align: center; }
 .capture-choice h3 { margin-top: 0; font-family: var(--font-display); font-size: 1.6rem; }
 .capture-choice__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.auction-bid { display: grid; grid-template-columns: 1fr minmax(90px, 130px); align-items: center; gap: 8px; width: 100%; }
+.auction-bid input { min-width: 0; padding: 6px 8px; font: inherit; }
 
 /* ---------- Tablet / phone portrait ---------- */
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {

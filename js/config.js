@@ -35,6 +35,13 @@ export const ECONOMY = Object.freeze({
   /** Recurring income from an owned block with no building on it. */
   UNDEVELOPED_INCOME: 0,
 
+  /** Final City Value coefficients. Development must repay its scoring discount through income. */
+  SCORING: Object.freeze({
+    CASH: 1,
+    LAND: 1,
+    INVESTED_BUILDING: 0.75,
+  }),
+
   /** Land value of a block by district; counts toward net property value. */
   LAND_VALUE: Object.freeze({
     suburbs: 1000,
@@ -83,8 +90,8 @@ export const ECONOMY = Object.freeze({
      *   LAND_TAX_PERCENT of its land value + UPKEEP_PERCENT of its invested development cost.
      * Idle land costs money, so over-expanding without developing can lead to distress.
      */
-    LAND_TAX_PERCENT: 5,
-    UPKEEP_PERCENT: 5,
+    LAND_TAX_PERCENT: 6,
+    UPKEEP_PERCENT: 7,
     /** Downgrading or selling refunds this % of the development cost removed. */
     SALE_REFUND_PERCENT: 50,
     /** Capital a bankrupt player restarts with… */
@@ -96,6 +103,11 @@ export const ECONOMY = Object.freeze({
     RESTORE_PERCENT: 40,
     /** Former owners can't buy back blocks they abandoned. */
     FORMER_OWNER_MAY_BUY: false,
+    /** Contested redevelopment uses sealed whole-dollar bids at or above this reserve. */
+    REDEVELOPMENT: Object.freeze({
+      MIN_BID_INCREMENT: 100,
+      TIE_BREAKER: 'lowest-seat',
+    }),
   }),
 
   /**
@@ -126,8 +138,8 @@ export const MAX_NAME_LENGTH = 16;
 
 /**
  * City events (core/events.js). One event is drawn when a full round of play
- * ends. Effects are *temporary modifiers* computed from the active-event list;
- * nothing is written into blocks or balances, so expired events leave no trace.
+ * ends. Most effects are temporary modifiers computed from the active-event
+ * list; targeted repair expenses are queued and charged once at owner turn start.
  *
  * Event fields:
  *   id, name, text, sprite      identity + papercraft card art (effects.png)
@@ -142,6 +154,9 @@ export const MAX_NAME_LENGTH = 16;
  * match: { all: true } | { categories: [...] } | { targets: true }
  */
 export const CITY_EVENTS = Object.freeze({
+  /** A round may be calm; at most this many different events overlap. */
+  ROUND_PROBABILITY: 0.65,
+  MAX_ACTIVE: 2,
   /** Combined multipliers from overlapping events are clamped to this range. */
   MIN_MULTIPLIER: 0,
   MAX_MULTIPLIER: 2,
@@ -164,6 +179,7 @@ export const CITY_EVENTS = Object.freeze({
       sprite: 'effects:boom', mitigation: 'civic',
       text: 'Fire breaks out! Struck blocks earn nothing while they recover.',
       targets: { categories: ['residential', 'commercial', 'industrial', 'landmark'], max: 2, perOwner: 1 },
+      repairCost: 400,
       income: [{ match: { targets: true }, multiplier: 0 }],
     },
     {

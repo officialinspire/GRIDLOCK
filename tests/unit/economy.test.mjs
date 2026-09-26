@@ -31,6 +31,8 @@ test('economy constants are centralized and sane', () => {
   assert.equal(ECONOMY.CAPTURE_REWARD, 500);
   assert.equal(ECONOMY.UNDEVELOPED_INCOME, 0);
   assert.ok(Object.isFrozen(ECONOMY));
+  assert.ok(ECONOMY.SCORING.INVESTED_BUILDING > 0 && ECONOMY.SCORING.INVESTED_BUILDING < 1,
+    'development retains score value without being an automatic dollar-for-dollar conversion');
   for (const v of [ECONOMY.STARTING_CASH, ECONOMY.CAPTURE_REWARD, ...Object.values(ECONOMY.LAND_VALUE)]) {
     assert.ok(isValidAmount(v), `bad constant ${v}`);
   }

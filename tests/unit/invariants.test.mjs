@@ -158,7 +158,7 @@ function playFuzz(seed, nPlayers) {
   assert.equal(Object.keys(game.board.roads).length, allRoadIds(game.board).length);
   const results = computeResults(game);
   assert.deepEqual(game.results, results, 'frozen results match a fresh computation at the end');
-  for (const row of game.results.rows) assert.equal(row.cityValue, row.cash + row.landValue + row.buildingValue);
+  for (const row of game.results.rows) assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings);
   return { captures, chains, bankruptcies, rotations };
 }
 

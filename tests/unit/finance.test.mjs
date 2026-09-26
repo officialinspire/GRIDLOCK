@@ -15,6 +15,7 @@ import {
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, liquidationValue, distressStatus,
   declareBankruptcy, quoteAcquire, acquireAbandoned, ownershipProblems, FIN_ERRORS, ACQUIRE_MODES,
+  eligibleRedevelopers, resolveRedevelopmentAuction,
 } from '../../js/core/finance.js';
 
 const FIN = ECONOMY.FINANCE;
@@ -45,15 +46,16 @@ test('upkeep = land tax + % of invested development, charged after income at tur
   const lot = getBlock(game.board, 0, 1);
   lot.ownerSeat = 2; // vacant: land tax only
   assert.equal(blockUpkeep(lot), tax);
-  assert.equal(upkeepFor(game.board, 2), 2 * tax + 225);
-  assert.equal(playerStats(game, getPlayer(game, 2)).upkeep, 2 * tax + 225);
+  const expected = 2 * tax + 4500 * FIN.UPKEEP_PERCENT / 100;
+  assert.equal(upkeepFor(game.board, 2), expected);
+  assert.equal(playerStats(game, getPlayer(game, 2)).upkeep, expected);
   assert.equal(blockUpkeep(getBlock(game.board, 5, 5)), 0, 'unowned: nothing');
 
   const r = passToP2(game);
   assert.deepEqual(r.turnIncome, { seat: 2, amount: 900 });
-  assert.deepEqual(r.turnUpkeep, { seat: 2, amount: 325, distress: false });
-  assert.equal(cash(game, 2), 12000 + 900 - 325);
-  assert.deepEqual(game.ledger.slice(-2).map((e) => [e.reason, e.delta]), [[TXN.TURN_INCOME, 900], [TXN.UPKEEP, -325]]);
+  assert.deepEqual(r.turnUpkeep, { seat: 2, amount: expected, distress: false });
+  assert.equal(cash(game, 2), 12000 + 900 - expected);
+  assert.deepEqual(game.ledger.slice(-2).map((e) => [e.reason, e.delta]), [[TXN.TURN_INCOME, 900], [TXN.UPKEEP, -expected]]);
 });
 
 /* ---------------- distress ---------------- */
@@ -222,6 +224,41 @@ function withRuins() {
   placeRoad(game, 'h-0-0'); // → P3's turn
   return game;
 }
+
+test('contested redevelopment handles multiple bidders, ties, funds, and former owners', () => {
+  const game = withRuins();
+  const block = getBlock(game.board, 2, 2);
+  const reserve = quoteAcquire(game, block.id, ACQUIRE_MODES.RESTORE).cost;
+  assert.deepEqual(eligibleRedevelopers(game, block).map((p) => p.seat), [1, 3, 4], 'former owner excluded');
+  getPlayer(game, 4).cash = reserve - 1;
+  const result = resolveRedevelopmentAuction(game, block.id, ACQUIRE_MODES.RESTORE, [
+    { seat: 2, bid: reserve + 1000 }, // former owner
+    { seat: 4, bid: reserve + 500 }, // insufficient funds
+    { seat: 3, bid: reserve + 200 },
+    { seat: 1, bid: reserve + 200 }, // tie: lowest seat wins
+  ]);
+  assert.equal(result.ok, true);
+  assert.equal(result.winnerSeat, 1);
+  assert.equal(block.ownerSeat, 1);
+  assert.equal(cash(game, 1), 12000 - reserve - 200);
+  assert.deepEqual(result.rejected.map((bid) => bid.error).sort(),
+    [FIN_ERRORS.FORMER_OWNER, FIN_ERRORS.INSUFFICIENT_FUNDS].sort());
+});
+
+test('redevelopment contest fails cleanly when nobody can meet the reserve', () => {
+  const game = withRuins();
+  const block = getBlock(game.board, 2, 2);
+  const reserve = quoteAcquire(game, block.id, ACQUIRE_MODES.RESTORE).cost;
+  getPlayer(game, 3).cash = reserve - 1;
+  const before = snap(game);
+  const result = resolveRedevelopmentAuction(game, block.id, ACQUIRE_MODES.RESTORE, [
+    { seat: 2, bid: reserve },
+    { seat: 3, bid: reserve },
+  ]);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, FIN_ERRORS.INSUFFICIENT_FUNDS);
+  assert.equal(snap(game), before);
+});
 
 test('another player can restore a ruin: land + 40% of invested', () => {
   const game = withRuins();

@@ -238,17 +238,20 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#turn-prompt'), /BONUS ROAD/);
     await shot('8-developed');
 
-    // P4's bonus road closes nothing → round wraps to P1 and a city event is drawn.
+    // P4's bonus road closes nothing → round wraps; the round may be calm.
     await pave(page, road('h-6-5'));
     const eventCard = page.locator('#event-dialog');
-    assert.ok(await eventCard.isVisible(), 'event card after the first full round');
-    assert.match(await eventCard.textContent(),
-      /(Heavy Rain|Snowstorm|Fire|Power Outage|City Festival|Housing Boom|Beautification Grant|Economic Boom|Recession)/);
-    assert.match(await eventCard.textContent(), /round(s)? left · Round/);
-    await shot('9-event-card');
-    await page.click('#event-continue');
-    assert.equal(await eventCard.isVisible(), false);
-    assert.equal(await page.locator('#event-strip .event-pill').count(), 1, 'active event pill');
+    if (await eventCard.isVisible()) {
+      assert.match(await eventCard.textContent(),
+        /(Heavy Rain|Snowstorm|Fire|Power Outage|City Festival|Housing Boom|Beautification Grant|Economic Boom|Recession)/);
+      assert.match(await eventCard.textContent(), /round(s)? left · Round/);
+      await shot('9-event-card');
+      await page.click('#event-continue');
+      assert.equal(await eventCard.isVisible(), false);
+      assert.equal(await page.locator('#event-strip .event-pill').count(), 1, 'active event pill');
+    } else {
+      assert.match(await page.textContent('#toasts'), /Calm round/);
+    }
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
     const p4 = page.locator('.player-card[data-seat="4"]');
@@ -405,11 +408,11 @@ for (const vp of VIEWPORTS) {
     await page.locator('[data-block="r0c0"]').click();
     assert.match(await panel.textContent(), /Abandoned by Player 3/);
     await page.screenshot({ path: 'test-results/finance-acquire.png' });
-    await panel.locator('[data-acquire="restore"]').click();
+    await panel.locator('[data-auction="restore"]').click();
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')), 'P4 owns the restored home');
     await page.locator('[data-block="r0c1"]').click();
-    assert.equal(await panel.locator('[data-acquire="restore"]').count(), 0, 'empty ruin can only be rebuilt');
-    await panel.locator('[data-acquire="rebuild"]').click();
+    assert.equal(await panel.locator('[data-auction="restore"]').count(), 0, 'empty ruin can only be rebuilt');
+    await panel.locator('[data-auction="rebuild"]').click();
     assert.ok(await panel.isVisible(), 'build panel reopens to choose a category');
     await panel.locator('[data-build="park"]').click();
     assert.equal(await page.locator('#board .block--abandoned').count(), 0);
@@ -438,12 +441,12 @@ for (const vp of VIEWPORTS) {
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
-    await page.goto(`${base}?seed=12`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}?seed=19`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
-    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await road(id).click(); // P4 claims A1
-    await page.locator('[data-block="r0c0"]').click();
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await pave(page, road(id)); // P4 claims A1
+    await page.click('[data-capture-choice="develop"]');
     await page.locator('#build-dialog [data-build="residential"]').click();
     await pave(page, road('h-6-5')); // round wraps → event
 

@@ -2,9 +2,9 @@
  * End-of-game scoring. Pure functions of game state (no DOM, no randomness),
  * so results are fully testable and deterministic.
  *
- *   City Value = cash + land value + building value
- *     land value      price of every block the player owns
- *     building value  development cost invested in those blocks (block.value − land)
+ *   City Value = configured cash score + land score + building-investment score.
+ * Coefficients live in ECONOMY.SCORING so development can earn its advantage
+ * through income instead of converting every spent dollar directly into score.
  *
  * Ranking: City Value, then tie-breakers blocks → developed blocks → cash.
  * Players equal on all four share the rank (co-winners), listed in seat order.
@@ -14,6 +14,7 @@
  * player is tied for it (it wouldn't distinguish anyone).
  */
 import { blocksOwnedBy, blockLabel } from './board.js';
+import { ECONOMY } from '../config.js';
 import { getCategory, levelArt } from './buildings.js';
 import { calculateIncome, investedIn } from './economy.js';
 
@@ -41,6 +42,9 @@ export function scorePlayer(game, player) {
   const developed = owned.filter(isDev);
   const landValue = owned.reduce((s, b) => s + b.price, 0);
   const buildingValue = owned.reduce((s, b) => s + investedIn(b), 0);
+  const scoredCash = Math.round(player.cash * ECONOMY.SCORING.CASH);
+  const scoredLand = Math.round(landValue * ECONOMY.SCORING.LAND);
+  const scoredBuildings = Math.round(buildingValue * ECONOMY.SCORING.INVESTED_BUILDING);
   const parks = developed.filter((b) => b.type === 'park');
   return {
     seat: player.seat,
@@ -49,7 +53,10 @@ export function scorePlayer(game, player) {
     cash: player.cash,
     landValue,
     buildingValue,
-    cityValue: player.cash + landValue + buildingValue,
+    scoredCash,
+    scoredLand,
+    scoredBuildings,
+    cityValue: scoredCash + scoredLand + scoredBuildings,
     blocks: owned.length,
     developed: developed.length,
     totalLevels: developed.reduce((s, b) => s + b.level, 0),
