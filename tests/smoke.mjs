@@ -518,7 +518,12 @@ for (const vp of VIEWPORTS) {
       await dismissEvent(page);
     }
     // …then P4 closes A1, B1, C1 in a chain.
-    for (const id of ['v-0-1', 'v-0-2', 'v-0-3']) await road(id).click();
+    await pave(page, road('v-0-1'));
+    assert.equal(await page.locator('#chain-meter').textContent(), 'CAPTURE ×1');
+    await pave(page, road('v-0-2'));
+    assert.equal(await page.locator('#chain-meter').textContent(), 'CHAIN ×2');
+    await pave(page, road('v-0-3'));
+    assert.equal(await page.locator('#chain-meter').textContent(), 'FLOW ×3');
     assert.equal(await page.locator('#board .block--green').count(), 3, 'P4 chained 3 captures');
 
     const panel = page.locator('#build-dialog');
@@ -803,6 +808,19 @@ for (const vp of VIEWPORTS) {
     assert.notEqual(mid, '$12,500', `cash should still be counting up (saw ${mid})`);
     await page.waitForFunction(() =>
       document.querySelector('.player-card[data-seat="4"] .stat--cash dd')?.textContent === '$12,500');
+    await page.click('[data-capture-choice="develop"]');
+    await page.click('#build-dialog [data-build="residential"]');
+    const built = page.locator('[data-block="r0c0"]');
+    assert.ok(await built.locator('.block__foundation').count(), 'foundation stage rendered');
+    assert.ok(await built.locator('.block__building').count(), 'paper building rendered');
+    assert.ok(await built.locator('.block__flag').count(), 'flag stage rendered');
+    // Finish P4's bonus, then rotate back to P4 so developed income resolves.
+    for (const id of ['h-6-5', 'h-6-4', 'h-6-3', 'h-6-2']) {
+      await pave(page, page.locator(`[data-road="${id}"]`));
+      await dismissEvent(page);
+    }
+    assert.match(await page.locator('#economy-summary').textContent(), /Gross Income.*Upkeep.*Net/);
+    assert.equal(await page.locator('[data-block="r0c0"] .block-income').textContent(), '+$300');
     await page.waitForTimeout(250);
     await page.screenshot({ path: 'test-results/money-animation.png' });
     assert.deepEqual(errors, []);

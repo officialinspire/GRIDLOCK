@@ -91,10 +91,61 @@
 
 /* Board sizing: largest square that fits the available area. */
 .board-area {
+  position: relative;
   container-type: size;
   display: grid;
   place-items: center;
   min-height: 0;
+}
+
+/* Compact feedback floats above the board without changing its layout or blocking input. */
+.chain-meter,
+.economy-summary {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  font-family: var(--font-display);
+  border: 2px solid var(--ink);
+  box-shadow: 0 3px 0 rgba(29, 24, 18, 0.55);
+}
+.chain-meter {
+  top: 10px;
+  left: 50%;
+  padding: 3px 12px;
+  transform: translateX(-50%) rotate(-1deg);
+  background: var(--gold);
+  white-space: nowrap;
+}
+.chain-meter[data-chain='3'] { background: #f2b85b; }
+.chain-meter[data-chain='4'] { background: #ee8f58; }
+.chain-meter[data-chain='5'] { color: var(--paper-hi); background: var(--red-deep); }
+.chain-meter.is-bumped { animation: chain-bump 420ms var(--ease-pop); }
+@keyframes chain-bump {
+  0% { transform: translateX(-50%) scale(.8) rotate(-3deg); opacity: .3; }
+  65% { transform: translateX(-50%) scale(1.08) rotate(1deg); }
+}
+.economy-summary {
+  bottom: 12px;
+  left: 50%;
+  max-width: calc(100% - 24px);
+  padding: 5px 10px;
+  overflow: hidden;
+  font-size: clamp(.72rem, 2.2vw, 1rem);
+  transform: translateX(-50%);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--paper-hi);
+}
+.economy-summary.is-showing { animation: economy-to-hud 1800ms ease-out forwards; }
+.economy-summary[data-seat='1'].is-showing,
+.economy-summary[data-seat='4'].is-showing { --cash-destination: -24px; }
+.economy-summary[data-seat='2'].is-showing,
+.economy-summary[data-seat='3'].is-showing { --cash-destination: 24px; }
+@keyframes economy-to-hud {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.92); }
+  12%, 68% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--cash-destination, 0px)), -18px) scale(.9); }
 }
 .board-frame {
   container-type: inline-size;
@@ -343,6 +394,62 @@
   z-index: 1;
   width: 80%;
   filter: drop-shadow(2px 4px 0 rgba(60, 45, 30, 0.35)) drop-shadow(0 4px 4px rgba(0, 0, 0, 0.3));
+}
+.block__foundation {
+  position: absolute;
+  z-index: 0;
+  left: 16%;
+  right: 16%;
+  bottom: 12%;
+  height: 18%;
+  background: color-mix(in srgb, var(--owner) 35%, var(--paper-edge));
+  border: 2px solid var(--ink);
+  transform-origin: bottom;
+  animation: foundation-drop 520ms ease-out forwards;
+}
+.block.is-just-built .block__building { transform-origin: bottom center; animation: building-unfold 620ms var(--ease-pop) both; }
+.block.is-upgraded .block__building { animation-name: building-grow; }
+.block.is-just-built .block__flag { transform-origin: 30% 80%; animation: flag-wobble 680ms 260ms ease-out both; }
+@keyframes foundation-drop {
+  0% { transform: translateY(-45%) scaleX(.65); opacity: 0; }
+  40%, 100% { transform: none; opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes building-unfold {
+  0%, 24% { transform: translateY(25%) scale(.72, .08); opacity: 0; }
+  58% { transform: translateY(-4%) scale(1.04, 1.08); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes building-grow {
+  0% { transform: scale(.72); opacity: .35; }
+  65% { transform: scale(1.08); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes flag-wobble {
+  0% { transform: scale(.4) rotate(-14deg); opacity: 0; }
+  45% { transform: scale(1.05) rotate(8deg); opacity: 1; }
+  70% { transform: rotate(-5deg); }
+  100% { transform: none; opacity: 1; }
+}
+.block-income {
+  position: absolute;
+  z-index: 12;
+  top: 18%;
+  left: 50%;
+  padding: 0 4px;
+  color: #1f5d1f;
+  font-family: var(--font-display);
+  font-size: clamp(8px, 1.5cqw, 12px);
+  white-space: nowrap;
+  background: #e8f5d8;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  animation: block-income-float 1200ms ease-out forwards;
+}
+@keyframes block-income-float {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.7); }
+  18%, 65% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -18px) scale(.9); }
 }
 .block__flag {
   top: -16%;

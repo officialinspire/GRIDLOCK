@@ -118,6 +118,7 @@ function blockCell(game, block) {
   if (selected) cls.push('is-selected');
   if (fresh) cls.push('is-captured');
   if (justBuilt) cls.push('is-just-built');
+  if (justBuilt && game.lastDevelopment.fromLevel > 0) cls.push('is-upgraded');
   const ev = blockEventState(game, block);
   if (ev.state) cls.push(`is-event-${ev.state}`);
 
@@ -143,6 +144,7 @@ function blockCell(game, block) {
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
     color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
+    justBuilt && h('span', { class: 'block__foundation', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__owner-mark', 'aria-hidden': 'true' }, PLAYER_PRESETS[block.ownerSeat - 1].mark),
     fresh && createSprite(ART.fx.capture, { className: 'block__fx' }),
     justBuilt && createSprite(ART.fx.build, { className: 'block__fx' }),

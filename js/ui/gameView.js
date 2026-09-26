@@ -145,12 +145,12 @@ function handleDevelopment({ bonusBefore }) {
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
-  render();
   play('build');
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
   if (captured) showCaptureChoice();
+  else render();
 }
 
 function showCaptureChoice() {
@@ -213,6 +213,57 @@ function flashFrame() {
   frame.classList.add('is-capture');
 }
 
+function chainLabel(count) {
+  if (count >= 5) return `GRID LOCK ×${count}`;
+  if (count === 4) return 'MOMENTUM ×4';
+  if (count === 3) return 'FLOW ×3';
+  if (count === 2) return 'CHAIN ×2';
+  return count === 1 ? 'CAPTURE ×1' : '';
+}
+
+function renderChain() {
+  const meter = $('#chain-meter');
+  meter.hidden = chain < 1;
+  meter.textContent = chainLabel(chain);
+  meter.dataset.chain = Math.min(chain, 5);
+  if (chain) {
+    meter.classList.remove('is-bumped');
+    void meter.offsetWidth;
+    meter.classList.add('is-bumped');
+  }
+}
+
+/** Brief, non-blocking breakdown of the income that was just paid. */
+function showEconomyFeedback(turnIncome, turnUpkeep, turnRepair) {
+  if (!turnIncome) return;
+  const seat = turnIncome.seat;
+  const gross = turnIncome.amount;
+  const upkeep = turnUpkeep?.amount ?? 0;
+  const repair = turnRepair?.amount ?? 0;
+  const net = gross - upkeep - repair;
+  const blocks = game.board.blocks.filter((b) => b.ownerSeat === seat && effectiveBlockIncome(game, b) > 0);
+  for (const block of blocks) {
+    const cell = document.querySelector(`[data-block="${block.id}"]`);
+    if (!cell) continue;
+    const chip = h('span', { class: `block-income block-income--seat-${seat}`, 'aria-hidden': 'true' },
+      `+${formatCash(effectiveBlockIncome(game, block))}`);
+    cell.append(chip);
+    setTimeout(() => chip.remove(), 1250);
+  }
+  const summary = $('#economy-summary');
+  summary.replaceChildren(
+    h('strong', {}, `+${formatCash(gross)}`),
+    h('span', {}, ` Gross Income − ${formatCash(upkeep)} Upkeep${repair ? ` − ${formatCash(repair)} Repairs` : ''} = `),
+    h('strong', {}, `${net < 0 ? '−' : '+'}${formatCash(Math.abs(net))} Net`),
+  );
+  summary.dataset.seat = seat;
+  summary.hidden = false;
+  summary.classList.remove('is-showing');
+  void summary.offsetWidth;
+  summary.classList.add('is-showing');
+  setTimeout(() => { summary.hidden = true; }, 1800);
+}
+
 
 const REJECT_MESSAGES = {
   [MOVE_ERRORS.TAKEN]: 'That road is already paved.',
@@ -248,7 +299,8 @@ function handleRoad(id) {
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
-  play(n > 0 ? 'capture' : 'pave');
+  renderChain();
+  play(n > 0 ? 'capture' : 'pave', chain || 1);
 
   if (n > 0) {
     flashFrame();
@@ -281,6 +333,7 @@ function handleRoad(id) {
     const owed = result.turnUpkeep?.amount ?? 0;
     const repairs = result.turnRepair?.amount ?? 0;
     if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
+      showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
       const payee = getPlayer(game, result.turnIncome.seat);
       const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
         repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
@@ -315,6 +368,7 @@ function startGame(setup) {
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
   chain = 0;
+  renderChain();
   clearSelection();
   render();
   resetTo('game');
@@ -352,6 +406,7 @@ function continueGame(saved = loadActiveGame()) {
   game = saved.game;
   lastSetup = saved.setup;
   chain = 0;
+  renderChain();
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   render();
   resetTo('game');

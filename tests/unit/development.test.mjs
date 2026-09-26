@@ -113,7 +113,7 @@ test('building deducts cash immediately and the block stores type/level/value/in
   assert.deepEqual(game.ledger.at(-1), {
     seat: 1, delta: -1500, balance: 11000, reason: TXN.BUILD, round: 1, block: 'r0c0', type: 'commercial', level: 1,
   });
-  assert.deepEqual(game.lastDevelopment, { block: 'r0c0', seat: 1, type: 'commercial', level: 1 });
+  assert.deepEqual(game.lastDevelopment, { block: 'r0c0', seat: 1, type: 'commercial', level: 1, fromLevel: 0 });
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
@@ -133,6 +133,9 @@ test('upgrades go Level 1 → 2 → 3 with increasing costs, deducted immediatel
   assert.deepEqual({ ok: q2.ok, level: q2.level, cost: q2.cost, income: q2.income, incomeGain: q2.incomeGain },
     { ok: true, level: 2, cost: 1500, income: 600, incomeGain: 300 });
   assert.equal(upgradeBlock(game, 'r0c0').ok, true);
+  assert.deepEqual(game.lastDevelopment, {
+    block: 'r0c0', seat: 1, type: 'residential', level: 2, fromLevel: 1,
+  });
   assert.equal(cash(game, 1), 10000);
   let a1 = getBlockById(game.board, 'r0c0');
   assert.deepEqual([a1.level, a1.income, a1.value], [2, 600, 1000 + 2500]);
@@ -141,6 +144,7 @@ test('upgrades go Level 1 → 2 → 3 with increasing costs, deducted immediatel
   const r3 = upgradeBlock(game, 'r0c0');
   assert.equal(r3.ok, true);
   assert.equal(r3.cost, 2000);
+  assert.equal(game.lastDevelopment.fromLevel, 2, 'rapid upgrades retain the previous visual level');
   assert.equal(cash(game, 1), 8000);
   a1 = getBlockById(game.board, 'r0c0');
   assert.deepEqual([a1.type, a1.level, a1.income, a1.value], ['residential', 3, 900, 1000 + 4500]);

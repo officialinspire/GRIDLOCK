@@ -32,19 +32,21 @@ function audio() {
   return ctx;
 }
 
-export function play(name) {
+export function play(name, intensity = 1) {
   if (!enabled || !SOUNDS[name] || !navigator.userActivation?.hasBeenActive) return;
   try {
     const ac = audio();
     if (!ac) return;
     const t0 = ac.currentTime + 0.01;
+    const lift = Math.min(1.12, 1 + Math.max(0, intensity - 1) * 0.025);
+    const volume = Math.min(1.18, 1 + Math.max(0, intensity - 1) * 0.035);
     for (const [freq, start, dur, type, gain] of SOUNDS[name]) {
       const osc = ac.createOscillator();
       const amp = ac.createGain();
       osc.type = type;
-      osc.frequency.value = freq;
+      osc.frequency.value = freq * lift;
       amp.gain.setValueAtTime(0.0001, t0 + start);
-      amp.gain.exponentialRampToValueAtTime(gain, t0 + start + 0.01);
+      amp.gain.exponentialRampToValueAtTime(gain * volume, t0 + start + 0.01);
       amp.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
       osc.connect(amp).connect(ac.destination);
       osc.start(t0 + start);

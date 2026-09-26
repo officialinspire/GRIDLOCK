@@ -152,6 +152,7 @@ export function quoteUpgrade(game, blockId) {
 
 function commit(game, block, quote, reason) {
   const player = currentPlayer(game);
+  const fromLevel = block.level;
   const paid = debit(game, player, quote.cost, reason, { block: block.id, type: quote.type, level: quote.level });
   // quote already checked affordability; this guards against state changing in between.
   if (!paid.ok) return { ok: false, error: DEV_ERRORS.INSUFFICIENT_FUNDS };
@@ -159,7 +160,7 @@ function commit(game, block, quote, reason) {
     constructionCosts: [...(block.constructionCosts ?? []), quote.actualCost],
   });
   refreshBonuses(game.board); // development changed
-  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level };
+  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, fromLevel };
   game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });
   return { ok: true, block: block.id, type: block.type, level: block.level, cost: quote.cost, income: block.income, value: block.value };
 }
