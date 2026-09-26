@@ -189,7 +189,8 @@ for (const vp of VIEWPORTS) {
     assert.equal(await firstTabStop.count(), 1, 'board uses one roving tab stop');
     await firstTabStop.focus();
     const beforeArrow = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
-    await page.keyboard.press('ArrowRight');
+    // The first tab stop is the top-left road; ArrowDown steps onto block A1.
+    await page.keyboard.press('ArrowDown');
     const afterArrow = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
     assert.notEqual(afterArrow, beforeArrow, 'arrow key moves board focus');
     const keyboardBlock = await page.evaluate(() => document.activeElement?.dataset.block);
@@ -530,32 +531,35 @@ for (const vp of VIEWPORTS) {
       await road(id).click();
       await dismissEvent(page);
     }
-    // …then P4 closes A1, B1, C1 in a chain.
-    await pave(page, road('v-0-1'));
-    assert.equal(await page.locator('#chain-meter').textContent(), 'CAPTURE ×1');
-    await pave(page, road('v-0-2'));
-    assert.equal(await page.locator('#chain-meter').textContent(), 'CHAIN ×2');
-    await pave(page, road('v-0-3'));
-    assert.equal(await page.locator('#chain-meter').textContent(), 'FLOW ×3');
+    // …then P4 closes A1, B1, C1 in a chain, building a home on each capture.
+    const panel = page.locator('#build-dialog');
+    const income = page.locator('.player-card[data-seat="4"] .stat--income');
+    const captureAndBuildHome = async (roadId, meter) => {
+      await pave(page, road(roadId));
+      assert.equal(await page.locator('#chain-meter').textContent(), meter);
+      await page.click('[data-capture-choice="develop"]');
+      await panel.locator('[data-build="residential"]').click();
+    };
+    await captureAndBuildHome('v-0-1', 'CAPTURE ×1');
+    await captureAndBuildHome('v-0-2', 'CHAIN ×2');
+    assert.equal(await income.locator('.stat__bonus').count(), 0, 'no bonus with 2 homes');
+    await captureAndBuildHome('v-0-3', 'FLOW ×3');
     assert.equal(await page.locator('#board .block--green').count(), 3, 'P4 chained 3 captures');
 
-    const panel = page.locator('#build-dialog');
-    for (const id of ['r0c0', 'r0c1']) {
-      await page.locator(`[data-block="${id}"]`).click();
-      await panel.locator('[data-build="residential"]').click();
-    }
-    const income = page.locator('.player-card[data-seat="4"] .stat--income');
-    assert.equal(await income.locator('.stat__bonus').count(), 0, 'no bonus with 2 homes');
-
-    await page.locator('[data-block="r0c2"]').click();
-    await panel.locator('[data-build="residential"]').click();
     assert.match(await page.textContent('#toasts'), /Bonus income \+\$180\/turn/);
     assert.equal(await income.locator('.stat__bonus').count(), 1, 'HUD ★');
     assert.equal(await income.getAttribute('data-normal'), '1080', '3 × ($300 + 20%)');
     assert.match(await income.getAttribute('title'), /\$180 adjacency bonus/);
     assert.equal(await page.locator('#board .block__badge.has-bonus').count(), 3, 'badge stars');
+    await page.locator('[data-block="r0c2"]').click();
     assert.match(await page.textContent("#inspector"), /Residential district[\s\S]*\+\$60/);
     await page.screenshot({ path: 'test-results/bonus-district.png' });
+
+    // P4's bonus road, then play rotates back to P4's Manage City phase.
+    for (const id of ['h-6-5', 'h-6-4', 'h-6-3', 'h-6-2']) {
+      await pave(page, road(id));
+      await dismissEvent(page);
+    }
 
     // The build panel shows the bonus too.
     await page.locator('[data-block="r0c1"]').click();
@@ -809,9 +813,11 @@ for (const vp of VIEWPORTS) {
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
-    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
     await page.click('#setup-start');
+    // No random city events: a Housing Boom would change the income asserted below.
+    await page.evaluate(() => { window.__GRIDLOCK__.getGame().eventPool = []; });
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
     await pave(page, page.locator('[data-road="v-0-1"]')); // P4 captures A1
     const p4 = page.locator('.player-card[data-seat="4"]');

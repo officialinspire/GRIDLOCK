@@ -77,14 +77,16 @@ function roadCell(game, dir, r, c) {
     'data-grid-row': dir === 'h' ? r * 2 : r * 2 + 1,
     'data-grid-col': dir === 'h' ? c * 2 + 1 : c * 2,
     'data-owner-symbol': owner?.symbol,
-    'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}, ${owner.symbol}` : `Pave ${roadLabel(dir, r, c)}`,
+    'aria-label': built
+      ? `${roadLabel(dir, r, c)}, paved${who ? ` by ${who}` : ''}${owner ? `, ${owner.symbol}` : ''}`
+      : `Pave ${roadLabel(dir, r, c)}`,
     disabled,
     // Distress is an explanatory lock rather than a native-disabled control:
     // selecting an open road lets the controller reopen Resolve Debt feedback.
     'aria-disabled': disabled || distress ? 'true' : null,
   }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
     built && createSprite(ART.road[dir], { className: 'road__tile' }),
-    built && h('span', { class: 'road__owner-mark' }, owner.mark)));
+    owner && h('span', { class: 'road__owner-mark' }, owner.mark)));
 }
 
 function blockDescription(game, block) {
