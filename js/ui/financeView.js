@@ -6,6 +6,7 @@
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
+import { ART } from '../art.js';
 import { ECONOMY } from '../config.js';
 import { blocksOwnedBy } from '../core/board.js';
 import { describeDevelopment, levelArt } from '../core/buildings.js';
@@ -75,7 +76,7 @@ function bankruptcyView(game, result) {
   return [
     h('header', { class: 'finance-panel__head' },
       h('span', { class: 'finance-panel__tag' }, 'Bankruptcy'),
-      createSprite('effects:demolish', { className: 'finance-panel__art' }),
+      createSprite(ART.fx.bankrupt, { className: 'finance-panel__art' }),
       h('h3', { id: 'finance-title', class: 'finance-panel__title' }, `${player.name} declares bankruptcy`)),
     h('ul', { class: 'finance-panel__outcome' },
       h('li', {}, `${formatCash(result.debtForgiven)} debt written off`),

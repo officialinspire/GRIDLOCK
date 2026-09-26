@@ -1,13 +1,14 @@
 {
   "name": "grid-lock-city",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "private": true,
-  "description": "Grid Lock City — papercraft tabletop city-building game (vanilla HTML/CSS/JS).",
+  "description": "Grid Lock City \u2014 papercraft tabletop city-building game (vanilla HTML/CSS/JS).",
   "type": "module",
   "scripts": {
     "start": "node tests/serve.mjs",
     "test": "node --test tests/unit/*.test.mjs",
-    "test:smoke": "node tests/smoke.mjs"
+    "test:smoke": "node tests/smoke.mjs",
+    "build:assets": "node tools/build-assets.mjs"
   },
   "devDependencies": {
     "playwright": "^1.56.1"

@@ -1,14 +1,35 @@
 /**
- * Sprite-sheet manifest for the Grid Lock City papercraft art.
+ * Sprite-sheet manifest for the Grid Lock City papercraft art (layer 1 of 2).
  *
- * The original PNG sheets live untouched at the repo root. Each sprite is a
- * rectangle [x, y, width, height] in source-image pixels; `spriteStyle()`
- * turns that into percentage-based CSS so sprites scale with their element.
+ * The original PNG sheets live untouched at the repo root. tools/build-assets.mjs
+ * derives assets/generated/: a WebP of every sheet (served first, PNG as fallback)
+ * and a transparent copy of props_decor.png (its checkerboard is baked in).
  *
- * Coordinates were measured from each sheet's alpha channel.
+ * Each sprite is a rectangle [x, y, width, height] in source-image pixels;
+ * `spriteStyle()` turns that into percentage-based CSS so sprites scale with
+ * their element. Coordinates were measured from each sheet's alpha channel.
+ *
+ * Gameplay code should use the semantic roles in js/art.js (layer 2) rather
+ * than naming sheets/sprites directly.
  */
 
-const sheet = (file, w, h, sprites) => ({ url: encodeURI(file), w, h, sprites });
+export const GENERATED_DIR = 'assets/generated';
+
+/** 'title_menu decor.png' → 'title-menu-decor' (must match tools/build-assets.mjs). */
+export const sheetSlug = (file) => file.replace(/\.png$/, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+
+/**
+ * @param file   original sheet at the repo root
+ * @param opts.png  override the PNG used (props: the keyed-out generated copy)
+ */
+const sheet = (file, w, h, sprites, opts = {}) => ({
+  file,
+  url: encodeURI(opts.png ?? file),
+  webp: `${GENERATED_DIR}/${sheetSlug(file)}.webp`,
+  w,
+  h,
+  sprites,
+});
 
 // Ownership markers are laid out as 4 colour columns × 8 marker rows.
 const MARKER_COLS = { red: [100, 164], blue: [320, 176], yellow: [540, 172], green: [760, 176] };
@@ -126,6 +147,10 @@ export const SHEETS = {
     'lot-grass': [396, 808, 284, 248],
     'lot-parking': [736, 804, 284, 252],
     'lot-construction': [1068, 804, 296, 252],
+    // Board pieces: inner crops (inside the tile outline) so segments join seamlessly.
+    'segment-h': [52, 110, 248, 172], // (getSpriteRect adds 4px padding)
+    'segment-v': [360, 60, 164, 260],
+    'junction': [888, 122, 136, 136],
   }),
 
   parks: sheet('parks_open spaces.png', 1448, 1086, {
@@ -199,9 +224,42 @@ export const SHEETS = {
     sunburst: [264, 1230, 248, 250],
   }),
 
-  // props_decor.png has a baked-in checkerboard (no alpha channel), so it is
-  // registered for reference but not rendered until a transparent export exists.
-  props: sheet('props_decor.png', 1448, 1086, {}),
+  // props_decor.png has a baked-in checkerboard (no alpha channel); we render the
+  // keyed-out copy from tools/build-assets.mjs. (The billboard names a real town,
+  // so it is intentionally not mapped.)
+  props: sheet('props_decor.png', 1448, 1086, {
+    'tree-oak': [20, 20, 200, 216],
+    'tree-tall': [240, 36, 112, 200],
+    'tree-round': [364, 56, 156, 180],
+    'tree-pine': [532, 16, 140, 220],
+    'tree-slim': [688, 68, 92, 168],
+    'bush-flowers': [792, 128, 128, 100],
+    hedge: [940, 128, 164, 100],
+    planter: [1120, 124, 184, 104],
+    'bush-white': [1316, 116, 120, 112],
+    bench: [36, 312, 212, 136],
+    streetlamp: [280, 244, 72, 212],
+    'traffic-light': [408, 252, 72, 204],
+    mailbox: [528, 328, 88, 128],
+    'trash-can': [648, 312, 96, 144],
+    hydrant: [768, 324, 104, 136],
+    fence: [900, 336, 248, 116],
+    'brick-wall': [1160, 312, 264, 144],
+    'bus-stop': [480, 492, 92, 236],
+    'power-pole': [612, 476, 244, 240],
+    'water-tower': [832, 464, 192, 236],
+    antenna: [1036, 484, 156, 216],
+    'rooftop-unit': [1188, 568, 248, 136],
+    'car-red': [24, 744, 284, 168],
+    'van-blue': [368, 736, 316, 176],
+    truck: [744, 716, 360, 196],
+    bike: [1164, 740, 260, 164],
+    statue: [16, 908, 224, 180],
+    fountain: [252, 924, 284, 164],
+    'planter-large': [552, 956, 212, 132],
+    playground: [792, 904, 320, 184],
+    'basketball-court': [1132, 912, 304, 176],
+  }, { png: `${GENERATED_DIR}/props-decor.png` }),
 };
 
 // Small bleed so black outlines at sprite edges aren't clipped.
@@ -227,7 +285,9 @@ export function spriteStyle(sheetKey, name) {
   const [x, y, w, h] = rect;
   const pos = (offset, size, total) => (total === size ? 0 : (offset / (total - size)) * 100);
   return {
-    backgroundImage: `url("${s.url}")`,
+    // WebP first (generated, ~5× smaller); PNG if image-set()/WebP is unsupported.
+    fallbackImage: `url("${s.url}")`,
+    backgroundImage: `image-set(url("${s.webp}") type("image/webp"), url("${s.url}") type("image/png"))`,
     backgroundSize: `${(s.w / w) * 100}% ${(s.h / h) * 100}%`,
     backgroundPosition: `${pos(x, w, s.w)}% ${pos(y, h, s.h)}%`,
     aspectRatio: `${w} / ${h}`,
@@ -249,7 +309,10 @@ export function applySprite(el, ref, label) {
     return el;
   }
   el.classList.add('sprite');
-  Object.assign(el.style, style);
+  const { fallbackImage, backgroundImage, ...rest } = style;
+  Object.assign(el.style, rest);
+  el.style.backgroundImage = fallbackImage;
+  el.style.backgroundImage = backgroundImage; // ignored by browsers without image-set(), keeping the PNG
   if (label) {
     el.setAttribute('role', 'img');
     el.setAttribute('aria-label', label);
@@ -275,6 +338,8 @@ export function hydrateSprites(root = document) {
 }
 
 const preloaded = new Set();
+const supportsWebp = typeof document !== 'undefined'
+  && document.createElement('canvas').toDataURL('image/webp').startsWith('data:image/webp');
 
 /** Starts downloading sprite sheets ahead of use (e.g. the build panel's art). */
 export function preloadSheets(keys) {
@@ -284,6 +349,6 @@ export function preloadSheets(keys) {
     preloaded.add(key);
     const img = new Image();
     img.decoding = 'async';
-    img.src = sheet.url;
+    img.src = supportsWebp ? sheet.webp : sheet.url;
   }
 }

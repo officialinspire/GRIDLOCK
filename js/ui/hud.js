@@ -5,6 +5,7 @@
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
+import { ART } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { formatCash, formatDelta } from '../core/economy.js';
 import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
@@ -117,7 +118,7 @@ function playerCard(game, seat) {
   if (!player) {
     return h('article', { class: `player-card paper player-card--${preset.color} is-empty`, 'aria-label': `Seat ${seat} empty` },
       h('header', { class: 'player-card__head' },
-        createSprite(`markers:ring-${preset.color}`, { className: 'player-card__token' }),
+        createSprite(ART.owner.ring(seat), { className: 'player-card__token' }),
         h('span', { class: 'player-card__name' }, `Seat ${seat}`),
       ),
       h('p', { class: 'player-card__empty' }, 'Open seat'),
@@ -133,7 +134,7 @@ function playerCard(game, seat) {
     dataset: { seat },
   },
     h('header', { class: 'player-card__head' },
-      createSprite(`markers:chip-${preset.color}`, { className: 'player-card__token' }),
+      createSprite(ART.owner.chip(seat), { className: 'player-card__token' }),
       h('span', { class: 'player-card__name' }, player.name),
       stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),

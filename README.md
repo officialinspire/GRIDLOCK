@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.7 financial failure & recovery.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
+> **Status: v0.8 papercraft art pass.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
 
 ## How it plays
 
@@ -165,12 +165,17 @@ js/
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
+js/art.js                  Semantic art roles (what views ask for)
+css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon, table decor
+tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
+assets/generated/          Build output (committed so GitHub Pages serves it)
 tests/
   unit/core.test.mjs       Node unit tests for core modules
   unit/dots-and-boxes.test.mjs  Road geometry, rotation, edge/corner/double/chain captures, full games
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
+  unit/assets.test.mjs     Originals unmodified (SHA-256), every sheet used, generated files exist, ART roles resolve
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   smoke.mjs                Playwright smoke test across 5 viewports
@@ -180,20 +185,31 @@ tests/
 
 ## Art assets
 
-The original sprite sheets stay at the repo root, unmodified. `js/assets.js` maps sprite names to pixel rectangles, e.g. `createSprite('buildings:diner')` or `<span data-sprite="icons:gear"></span>`. Sprites scale with their element's width.
+The ten original sprite sheets stay at the repo root, **unmodified**; `tests/unit/assets.test.mjs` pins their SHA-256 hashes. The art system has three layers:
 
-| Sheet | Key | Notes |
+1. **Sheet manifest: `js/assets.js`.** Pixel rectangles for every sprite, measured from each sheet's alpha channel. `createSprite('buildings:diner')` or `<span data-sprite="icons:gear">` crops responsively via `background-position`. Sheets are served as generated WebP through `image-set()`, with the PNG as fallback.
+2. **Semantic roles: `js/art.js`.** Views ask for *roles* (`ART.lot.unclaimed`, `ART.owner.flag(seat)`, `ART.road.h`, `progressionProps(type, level)`), never raw coordinates. Re-skinning means editing this file. Building art per category and level lives in `core/buildings.js`.
+3. **Generated assets: `tools/build-assets.mjs`** (`npm run build:assets`), written to `assets/generated/`:
+   - `<sheet>.webp`: full-resolution WebP of every sheet (about 4.4 MB in total, against 23 MB of PNG)
+   - `props-decor.png/.webp`: `props_decor.png` with its baked-in checkerboard flood-filled to transparency
+   - `ui/*.png`: buttons, plaques, toggles and ribbon cut from `UI buttons_panels.png`, because CSS `border-image` 9-slicing can't crop a sprite sheet
+
+| Sheet | Key | Used for |
 | --- | --- | --- |
-| `title_menu decor.png` | `title` | Logo, skyline, pins, notes, ribbons |
-| `UI icons.png` | `icons` | 24 UI icons |
-| `UI buttons_panels.png` | `ui` | Buttons, toggles, plaques |
-| `ownership markers.png` | `markers` | `{flag,pennant,ring,chip,corner,frame,post,seal}-{red,blue,yellow,green}` |
-| `roads_infrastructure.png` | `roads` | Road tiles and lots |
-| `parks_open spaces.png` | `parks` | 12 park/open-space blocks |
-| `residential_commercial buildings.png` | `buildings` | 12 homes and shops |
-| `civic-buildings.png` | `civic` | 15 civic/industrial buildings |
-| `effects.png` | `effects` | Weather and FX bursts |
-| `props_decor.png` | `props` | Not used yet: the checkerboard is baked into the image (it has no alpha channel) |
+| `roads_infrastructure.png` | `roads` | Paved road segments and junction tiles, grass/abandoned lots |
+| `residential_commercial buildings.png` | `buildings` | Residential and commercial levels 1–3 |
+| `civic-buildings.png` | `civic` | Civic, industrial and landmark levels 1–3 |
+| `parks_open spaces.png` | `parks` | Park levels, owned-lot base |
+| `props_decor.png` | `props` | Level-up street props, table and title decor (keyed-out copy) |
+| `ownership markers.png` | `markers` | Flags, territory frames, seals, HUD chips |
+| `UI buttons_panels.png` | `ui` + `generated/ui` | 9-sliced buttons, icon buttons, HUD plaques, toggles, page ribbon |
+| `UI icons.png` | `icons` | Buttons, HUD stats, category icons |
+| `effects.png` | `effects` | Capture/build bursts, event cards, bankruptcy |
+| `title_menu decor.png` | `title` | Logo, skyline, pins, shields |
+
+**Tabletop look:** each block is a paper cut-out lifted off a kraft-paper board. Stacked drop shadows read as cardstock, and developed blocks gain a layer per level. Level 2 adds one street prop and Level 3 a second (trees, lamps, mailboxes, power poles…), placed at the kerb so buildings stay readable. Claimed blocks carry the owner's flag, frame and tint. The board frame is a stack of card sheets.
+
+**Readability rules:** props and decor never sit on roads. Table decor only appears when the board has side margins, and on short landscape screens chrome slims down and decor is hidden. Unbuilt roads stay as high-contrast pencil lines, and paved ones keep a thin builder-coloured curb.
 
 Open `dev/sprites.html` through the local server to see every crop.
 
@@ -204,4 +220,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

@@ -1,0 +1,157 @@
+/*
+ * Papercraft skin: UI chrome cut from "UI buttons_panels.png" (see
+ * tools/build-assets.mjs → assets/generated/ui/) plus table decoration.
+ * Loaded last so it layers over the plain CSS fallbacks in components.css.
+ * Paths are relative to this file.
+ */
+:root {
+  --ui-btn: url('../assets/generated/ui/btn-cream.png');
+  --ui-btn-gold: url('../assets/generated/ui/btn-gold.png');
+  --ui-btn-plain: url('../assets/generated/ui/btn-plain.png');
+  --ui-btn-off: url('../assets/generated/ui/btn-disabled.png');
+  --ui-square: url('../assets/generated/ui/square-cream.png');
+  --ui-plaque: url('../assets/generated/ui/plaque-corners.png');
+  --ui-ribbon: url('../assets/generated/ui/ribbon-blue.png');
+  --sprite-toggle-off: url('../assets/generated/ui/toggle-off.png');
+  --sprite-toggle-on: url('../assets/generated/ui/toggle-on.png');
+}
+
+/* ---------- Buttons: 9-sliced cardstock plates ---------- */
+.btn {
+  border: 18px solid transparent;
+  border-image: var(--ui-btn) 34 fill / 18px stretch;
+  background: none;
+  box-shadow: 0 5px 0 rgba(29, 24, 18, 0.55), 0 9px 14px rgba(0, 0, 0, 0.3);
+  border-radius: 16px;
+  padding: 0 6px;
+  min-height: 52px;
+}
+.btn--gold { border-image-source: var(--ui-btn-gold); }
+.btn--danger { border-image-source: var(--ui-btn-plain); color: var(--red-deep); }
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  border-image-source: var(--ui-btn-off);
+  background: none;
+  box-shadow: 0 3px 0 rgba(29, 24, 18, 0.45);
+}
+.btn:active:not(:disabled) { box-shadow: 0 1px 0 rgba(29, 24, 18, 0.55); }
+.btn--sm { min-height: 44px; border-width: 14px; border-image-width: 14px; }
+.btn--lg { min-height: 60px; }
+.btn--xl { min-height: 66px; }
+.btn--icon {
+  width: 54px;
+  min-height: 54px;
+  border-width: 16px;
+  border-image: var(--ui-square) 36 fill / 16px stretch;
+  border-radius: 14px;
+}
+.btn--icon .btn__icon { width: 26px; }
+.btn--icon.btn--sm { width: 46px; min-height: 46px; border-width: 13px; border-image-width: 13px; }
+.btn--icon.btn--sm .btn__icon { width: 22px; }
+
+/* ---------- Toggles: the pill switches from the sheet ---------- */
+.toggle {
+  width: 66px;
+  height: 29px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sprite-toggle-off) no-repeat center / 100% 100%;
+  box-shadow: 0 2px 0 rgba(29, 24, 18, 0.4);
+}
+.toggle::after { display: none; }
+.toggle:checked { background: var(--sprite-toggle-on) no-repeat center / 100% 100%; }
+
+/* ---------- Page ribbon ---------- */
+.ribbon-title {
+  padding: 12px 48px 20px;
+  background: var(--ui-ribbon) no-repeat center / 100% 100%;
+  border: 0;
+  box-shadow: none;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.4));
+}
+
+/* ---------- Cardstock panels ---------- */
+/* Player cards / HUD: the corner-bracket plaque as a 9-slice frame. */
+.player-card:not(.is-empty) {
+  border: 14px solid transparent;
+  border-left-width: 14px;
+  border-image: var(--ui-plaque) 40 fill / 14px stretch;
+  padding: 0 2px 2px;
+  background: none;
+  box-shadow: 0 6px 0 rgba(29, 24, 18, 0.45), 0 12px 18px rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+}
+.player-card:not(.is-empty)::before {
+  /* seat colour tab replaces the old coloured left border */
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: -8px;
+  width: 7px;
+  border-radius: 4px;
+  background: var(--seat);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.player-card.is-active:not(.is-empty) {
+  box-shadow: 0 0 0 4px var(--seat), 0 0 0 7px var(--ink), 0 12px 20px rgba(0, 0, 0, 0.45);
+}
+.player-card.is-distress:not(.is-empty) {
+  box-shadow: 0 0 0 4px var(--red), 0 0 0 7px var(--ink), 0 12px 20px rgba(0, 0, 0, 0.45);
+}
+
+/* Board: a stack of card sheets on the table. */
+.board-frame {
+  box-shadow:
+    inset 0 0 0 3px var(--paper-hi),
+    inset 0 0 0 5px var(--paper-edge),
+    0 0 0 4px var(--turn),
+    5px 6px 0 -1px #e6d4ad,
+    5px 6px 0 2px var(--ink),
+    10px 12px 0 -1px #d9c297,
+    10px 12px 0 2px var(--ink),
+    0 22px 34px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Table decoration (props_decor), outside the play grid ---------- */
+.table-decor { position: absolute; inset: 0; pointer-events: none; display: none; }
+.table-decor .sprite {
+  position: absolute;
+  width: clamp(48px, 7cqw, 96px);
+  filter: drop-shadow(3px 6px 0 rgba(0, 0, 0, 0.25)) drop-shadow(0 8px 8px rgba(0, 0, 0, 0.35));
+}
+.table-decor [data-spot='tl'] { left: 0; top: 2%; }
+.table-decor [data-spot='tr'] { right: 1%; top: 2%; width: clamp(28px, 3.4cqw, 48px); }
+.table-decor [data-spot='bl'] { left: 0; bottom: 4%; width: clamp(64px, 9cqw, 120px); }
+.table-decor [data-spot='br'] { right: 0; bottom: 4%; }
+/* Only when the board area has real side margins; never overlapping the grid. */
+@container (min-aspect-ratio: 13 / 10) {
+  .table-decor { display: block; }
+}
+.board-area { position: relative; }
+
+/* Title screen props */
+.screen--title > .title-decor { position: absolute; inset: auto 0 0 0; height: 30vh; pointer-events: none; z-index: 0; }
+.title-decor .sprite { position: absolute; bottom: 2vh; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.45)); }
+.title-decor [data-spot='l1'] { left: 3vw; width: clamp(70px, 10vw, 150px); }
+.title-decor [data-spot='l2'] { left: 13vw; width: clamp(24px, 3vw, 46px); }
+.title-decor [data-spot='r1'] { right: 4vw; width: clamp(90px, 13vw, 200px); }
+.title-decor [data-spot='r2'] { right: 19vw; width: clamp(50px, 7vw, 110px); }
+@media (max-width: 700px) { .title-decor { display: none; } }
+
+@media (prefers-reduced-transparency: reduce) {
+  .table-decor, .title-decor { display: none; }
+}
+
+/* ---------- Compact screens: readability over decoration ---------- */
+@media (max-height: 560px) and (orientation: landscape) {
+  .table-decor { display: none !important; }
+  .btn { min-height: 40px; border-width: 11px; border-image-width: 11px; }
+  .btn--icon.btn--sm { width: 40px; min-height: 40px; border-width: 11px; border-image-width: 11px; }
+  .player-card:not(.is-empty) { border-width: 8px; border-image-width: 8px; }
+  .action-bar .btn { min-height: 38px; }
+}
+@media (max-width: 560px) {
+  .btn { border-width: 13px; border-image-width: 13px; min-height: 46px; }
+  .player-card:not(.is-empty) { border-width: 10px; border-image-width: 10px; }
+}

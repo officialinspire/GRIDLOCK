@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/screens.css">
   <link rel="stylesheet" href="css/game.css">
+  <link rel="stylesheet" href="css/art.css">
 
   <script type="module" src="js/main.js"></script>
 </head>
@@ -50,10 +51,11 @@
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Local play</strong>
         <span>2–4 players · one device</span>
-        <span class="title-note__ver">v0.1 foundation</span>
+        <span class="title-note__ver">v0.8 papercraft</span>
       </aside>
 
       <div class="title-skyline" data-sprite="title:skyline"></div>
+      <div class="title-decor" data-art-decor="titleDecor" aria-hidden="true"></div>
     </section>
 
     <!-- ============ HOW TO PLAY ============ -->
@@ -202,6 +204,7 @@
         <div class="hud hud--left" id="hud-left"></div>
 
         <div class="board-area">
+          <div class="table-decor" data-art-decor="tableDecor" aria-hidden="true"></div>
           <div class="board-frame paper" id="board-frame">
             <div class="board" id="board" role="group" aria-label="City blocks"></div>
           </div>

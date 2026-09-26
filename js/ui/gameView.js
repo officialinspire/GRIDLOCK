@@ -1,6 +1,7 @@
 /** Game screen controller: wires core game state to board, HUD and actions. */
 import { $, h } from './dom.js';
 import { createSprite, preloadSheets } from '../assets.js';
+import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
   createGame, placeRoad, currentPlayer, getPlayer, standings, MOVE_ERRORS, PHASES,
@@ -125,7 +126,7 @@ function showResults() {
   list.replaceChildren(...standings(game).map((row) =>
     h('li', { class: `results__row results__row--${row.player.color}${row.rank === 1 ? ' is-winner' : ''}` },
       h('span', { class: 'results__rank' }, `#${row.rank}`),
-      createSprite(`markers:chip-${row.player.color}`, { className: 'results__token' }),
+      createSprite(ART.owner.chip(row.player.seat), { className: 'results__token' }),
       h('span', { class: 'results__name' }, row.player.name),
       h('span', { class: 'results__score' }, `${row.blocks} block${row.blocks === 1 ? '' : 's'}`),
       h('span', { class: 'results__worth' }, formatCash(row.worth)),
@@ -210,7 +211,7 @@ function startGame(setup) {
   $('#event-dialog').close();
   $('#finance-dialog').close();
   // Development art and effects are needed as soon as blocks are captured.
-  preloadSheets(['buildings', 'civic', 'parks', 'effects', 'markers', 'icons']);
+  preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });

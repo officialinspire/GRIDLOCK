@@ -160,13 +160,8 @@
   border: 2px solid var(--ink);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
 }
-.node.is-paved { background: var(--asphalt-2); }
-.node.is-paved::before {
-  width: 36%;
-  background: #6f6d6a; /* manhole cover */
-  border-color: #1f1e1d;
-  box-shadow: none;
-}
+.node.is-paved::before { display: none; }
+.node__tile { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 /* Road slots */
 .road {
@@ -224,26 +219,16 @@
 .road:focus-visible { outline-offset: 0; }
 .road.is-built, .board.is-locked .road { cursor: default; }
 
-/* Built: asphalt with lane dashes and a curb in the builder's colour */
-.road.is-built .road__surface { background-color: var(--asphalt); }
-.road--h.is-built .road__surface {
-  background-image:
-    linear-gradient(90deg, var(--lane) 55%, transparent 0),
-    linear-gradient(var(--builder), var(--builder)),
-    linear-gradient(var(--builder), var(--builder));
-  background-size: 12px 2px, 100% 2px, 100% 2px;
-  background-position: 0 50%, 0 0, 0 100%;
-  background-repeat: repeat-x, no-repeat, no-repeat;
+/* Built: papercraft road tile, with a thin curb line in the builder's colour for readability */
+.road__tile { position: absolute; inset: 0; width: 100%; height: 100%; }
+.road.is-built .road__surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
-.road--v.is-built .road__surface {
-  background-image:
-    linear-gradient(180deg, var(--lane) 55%, transparent 0),
-    linear-gradient(var(--builder), var(--builder)),
-    linear-gradient(var(--builder), var(--builder));
-  background-size: 2px 12px, 2px 100%, 2px 100%;
-  background-position: 50% 0, 0 0, 100% 0;
-  background-repeat: repeat-y, no-repeat, no-repeat;
-}
+.road--h.is-built .road__surface::after { border-top: 2px solid var(--builder); border-bottom: 2px solid var(--builder); }
+.road--v.is-built .road__surface::after { border-left: 2px solid var(--builder); border-right: 2px solid var(--builder); }
 .road--red { --builder: var(--p-red); }
 .road--blue { --builder: var(--p-blue); }
 .road--yellow { --builder: var(--p-yellow); }
@@ -289,15 +274,52 @@
 .block--green { --owner: var(--p-green); }
 
 .block > .sprite, .block > .block__tint { position: absolute; }
-.block__lot { inset: 0; width: 100%; height: 100%; }
-.block:not(.block--owned) .block__lot { filter: saturate(0.55) brightness(0.97); }
+/*
+ * Cardstock depth: each lot is a paper cut-out lifted off the kraft board. The
+ * stacked drop-shadows read as sheets of card; developed blocks get more
+ * layers per level (visual progression), so a Level 3 block visibly "stands taller".
+ */
+.block {
+  --card: #cdb78a;
+  --lift: 0;
+}
+.block--owned { --card: color-mix(in srgb, var(--owner) 35%, #cdb78a); }
+.block--lv1 { --lift: 1; }
+.block--lv2 { --lift: 2; }
+.block--lv3 { --lift: 3; }
+.block__lot {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter:
+    drop-shadow(0 calc(1.5px + var(--lift) * 1.5px) 0 var(--card))
+    drop-shadow(0 calc(3px + var(--lift) * 1.5px) 0 rgba(60, 45, 30, 0.55))
+    drop-shadow(0 calc(5px + var(--lift) * 2px) calc(4px + var(--lift) * 2px) rgba(0, 0, 0, 0.3));
+  transform: translateY(calc(var(--lift) * -1.5px));
+}
+.block:not(.block--owned):not(.block--abandoned) .block__lot {
+  filter: saturate(0.7) brightness(0.98)
+    drop-shadow(0 1.5px 0 var(--card)) drop-shadow(0 3px 3px rgba(0, 0, 0, 0.25));
+}
 .block__tint {
-  inset: 6%;
+  inset: 8%;
   border-radius: 10%;
   background: var(--owner);
-  opacity: 0.42;
+  opacity: 0.28;
   mix-blend-mode: multiply;
+  transform: translateY(calc(var(--lift) * -1.5px));
 }
+
+/* Street props that appear as a block levels up (from props_decor), tucked into the lower corners. */
+.block__prop {
+  bottom: 2%;
+  z-index: 2; /* in front of the building, at the kerb */
+  height: 34%;
+  width: auto;
+  filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.35));
+}
+.block__prop--0 { left: -5%; }
+.block__prop--1 { right: -5%; }
 .block__frame { inset: -2%; width: 104%; height: 104%; opacity: 0.95; }
 .block__seal {
   left: 28%;
@@ -308,13 +330,14 @@
 .block__building {
   left: 10%;
   bottom: 12%;
+  z-index: 1;
   width: 80%;
-  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(2px 4px 0 rgba(60, 45, 30, 0.35)) drop-shadow(0 4px 4px rgba(0, 0, 0, 0.3));
 }
 .block__flag {
-  top: -14%;
-  right: -6%;
-  width: 34%;
+  top: -16%;
+  right: -8%;
+  width: 36%;
   z-index: 2;
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.4));
 }
@@ -649,7 +672,8 @@ html[data-coords='on'] .block__coord { display: block; }
   border: 1.5px solid var(--ink);
   background: var(--paper-hi);
 }
-.pip.is-on { background: var(--gold); }
+.pip.is-on { background: var(--gold-deep); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.3); }
+.pip:not(.is-on) { background: transparent; border-color: rgba(29, 24, 18, 0.35); }
 
 /* Board badge: category icon + level pips */
 .block__badge {

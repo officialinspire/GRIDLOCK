@@ -1,5 +1,6 @@
 /** Grid Lock City — app bootstrap. */
-import { hydrateSprites } from './assets.js';
+import { hydrateSprites, createSprite } from './assets.js';
+import { ART } from './art.js';
 import { ECONOMY } from './config.js';
 import { formatCash } from './core/economy.js';
 import { bindNavigation, showScreen } from './ui/router.js';
@@ -15,8 +16,21 @@ function fillEconomyCopy(root = document) {
   });
 }
 
+/** Fills `[data-art-decor="key"]` containers with the prop list ART[key]. */
+function placeDecor(root = document) {
+  root.querySelectorAll('[data-art-decor]').forEach((box) => {
+    const items = ART[box.dataset.artDecor] ?? [];
+    box.replaceChildren(...items.map(({ sprite, spot }) => {
+      const el = createSprite(sprite);
+      el.dataset.spot = spot;
+      return el;
+    }));
+  });
+}
+
 function boot() {
   fillEconomyCopy();
+  placeDecor();
   initSettingsView();
   hydrateSprites(document);
   initSetupView();

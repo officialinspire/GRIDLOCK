@@ -8,6 +8,7 @@
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
+import { ART, progressionProps } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/board.js';
 import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
@@ -38,7 +39,8 @@ function nodeCell(board, r, c) {
   // An intersection looks paved once any road touching it is built.
   const touching = [roadId('h', r, c - 1), roadId('h', r, c), roadId('v', r - 1, c), roadId('v', r, c)];
   const paved = touching.some((id) => hasRoad(board, id));
-  return h('span', { class: `node${paved ? ' is-paved' : ''}`, 'aria-hidden': 'true' });
+  return h('span', { class: `node${paved ? ' is-paved' : ''}`, 'aria-hidden': 'true' },
+    paved && createSprite(ART.road.junction, { className: 'node__tile' }));
 }
 
 function roadCell(game, dir, r, c) {
@@ -58,7 +60,8 @@ function roadCell(game, dir, r, c) {
     dataset: { road: id },
     'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}` : `Pave ${roadLabel(dir, r, c)}`,
     'aria-disabled': built || game.phase !== PHASES.PLAYING ? 'true' : null,
-  }, h('span', { class: 'road__surface', 'aria-hidden': 'true' }));
+  }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
+    built && createSprite(ART.road[dir], { className: 'road__tile' })));
 }
 
 function blockDescription(game, block) {
@@ -110,17 +113,20 @@ function blockCell(game, block) {
     'aria-label': blockDescription(game, block),
     'aria-pressed': selected ? 'true' : 'false',
   },
-    createSprite('parks:empty-lot', { className: 'block__lot' }),
+    // Layered paper cut-outs, back to front: lot → owner tint/frame → street props → building → markers.
+    createSprite(ruin ? ART.lot.abandoned : color ? ART.lot.owned : ART.lot.unclaimed, { className: 'block__lot' }),
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
-    color && createSprite(`markers:frame-${color}`, { className: 'block__frame' }),
+    color && createSprite(ART.owner.frame(block.ownerSeat), { className: 'block__frame' }),
+    ...(developed ? progressionProps(block.type, block.level) : []).map((ref, i) =>
+      createSprite(ref, { className: `block__prop block__prop--${i}` })),
     art && createSprite(art.sprite, { className: 'block__building' }),
     ruin && h('span', { class: 'block__abandoned', 'aria-hidden': 'true' }, 'Abandoned'),
-    color && !art && createSprite(`markers:seal-${color}`, { className: 'block__seal' }),
+    color && !art && createSprite(ART.owner.seal(block.ownerSeat), { className: 'block__seal' }),
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
-    color && createSprite(`markers:post-${color}`, { className: 'block__flag' }),
-    fresh && createSprite('effects:sparkle', { className: 'block__fx' }),
-    justBuilt && createSprite('effects:star-burst', { className: 'block__fx' }),
+    color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
+    fresh && createSprite(ART.fx.capture, { className: 'block__fx' }),
+    justBuilt && createSprite(ART.fx.build, { className: 'block__fx' }),
     h('span', { class: 'block__coord', 'aria-hidden': 'true' }, block.label),
   );
 }

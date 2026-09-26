@@ -6,6 +6,7 @@
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
+import { ART } from '../art.js';
 import { getBlockById, DISTRICTS } from '../core/board.js';
 import { CATEGORY_ORDER, getCategory, levelArt, describeDevelopment } from '../core/buildings.js';
 import {
@@ -42,7 +43,7 @@ function header(block, player) {
   return h('header', { class: 'build-panel__head' },
     art
       ? createSprite(art.sprite, { className: 'build-panel__art' })
-      : createSprite(`markers:seal-${player.color}`, { className: 'build-panel__art build-panel__art--seal' }),
+      : createSprite(ART.owner.seal(player.seat), { className: 'build-panel__art build-panel__art--seal' }),
     h('div', { class: 'build-panel__titles' },
       h('h3', { id: 'build-title', class: 'build-panel__title' }, `Block ${block.label}`),
       h('p', { class: 'build-panel__sub' },
@@ -181,7 +182,7 @@ function abandonedView(game, block, player) {
   };
   return [
     h('header', { class: 'build-panel__head' },
-      art ? createSprite(art.sprite, { className: 'build-panel__art is-abandoned' }) : createSprite('roads:lot-construction', { className: 'build-panel__art' }),
+      art ? createSprite(art.sprite, { className: 'build-panel__art is-abandoned' }) : createSprite(ART.lot.abandoned, { className: 'build-panel__art' }),
       h('div', { class: 'build-panel__titles' },
         h('h3', { id: 'build-title', class: 'build-panel__title' }, `Block ${block.label} · Abandoned`),
         h('p', { class: 'build-panel__sub' },

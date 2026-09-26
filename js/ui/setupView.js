@@ -1,6 +1,7 @@
 /** New Game screen: four local seats, 2–4 must join. */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
+import { ART } from '../art.js';
 import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
 import { formatCash } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
@@ -12,9 +13,9 @@ function seatCard(preset) {
   return h('fieldset', { class: `seat-card paper seat-card--${preset.color}`, dataset: { seat: preset.seat } },
     h('legend', { class: 'visually-hidden' }, preset.name),
     h('div', { class: 'seat-card__head' },
-      createSprite(`markers:chip-${preset.color}`, { className: 'seat-card__token' }),
+      createSprite(ART.owner.chip(preset.seat), { className: 'seat-card__token' }),
       h('span', { class: 'seat-card__seat' }, `Seat ${preset.seat}`),
-      createSprite(`markers:pennant-${preset.color}`, { className: 'seat-card__flag' }),
+      createSprite(ART.owner.pennant(preset.seat), { className: 'seat-card__flag' }),
     ),
     h('label', { class: 'seat-card__label', for: inputId }, 'Mayor name'),
     h('input', {

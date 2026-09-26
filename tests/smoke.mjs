@@ -461,6 +461,57 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Art pipeline: WebP sheets load, 9-slice UI frames apply, board tiles render on a hi-DPI phone.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('response', (r) => r.status() >= 400 && errors.push(`HTTP ${r.status()} ${r.url()}`));
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    const btn = await page.locator('[data-nav="setup"]').evaluate((el) => getComputedStyle(el).borderImageSource);
+    assert.match(btn, /generated\/ui\/btn-gold\.png/, '9-slice button frame');
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    await page.evaluate(async () => {
+      const { getBlock } = await import('/js/core/board.js');
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = getBlock(g.board, 0, 0);
+      b.ownerSeat = 1;
+      applyDevelopment(b, 'commercial', 3);
+    });
+    await page.locator('[data-road="h-0-0"]').click();
+    await page.waitForLoadState('networkidle');
+    const loaded = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name));
+    assert.ok(loaded.some((u) => /generated\/[a-z-]+\.webp$/.test(u)), 'WebP sheets used');
+    assert.ok(!loaded.some((u) => /\/(roads_infrastructure|civic-buildings|UI%20icons)\.png$/.test(u)), 'big PNG originals not downloaded');
+    assert.equal(await page.locator('[data-road="h-0-0"] .road__tile').count(), 1, 'paved road uses the road tile');
+    assert.ok(await page.locator('.node.is-paved .node__tile').count() >= 1, 'junction tile');
+    const blk = page.locator('[data-block="r0c0"]');
+    assert.equal(await blk.locator('.block__prop').count(), 2, 'level-3 progression props');
+    assert.equal(await blk.locator('.block__flag').count(), 1, 'ownership flag');
+    // Every sprite has a real size (nothing collapsed at this scale).
+    const tiny = await page.$$eval('#board .sprite', (els) => els.filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.width < 4 || r.height < 4;
+    }).length);
+    assert.equal(tiny, 0, 'no collapsed sprites');
+    await page.locator('#board-frame').screenshot({ path: 'test-results/art-board-phone-3x.png' });
+    assert.deepEqual(errors, []);
+    console.log('✔ art pipeline (hi-DPI phone)');
+  } catch (err) {
+    failures++;
+    console.error(`✘ art pipeline: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 // Money animation (runs with motion enabled, desktop only).
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
