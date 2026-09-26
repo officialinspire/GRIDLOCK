@@ -62,6 +62,7 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL 
         hex: preset.hex,
         cash: toAmount(ECONOMY.STARTING_CASH),
         bankruptcies: 0,
+        lastEconomicRound: 0,
       };
     });
 
@@ -145,7 +146,26 @@ export function beginTurn(game) {
   // Upkeep is charged after income. It is the only thing that can push cash below $0
   // (financial distress — resolved via core/finance.js before the player can pave).
   game.turnStartUpkeep = { seat: player.seat, amount: chargeUpkeep(game, player), distress: isInDistress(player) };
+  player.lastEconomicRound = game.round;
   return game.turnStartIncome;
+}
+
+/**
+ * Bring every player to the same round boundary before final scoring. Players
+ * whose turn already began this round are untouched; remaining players receive
+ * exactly the income and upkeep they would have received at that turn start.
+ */
+export function settleFinalEconomy(game) {
+  const settlements = [];
+  for (const player of game.players) {
+    if ((player.lastEconomicRound ?? 0) >= game.round) continue;
+    const income = payTurnIncome(game, player, effectiveIncome(game, player.seat));
+    const upkeep = chargeUpkeep(game, player);
+    player.lastEconomicRound = game.round;
+    settlements.push({ seat: player.seat, income, upkeep, distress: isInDistress(player) });
+  }
+  game.finalSettlement = { round: game.round, players: settlements };
+  return game.finalSettlement;
 }
 
 /**
@@ -212,8 +232,9 @@ export function placeRoad(game, id) {
   // Every road paved = every block enclosed. (Not "every block owned": abandoned
   // blocks after a bankruptcy may stay ownerless forever.)
   if (isCityComplete(game)) {
-    // The final road's captures and reward have resolved above; freeze the results now so
-    // nothing viewed afterwards (e.g. "View Board") can change the final score.
+    // Resolve the unfinished portion of the current economic round so the final
+    // mover cannot decide which players miss income/upkeep, then freeze results.
+    settleFinalEconomy(game);
     game.phase = PHASES.ENDED;
     game.results = computeResults(game);
     result.gameEnded = true;

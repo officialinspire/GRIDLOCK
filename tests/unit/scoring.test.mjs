@@ -9,7 +9,7 @@ import { calculateIncome } from '../../js/core/economy.js';
 import {
   scorePlayer, rankScores, awardDistinctions, computeResults, DISTINCTIONS,
 } from '../../js/core/scoring.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, standings, isCityComplete, PHASES } from '../../js/core/game.js';
+import { createGame, placeRoad, beginTurn, currentPlayer, getPlayer, standings, isCityComplete, PHASES } from '../../js/core/game.js';
 import { distressStatus, declareBankruptcy, sellDevelopment } from '../../js/core/finance.js';
 
 const calm = (n = 4) => createGame({ seats: Array.from({ length: n }, (_, i) => ({ seat: i + 1 })), seed: 1, eventPool: [] });
@@ -135,6 +135,31 @@ test('Greenest City counts park levels', () => {
 });
 
 /* ---------------- game completion ---------------- */
+
+test('final scoring settles every player to the same economic round boundary', () => {
+  const game = calm();
+  // Give every player an identical suburb property and development before a
+  // simulated round starts. P1 begins that round; P2–P4 have not yet done so.
+  for (let seat = 1; seat <= 4; seat++) {
+    own(game, 0, seat - 1, seat, 'residential', 1);
+    getPlayer(game, seat).lastEconomicRound = 1;
+  }
+  refreshBonuses(game.board);
+  game.round = 2;
+  beginTurn(game);
+
+  const ids = allRoadIds(game.board);
+  ids.slice(0, -1).forEach((id) => { game.board.roads[id] = 0; });
+  // Mark remaining lots as ruins so the last road has no capture reward side effect.
+  game.board.blocks.forEach((block) => { if (block.ownerSeat == null) block.abandoned = true; });
+  const result = placeRoad(game, ids.at(-1));
+
+  assert.equal(result.gameEnded, true);
+  assert.deepEqual(game.finalSettlement.players.map((entry) => entry.seat), [2, 3, 4]);
+  assert.ok(game.players.every((player) => player.lastEconomicRound === 2));
+  assert.deepEqual(game.players.map((player) => player.cash), [12200, 12200, 12200, 12200],
+    'identical economies finish with identical cash regardless of final mover');
+});
 
 test('the game ends when every block is enclosed; results are frozen at that moment', () => {
   const game = calm();
