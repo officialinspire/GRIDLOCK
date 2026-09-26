@@ -1,0 +1,162 @@
+/**
+ * Block development rules: Vacant (Level 0) → build a category (Level 1) →
+ * upgrade to MAX_LEVEL. Numbers come from ECONOMY.DEVELOPMENT; this module
+ * derives per-level tables from them and owns every change to a block's
+ * type / level / value / income.
+ */
+import { ECONOMY } from '../config.js';
+import { getBlockById } from './board.js';
+import { VACANT, CATEGORY_ORDER, getCategory } from './buildings.js';
+import { debit, canAfford, TXN, isValidAmount } from './economy.js';
+import { refreshBonuses } from './bonuses.js';
+import { adjustedCost } from './events.js';
+import { currentPlayer, PHASES } from './game.js';
+
+const DEV = ECONOMY.DEVELOPMENT;
+export const MAX_LEVEL = DEV.MAX_LEVEL;
+
+export const DEV_ERRORS = Object.freeze({
+  GAME_OVER: 'game-over',
+  NO_BLOCK: 'no-such-block',
+  NOT_OWNER: 'not-owner',
+  UNKNOWN_TYPE: 'unknown-type',
+  ALREADY_DEVELOPED: 'already-developed',
+  NOT_DEVELOPED: 'not-developed',
+  MAX_LEVEL: 'max-level',
+  INSUFFICIENT_FUNDS: 'insufficient-funds',
+});
+
+/* ---------------- derived tables ---------------- */
+
+function wholeDollars(value, what) {
+  const n = Math.round(value);
+  if (!isValidAmount(n) || Math.abs(n - value) > 1e-9) {
+    throw new Error(`ECONOMY.DEVELOPMENT: ${what} = ${value} is not a whole-dollar amount`);
+  }
+  return n;
+}
+
+/**
+ * TABLE[type][level] = { cost, income, invested }
+ *   cost     — price to reach `level` from `level - 1`
+ *   income   — total income per turn at `level`
+ *   invested — sum of costs from Level 1 to `level`
+ */
+export const TABLE = Object.freeze(Object.fromEntries(CATEGORY_ORDER.map((type) => {
+  const base = DEV.CATEGORIES[type];
+  const rows = { 0: Object.freeze({ cost: 0, income: ECONOMY.UNDEVELOPED_INCOME, invested: 0 }) };
+  let invested = 0;
+  for (let level = 1; level <= MAX_LEVEL; level++) {
+    const m = DEV.LEVELS[level];
+    if (!m) throw new Error(`ECONOMY.DEVELOPMENT.LEVELS is missing level ${level}`);
+    const cost = wholeDollars(base.cost * m.cost, `${type} L${level} cost`);
+    const income = wholeDollars(base.income * m.income, `${type} L${level} income`);
+    invested += cost;
+    rows[level] = Object.freeze({ cost, income, invested });
+  }
+  return [type, Object.freeze(rows)];
+})));
+
+export const isCategory = (type) => Object.hasOwn(TABLE, type);
+
+export function levelStats(type, level) {
+  if (type === VACANT || level === 0) return TABLE[CATEGORY_ORDER[0]][0];
+  return (isCategory(type) && TABLE[type][level]) || null;
+}
+
+/* ---------------- block state ---------------- */
+
+/**
+ * Sets a block's development and refreshes its stored value and income.
+ * value = land price + everything invested in buildings on it.
+ */
+export function applyDevelopment(block, type, level) {
+  const stats = levelStats(type, level);
+  if (!stats) throw new RangeError(`Invalid development ${type} L${level}`);
+  block.type = level === 0 ? VACANT : type;
+  block.level = level;
+  block.income = stats.income;
+  block.value = block.price + stats.invested;
+  return block;
+}
+
+export const isDeveloped = (block) => block.level > 0 && isCategory(block.type);
+
+/* ---------------- quotes ---------------- */
+
+function baseCheck(game, block) {
+  if (game.phase !== PHASES.PLAYING) return DEV_ERRORS.GAME_OVER;
+  if (!block) return DEV_ERRORS.NO_BLOCK;
+  // Only the owner may develop, and only on their own turn (hot-seat play).
+  if (block.ownerSeat == null || block.ownerSeat !== currentPlayer(game).seat) return DEV_ERRORS.NOT_OWNER;
+  return null;
+}
+
+/**
+ * What building `type` on a vacant block would cost and pay.
+ * Returns { ok, error?, type, level: 1, cost, income, incomeGain, shortfall }.
+ */
+export function quoteBuild(game, blockId, type) {
+  const block = getBlockById(game.board, blockId);
+  const quote = { ok: false, type, level: 1, cost: 0, income: 0, incomeGain: 0, shortfall: 0 };
+  const err = baseCheck(game, block)
+    ?? (!isCategory(type) ? DEV_ERRORS.UNKNOWN_TYPE : null)
+    ?? (isDeveloped(block) ? DEV_ERRORS.ALREADY_DEVELOPED : null);
+  if (err) return { ...quote, error: err };
+
+  const next = TABLE[type][1];
+  const player = currentPlayer(game);
+  const cost = adjustedCost(game, type, next.cost); // active city events can change prices
+  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  if (!canAfford(player, cost)) {
+    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
+  }
+  return { ...quote, ok: true };
+}
+
+/** What upgrading a developed block one level would cost and pay. */
+export function quoteUpgrade(game, blockId) {
+  const block = getBlockById(game.board, blockId);
+  const quote = { ok: false, type: block?.type, level: (block?.level ?? 0) + 1, cost: 0, income: 0, incomeGain: 0, shortfall: 0 };
+  const err = baseCheck(game, block)
+    ?? (!isDeveloped(block) ? DEV_ERRORS.NOT_DEVELOPED : null)
+    ?? (block.level >= MAX_LEVEL ? DEV_ERRORS.MAX_LEVEL : null);
+  if (err) return { ...quote, error: err };
+
+  const next = TABLE[block.type][block.level + 1];
+  const player = currentPlayer(game);
+  const cost = adjustedCost(game, block.type, next.cost);
+  Object.assign(quote, { cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  if (!canAfford(player, cost)) {
+    return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
+  }
+  return { ...quote, ok: true };
+}
+
+/* ---------------- actions ---------------- */
+
+function commit(game, block, quote, reason) {
+  const player = currentPlayer(game);
+  const paid = debit(game, player, quote.cost, reason, { block: block.id, type: quote.type, level: quote.level });
+  // quote already checked affordability; this guards against state changing in between.
+  if (!paid.ok) return { ok: false, error: DEV_ERRORS.INSUFFICIENT_FUNDS };
+  applyDevelopment(block, quote.type, quote.level);
+  refreshBonuses(game.board); // development changed
+  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level };
+  game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });
+  return { ok: true, block: block.id, type: block.type, level: block.level, cost: quote.cost, income: block.income, value: block.value };
+}
+
+/** Builds Level 1 of `type` on a vacant block owned by the current player. Cash is deducted immediately. */
+export function buildOnBlock(game, blockId, type) {
+  const quote = quoteBuild(game, blockId, type);
+  if (!quote.ok) return { ok: false, error: quote.error, shortfall: quote.shortfall };
+  return commit(game, getBlockById(game.board, blockId), quote, TXN.BUILD);
+}
+
+/** Upgrades a developed block one level. Cash is deducted immediately. */
+export function upgradeBlock(game, blockId) {
+  const quote = quoteUpgrade(game, blockId);
+  if (!quote.ok) return { ok: false, error: quote.error, shortfall: quote.shortfall };
+  return commit(game, getBlockById(game.board, blockId), quote, TXN.UPGRADE);
+}

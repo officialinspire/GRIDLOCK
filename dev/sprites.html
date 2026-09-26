@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sprite Atlas</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <style>
+    body { padding: 16px; color: var(--paper); }
+    h1 { margin-bottom: 8px; }
+    h2 { margin: 28px 0 10px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    figure { width: 150px; margin: 0; padding: 8px;
+      background: repeating-conic-gradient(#3a3330 0 25%, #2c2623 0 50%) 0 0 / 16px 16px;
+      border: 1px solid #5a4d42; border-radius: 8px; }
+    figure .sprite { display: block; width: 100%; margin-bottom: 6px; outline: 1px dashed rgba(255,255,255,.35); }
+    figcaption { font: 700 12px/1.2 var(--font-body); word-break: break-all; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Sprite Atlas</h1>
+  <p>Every sprite registered in <code>js/assets.js</code>. Dashed outline = crop rectangle.</p>
+  <div id="out"></div>
+  <script type="module">
+    import { SHEETS, createSprite } from '../js/assets.js';
+    // The atlas lives one folder down, so point sheet URLs back at the repo root.
+    for (const s of Object.values(SHEETS)) s.url = '../' + s.url;
+    const out = document.getElementById('out');
+    for (const [key, sheet] of Object.entries(SHEETS)) {
+      const names = Object.keys(sheet.sprites);
+      if (!names.length) continue;
+      const h2 = document.createElement('h2');
+      h2.textContent = `${key} — ${decodeURI(sheet.url)}`;
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      for (const name of names) {
+        const fig = document.createElement('figure');
+        const cap = document.createElement('figcaption');
+        cap.textContent = `${key}:${name}`;
+        fig.append(createSprite(`${key}:${name}`), cap);
+        grid.append(fig);
+      }
+      out.append(h2, grid);
+    }
+    document.documentElement.classList.add('is-ready');
+  </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+/** Grid Lock City — app bootstrap. */
+import { hydrateSprites, createSprite } from './assets.js';
+import { ART } from './art.js';
+import { ECONOMY } from './config.js';
+import { formatCash } from './core/economy.js';
+import { bindNavigation, showScreen } from './ui/router.js';
+import { initSettingsView } from './ui/settingsView.js';
+import { initSetupView } from './ui/setupView.js';
+import { initGameView, getGame } from './ui/gameView.js';
+
+/** Fills `[data-econ="KEY"]` text from ECONOMY so copy never drifts from the constants. */
+function fillEconomyCopy(root = document) {
+  root.querySelectorAll('[data-econ]').forEach((el) => {
+    const value = ECONOMY[el.dataset.econ];
+    if (Number.isFinite(value)) el.textContent = formatCash(value);
+  });
+}
+
+/** Fills `[data-art-decor="key"]` containers with the prop list ART[key]. */
+function placeDecor(root = document) {
+  root.querySelectorAll('[data-art-decor]').forEach((box) => {
+    const items = ART[box.dataset.artDecor] ?? [];
+    box.replaceChildren(...items.map(({ sprite, spot }) => {
+      const el = createSprite(sprite);
+      el.dataset.spot = spot;
+      return el;
+    }));
+  });
+}
+
+function boot() {
+  fillEconomyCopy();
+  placeDecor();
+  initSettingsView();
+  hydrateSprites(document);
+  initSetupView();
+  initGameView();
+  bindNavigation(document);
+  showScreen('title');
+  // ?debug exposes the live game for automated tests and bug reproduction (never on by default).
+  if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame };
+  document.documentElement.classList.add('is-ready');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}
