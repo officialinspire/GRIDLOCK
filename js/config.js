@@ -129,7 +129,7 @@ export const ECONOMY = Object.freeze({
     MIXED_USE: Object.freeze({ percent: 10 }),
     /**
      * Civic protection radius (Manhattan distance, in blocks) by civic level.
-     * Hook only: marks protected blocks for future city events; no income effect.
+     * Marks protected blocks so emergencies can be mitigated; no direct income effect.
      */
     CIVIC_PROTECTION: Object.freeze({ radiusByLevel: Object.freeze({ 1: 1, 2: 1, 3: 2 }), sameOwnerOnly: true }),
   }),

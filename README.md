@@ -4,7 +4,18 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is.
 
-**V1.0:** complete game loop, economy, development, bonuses, events, debt/bankruptcy, scoring, and a responsive papercraft UI for desktop, Android and iPhone.
+**V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.1 release notes
+
+- Standard play is explicitly four-player, with 2–4 seats retained under Custom Game.
+- Turn phases, queued double captures, bonus-road chains, handoffs, and final-round settlement have regression coverage.
+- Construction records actual paid cost separately from market value; final scoring uses configurable coefficients.
+- Events allow calm rounds, cap overlap, combine modifiers before board presentation, and respect civic shielding.
+- Distress, bankruptcy, and abandoned property now feed a quick contested-redevelopment flow.
+- Active games autosave defensively and restore board, economy, events, phases, bankruptcy state, and seeded RNG.
+- Chromium, WebKit, and Firefox smoke jobs cover desktop, touch, portrait, and landscape layouts in CI.
+- V1.1 retains all original sprite sheets byte-for-byte; GitHub Pages serves the complete game from the repository root.
 
 ---
 
@@ -57,7 +68,7 @@ Active matches autosave to versioned local storage after every durable action: p
 - **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
 - **City Value** uses configurable coefficients: 100% cash + 100% land + 75% of actual construction cost invested in retained levels. Development earns income and bonuses, but no longer converts spending automatically into equal score. Debt lowers value, and abandoned blocks count for nobody.
 - **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
-- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, and any distinctions. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
+- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
 - **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
 
 ## Economy
@@ -106,7 +117,7 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 | Commercial district | 3+ connected Commercial | +25% each |
 | Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +10% per park |
 | Mixed-use | A connected Residential/Commercial/Park cluster containing all three | +10% each member |
-| Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Hook only: `isProtected(block)` for future events |
+| Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Shields covered blocks from emergencies and their repair bills |
 
 `core/bonuses.js` → `refreshBonuses(board)` recomputes everything from scratch after every capture and every build/upgrade. The results are stored on each block as `bonuses`, `bonusIncome` and `protectedBy`. There's no incremental state, so nothing goes stale. Bonuses are a percentage of the block's **base** (level) income and never compound on each other. Each bonus type applies at most once per block, and connected groups are found with an iterative flood fill that tracks visited blocks, so cycles can't double count. Turn income pays base plus bonuses.
 
@@ -315,4 +326,4 @@ engines. A browser job fails on an uncaught JavaScript error, console error,
 asset/request failure, assertion failure, or horizontal page overflow. Failure
 screenshots are uploaded as workflow artifacts.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, and animation/reduced-motion paths. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

@@ -1,8 +1,10 @@
 /** Versioned, defensive persistence for an active local match. UI-only state is never saved. */
-import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS } from '../config.js';
+import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, ECONOMY } from '../config.js';
 import { EVENT_POOL } from './events.js';
 import { PHASES, TURN_PHASES } from './game.js';
-import { isValidRoad } from './board.js';
+import { DISTRICTS, blockId, isValidRoad } from './board.js';
+import { CATEGORY_ORDER } from './buildings.js';
+import { refreshBonuses } from './bonuses.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
 export const SAVE_VERSION = 1;
@@ -24,11 +26,31 @@ function migrate(raw) {
 }
 
 function validBlock(block) {
-  return plainObject(block) && typeof block.id === 'string' && integer(block.row) && integer(block.col)
-    && integer(block.price) && integer(block.ownerSeat ?? 0) && integer(block.level)
-    && typeof block.type === 'string' && integer(block.value) && integer(block.income)
+  const categories = new Set(['vacant', ...CATEGORY_ORDER]);
+  const category = ECONOMY.DEVELOPMENT.CATEGORIES[block.type];
+  const level = ECONOMY.DEVELOPMENT.LEVELS[block.level];
+  const expectedIncome = block.level === 0 ? ECONOMY.UNDEVELOPED_INCOME : category?.income * level?.income;
+  const expectedMarket = block.price + (block.level === 0 ? 0
+    : Array.from({ length: block.level }, (_, index) => category?.cost * ECONOMY.DEVELOPMENT.LEVELS[index + 1]?.cost)
+      .reduce((sum, cost) => sum + cost, 0));
+  const expectedDistrict = Math.min(block.row, block.col, BOARD_ROWS - 1 - block.row, BOARD_COLS - 1 - block.col) === 0
+    ? 'suburbs'
+    : Math.min(block.row, block.col, BOARD_ROWS - 1 - block.row, BOARD_COLS - 1 - block.col) === 1 ? 'midtown' : 'downtown';
+  return plainObject(block) && block.id === blockId(block.row, block.col)
+    && integer(block.row) && block.row >= 0 && block.row < BOARD_ROWS
+    && integer(block.col) && block.col >= 0 && block.col < BOARD_COLS
+    && block.district === expectedDistrict && block.price === DISTRICTS[expectedDistrict].price
+    && integer(block.ownerSeat ?? 0) && integer(block.level) && block.level >= 0 && block.level <= 3
+    && categories.has(block.type) && ((block.level === 0) === (block.type === 'vacant'))
+    && integer(block.value) && block.marketValue === expectedMarket && integer(block.investedCostBasis)
+    && block.income === expectedIncome && integer(block.bonusIncome) && block.bonusIncome >= 0
     && Array.isArray(block.bonuses) && Array.isArray(block.protectedBy)
-    && Array.isArray(block.constructionCosts);
+    && Array.isArray(block.constructionCosts)
+    && block.constructionCosts.length === block.level
+    && block.constructionCosts.every((cost) => integer(cost) && cost >= 0)
+    && block.constructionCosts.reduce((sum, cost) => sum + cost, 0) === block.investedCostBasis
+    && block.value === block.price + block.investedCostBasis
+    && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0);
 }
 
 function validGame(game) {
@@ -53,20 +75,31 @@ function validGame(game) {
   const blockIds = new Set(game.board.blocks.map((block) => block.id));
   if (blockIds.size !== game.board.blocks.length) return false;
   if (game.board.blocks.some((block) => block.ownerSeat != null && !seats.has(block.ownerSeat))) return false;
+  if (game.board.blocks.some((block) => block.abandonedBy != null && !seats.has(block.abandonedBy))) return false;
+  if (game.board.blocks.some((block) => block.abandoned
+    ? block.ownerSeat != null || block.abandonedBy == null
+    : block.abandonedBy != null)) return false;
   if (Object.entries(game.board.roads).some(([id, seat]) => !isValidRoad(game.board, id) || !seats.has(seat))) return false;
   if (game.pendingCaptures.some((id) => !blockIds.has(id))) return false;
+  if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP) {
+    const seat = game.players[game.turnIndex].seat;
+    if (!game.pendingCaptures.length || game.pendingCaptures.some((id) => game.board.blocks.find((b) => b.id === id)?.ownerSeat !== seat)) return false;
+  } else if (game.pendingCaptures.length) return false;
   const eventIds = new Set(EVENT_POOL.map((event) => event.id));
   if (game.events.active.some((event) => !plainObject(event) || !eventIds.has(event.id)
     || !integer(event.uid) || !integer(event.startRound) || !integer(event.endRound) || !Array.isArray(event.targets))) return false;
   if (game.events.repairs.some((repair) => !plainObject(repair) || !seats.has(repair.seat)
     || !blockIds.has(repair.block) || !integer(repair.amount) || repair.amount < 0)) return false;
   if (!integer(game.seed) || !integer(game.rngState) || !Array.isArray(game.ledger) || !Array.isArray(game.log)) return false;
+  if (game.log.some((entry) => !plainObject(entry)
+    || (entry.type === 'road' && (!seats.has(entry.seat) || !Array.isArray(entry.captured)
+      || entry.captured.some((id) => !blockIds.has(id)) || !isValidRoad(game.board, entry.road))))) return false;
   return true;
 }
 
 function setupFrom(game, setup) {
   return {
-    gameType: setup?.gameType === 'standard' ? 'standard' : 'custom',
+    gameType: setup?.gameType === 'standard' && game.players.length === MAX_PLAYERS ? 'standard' : 'custom',
     seats: game.players.map(({ seat, name }) => ({ seat, name })),
   };
 }
@@ -101,6 +134,9 @@ export function loadActiveGame(storage = globalThis.localStorage) {
   try {
     const migrated = migrate(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
     if (!migrated || !validGame(migrated.game)) return null;
+    // Derived adjacency/protection data is rebuilt instead of trusting storage.
+    refreshBonuses(migrated.game.board);
+    migrated.setup = setupFrom(migrated.game, migrated.setup);
     migrated.game.eventPool = EVENT_POOL;
     return migrated;
   } catch {

@@ -63,6 +63,27 @@ test('corrupt, unsupported, and ended saves are ignored without throwing', () =>
   assert.equal(saveActiveGame(ended, setup, storage), false);
 });
 
+test('saves with impossible board, accounting, phase, or log state are rejected', () => {
+  const mutations = [
+    (game) => { game.board.blocks[0].row = 99; },
+    (game) => { game.board.blocks[0].investedCostBasis = 1; },
+    (game) => { game.board.blocks[0].income = 999999; },
+    (game) => { game.board.blocks[0].marketValue = 999999; },
+    (game) => { game.board.blocks[0].abandoned = true; },
+    (game) => { game.turnPhase = TURN_PHASES.CAPTURE_DEVELOP; game.pendingCaptures = []; },
+    (game) => { game.log.push({ type: 'road', road: 'h-99-99', seat: 1, captured: [] }); },
+  ];
+  for (const mutate of mutations) {
+    const storage = memoryStorage();
+    const game = createGame({ ...setup, seed: 7 });
+    assert.equal(saveActiveGame(game, setup, storage), true);
+    const raw = JSON.parse(storage.getItem(SAVE_KEY));
+    mutate(raw.game);
+    storage.setItem(SAVE_KEY, JSON.stringify(raw));
+    assert.equal(loadActiveGame(storage), null);
+  }
+});
+
 test('version 0 prototype saves migrate and reset removes the active save', () => {
   const storage = memoryStorage();
   const game = createGame({ ...setup, seed: 42 });
@@ -78,6 +99,19 @@ test('version 0 prototype saves migrate and reset removes the active save', () =
   assert.ok(migrated.game.players.every((player) => player.lastEconomicRound === game.round));
   assert.equal(clearActiveGame(storage), true);
   assert.equal(loadActiveGame(storage), null);
+});
+
+test('missing or incompatible setup metadata is reconstructed for a safe rematch', () => {
+  const storage = memoryStorage();
+  const game = createGame({ seats: setup.seats.slice(0, 2), seed: 42, gameType: 'custom' });
+  assert.equal(saveActiveGame(game, null, storage), true);
+  const raw = JSON.parse(storage.getItem(SAVE_KEY));
+  raw.setup = { gameType: 'standard', seats: [] };
+  storage.setItem(SAVE_KEY, JSON.stringify(raw));
+  assert.deepEqual(loadActiveGame(storage).setup, {
+    gameType: 'custom',
+    seats: game.players.map(({ seat, name }) => ({ seat, name })),
+  });
 });
 
 test('storage failures never escape persistence helpers', () => {

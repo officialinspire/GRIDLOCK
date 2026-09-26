@@ -141,7 +141,7 @@ export function refreshBonuses(board) {
   return board;
 }
 
-/** Hook for future city events: is this block inside a civic protection radius? */
+/** Whether this block is inside a civic protection radius for emergency mitigation. */
 export const isProtected = (block) => (block.protectedBy?.length ?? 0) > 0;
 
 export function bonusIncomeFor(board, seat) {
