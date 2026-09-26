@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { BOARD_ROWS, BOARD_COLS, DEFAULT_SETTINGS } from '../../js/config.js';
+import { BOARD_ROWS, BOARD_COLS, DEFAULT_SETTINGS, ECONOMY } from '../../js/config.js';
 import { createBoard, getBlock, neighbors, districtFor, blockLabel, blocksOwnedBy } from '../../js/core/board.js';
 import { BUILDINGS, getBuilding } from '../../js/core/buildings.js';
-import { formatCash, calculateIncome, BLOCK_BASE_INCOME } from '../../js/core/economy.js';
-import { createGame, endTurn, currentPlayer, playerStats, sanitizeName } from '../../js/core/game.js';
+import { createGame, sanitizeName } from '../../js/core/game.js';
 import { CITY_EVENTS, drawCityEvent } from '../../js/core/events.js';
 import { normalizeSettings, loadSettings, saveSettings } from '../../js/core/settings.js';
 import { EventBus } from '../../js/core/bus.js';
@@ -64,7 +63,7 @@ test('createGame seats 2–4 players on an empty city', () => {
   assert.equal(game.round, 1);
   assert.deepEqual(Object.keys(game.board.roads), []);
   for (const p of game.players) {
-    assert.equal(p.cash, DEFAULT_SETTINGS.startingCash);
+    assert.equal(p.cash, ECONOMY.STARTING_CASH);
     assert.equal(blocksOwnedBy(game.board, p.seat).length, 0);
   }
   assert.throws(() => createGame({ seats: [{ seat: 1 }] }), RangeError);
@@ -83,40 +82,15 @@ test('names are trimmed, capped and fall back to defaults', () => {
   assert.equal(sanitizeName('x'.repeat(40), 'y').length, 16);
 });
 
-test('income = base per owned block + building income', () => {
-  const game = createGame({ seats: fourSeats });
-  assert.equal(calculateIncome(game.board, 1), 0);
-  getBlock(game.board, 0, 0).ownerSeat = 1;
-  assert.equal(calculateIncome(game.board, 1), BLOCK_BASE_INCOME);
-  getBlock(game.board, 0, 0).buildingId = 'house';
-  assert.equal(playerStats(game, game.players[0]).income, BLOCK_BASE_INCOME + getBuilding('house').income);
-  assert.equal(formatCash(1500), '$1,500');
-});
-
-test('endTurn rotates seats and pays income when the round wraps', () => {
-  const game = createGame({ seats: [{ seat: 1 }, { seat: 3 }], settings: { startingCash: 1000 } });
-  getBlock(game.board, 2, 2).ownerSeat = 3;
-  assert.equal(currentPlayer(game).seat, 1);
-  assert.deepEqual(endTurn(game), { roundEnded: false, income: null });
-  assert.equal(currentPlayer(game).seat, 3);
-  const r = endTurn(game);
-  assert.equal(r.roundEnded, true);
-  assert.deepEqual(r.income, { 1: 0, 3: BLOCK_BASE_INCOME });
-  assert.equal(game.round, 2);
-  assert.equal(currentPlayer(game).seat, 1);
-  assert.equal(game.players[1].cash, 1000 + BLOCK_BASE_INCOME);
-});
-
 test('city events draw deterministically from an injected rng', () => {
   assert.equal(drawCityEvent(() => 0).id, CITY_EVENTS[0].id);
   assert.equal(drawCityEvent(() => 0.9999).id, CITY_EVENTS.at(-1).id);
 });
 
 test('settings normalize, persist, and survive broken storage', () => {
-  assert.deepEqual(normalizeSettings({ startingCash: '2000', sound: false, rounds: 16 }), {
-    ...DEFAULT_SETTINGS, startingCash: 2000, sound: false,
+  assert.deepEqual(normalizeSettings({ sound: false, showCoords: 'yes', startingCash: 5 }), {
+    ...DEFAULT_SETTINGS, sound: false,
   });
-  assert.equal(normalizeSettings({ startingCash: 5 }).startingCash, DEFAULT_SETTINGS.startingCash);
   const mem = new Map();
   const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
   assert.equal(saveSettings({ ...DEFAULT_SETTINGS, music: false }, storage), true);

@@ -7,7 +7,7 @@ import {
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { getBuilding } from '../core/buildings.js';
-import { blockIncome, formatCash } from '../core/economy.js';
+import { blockIncome, blockValue, formatCash, isDeveloped } from '../core/economy.js';
 import {
   renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock,
 } from './boardView.js';
@@ -35,17 +35,19 @@ function renderInspector(blockId) {
   const owner = block.ownerSeat ? getPlayer(game, block.ownerSeat) : null;
   const building = block.buildingId ? getBuilding(block.buildingId) : null;
   const row = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
-  panel.replaceChildren(
+  panel.replaceChildren(...[
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
     h('dl', { class: 'inspector__facts' },
       row('District', DISTRICTS[block.district].label),
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
-      row('Building', building ? building.name : 'Empty lot'),
-      row('Income', owner ? `+${formatCash(blockIncome(block))}/round` : '—'),
+      row('Building', building ? building.name : 'Undeveloped'),
+      row('Income', owner ? `+${formatCash(blockIncome(block))}/turn` : '—'),
+      owner && row('Value', formatCash(blockValue(block))),
     ),
-  );
+    owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Undeveloped: no income until built on.'),
+  ].filter(Boolean));
 }
 
 function renderPrompt() {
@@ -117,12 +119,14 @@ function handleRoad(id) {
   if (n > 0) {
     flashFrame();
     const labels = result.captured.map((bid) => getBlockById(game.board, bid).label).join(' & ');
-    toast(`${mover.name} claims ${labels}!${result.extraTurn ? ' Bonus road.' : ''}`, { tone: 'capture', duration: 2200 });
+    toast(`${mover.name} claims ${labels}! +${formatCash(result.reward)}${result.extraTurn ? ' · Bonus road' : ''}`,
+      { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
     setTimeout(showResults, n > 0 ? 700 : 0);
-  } else if (result.roundEnded) {
-    toast(`Income paid · Round ${game.round}`, { tone: 'success' });
+  } else if (result.turnIncome?.amount > 0) {
+    const payee = getPlayer(game, result.turnIncome.seat);
+    toast(`${payee.name} collects ${formatCash(result.turnIncome.amount)} income`, { tone: 'success' });
   }
   bus.emit('game:move', result);
 }

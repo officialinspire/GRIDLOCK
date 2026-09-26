@@ -1,12 +1,24 @@
 /**
- * Economy rules: cash formatting, affordability and per-round income.
- * Numbers are first-pass placeholders for the foundation phase.
+ * Economy rules. All numbers come from ECONOMY in config.js.
+ *
+ * Money safety: every change to a player's cash goes through credit()/debit(),
+ * which accept only finite, non-negative whole-dollar amounts and never let a
+ * balance drop below zero or become NaN. Each change is logged in game.ledger.
  */
+import { ECONOMY } from '../config.js';
 import { blocksOwnedBy } from './board.js';
 import { getBuilding } from './buildings.js';
 
-/** Flat income every owned block pays each round, before buildings. */
-export const BLOCK_BASE_INCOME = 50;
+export const MONEY_ERRORS = Object.freeze({
+  INSUFFICIENT_FUNDS: 'insufficient-funds',
+});
+
+/** Why a ledger entry happened. */
+export const TXN = Object.freeze({
+  CAPTURE: 'capture',
+  TURN_INCOME: 'turn-income',
+  PURCHASE: 'purchase',
+});
 
 const cashFormat = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -15,38 +27,101 @@ const cashFormat = new Intl.NumberFormat('en-US', {
 });
 
 export function formatCash(amount) {
-  return cashFormat.format(amount);
+  return cashFormat.format(Number.isFinite(amount) ? amount : 0);
 }
 
+/** Signed format for deltas: "+$500" / "−$1,000". */
+export function formatDelta(amount) {
+  return `${amount < 0 ? '−' : '+'}${formatCash(Math.abs(amount))}`;
+}
+
+export function isValidAmount(value) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Validates an amount, throwing on NaN / Infinity / negatives / fractions / non-numbers. */
+export function toAmount(value) {
+  if (!isValidAmount(value)) throw new RangeError(`Invalid money amount: ${String(value)}`);
+  return value;
+}
+
+export function isValidBalance(player) {
+  return isValidAmount(player?.cash);
+}
+
+function record(game, player, delta, reason, meta) {
+  const entry = { seat: player.seat, delta, balance: player.cash, reason, round: game.round, ...meta };
+  game.ledger.push(entry);
+  return entry;
+}
+
+/** Adds money. Returns the ledger entry (or null for a $0 credit). */
+export function credit(game, player, amount, reason, meta = {}) {
+  toAmount(amount);
+  if (!isValidBalance(player)) throw new RangeError(`Corrupt balance for seat ${player?.seat}`);
+  if (amount === 0) return null;
+  const next = player.cash + amount;
+  toAmount(next); // guards against overflow past MAX_SAFE_INTEGER
+  player.cash = next;
+  return record(game, player, amount, reason, meta);
+}
+
+/**
+ * Removes money if the player can afford it. Never goes negative.
+ * Returns { ok: true, entry } or { ok: false, error }.
+ */
+export function debit(game, player, amount, reason, meta = {}) {
+  toAmount(amount);
+  if (!isValidBalance(player)) throw new RangeError(`Corrupt balance for seat ${player?.seat}`);
+  if (amount > player.cash) return { ok: false, error: MONEY_ERRORS.INSUFFICIENT_FUNDS };
+  if (amount === 0) return { ok: true, entry: null };
+  player.cash -= amount;
+  return { ok: true, entry: record(game, player, -amount, reason, meta) };
+}
+
+export function canAfford(player, cost) {
+  return isValidAmount(cost) && isValidBalance(player) && player.cash >= cost;
+}
+
+/** A block is developed once it has a building. */
+export const isDeveloped = (block) => block.buildingId != null && getBuilding(block.buildingId) != null;
+
+/** Recurring income a block pays its owner at the start of each of their turns. */
 export function blockIncome(block) {
   if (block.ownerSeat == null) return 0;
-  const building = block.buildingId ? getBuilding(block.buildingId) : null;
-  return BLOCK_BASE_INCOME + (building?.income ?? 0);
+  if (!isDeveloped(block)) return ECONOMY.UNDEVELOPED_INCOME;
+  return getBuilding(block.buildingId).income;
 }
 
+/** Income the player will collect at the start of their next turn. */
 export function calculateIncome(board, seat) {
   return blocksOwnedBy(board, seat).reduce((sum, block) => sum + blockIncome(block), 0);
 }
 
-/** Total land + building value a player owns (used for scoring later). */
+export function blockValue(block) {
+  const building = isDeveloped(block) ? getBuilding(block.buildingId) : null;
+  return block.price + (building?.cost ?? 0);
+}
+
+/** Land + building value of everything a player owns. */
 export function propertyValue(board, seat) {
-  return blocksOwnedBy(board, seat).reduce((sum, block) => {
-    const building = block.buildingId ? getBuilding(block.buildingId) : null;
-    return sum + block.price + (building?.cost ?? 0);
-  }, 0);
+  return blocksOwnedBy(board, seat).reduce((sum, block) => sum + blockValue(block), 0);
 }
 
-export function canAfford(player, cost) {
-  return player.cash >= cost;
+export function netWorth(game, player) {
+  return player.cash + propertyValue(game.board, player.seat);
 }
 
-/** Pays every player their round income. Returns { seat: amount }. */
-export function payRoundIncome(game) {
-  const paid = {};
-  for (const player of game.players) {
-    const amount = calculateIncome(game.board, player.seat);
-    player.cash += amount;
-    paid[player.seat] = amount;
-  }
-  return paid;
+/** Pays the capture reward for each claimed block. Returns the total paid. */
+export function payCaptureReward(game, player, blockIds) {
+  const total = ECONOMY.CAPTURE_REWARD * blockIds.length;
+  credit(game, player, total, TXN.CAPTURE, { blocks: [...blockIds] });
+  return total;
+}
+
+/** Pays a player's developed-block income as their turn begins. Returns the amount. */
+export function payTurnIncome(game, player) {
+  const amount = calculateIncome(game.board, player.seat);
+  credit(game, player, amount, TXN.TURN_INCOME);
+  return amount;
 }

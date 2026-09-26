@@ -88,14 +88,15 @@
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:coins"></span>
-          <h3>Income</h3>
-          <p>Each time play returns to the first player, everyone collects income from the blocks they own.</p>
-          <p class="coming-soon">Buying &amp; building arrive in a later phase.</p>
+          <h3>Money</h3>
+          <p>Every mayor starts with <strong data-econ="STARTING_CASH">$12,000</strong>. Each block you claim pays <strong data-econ="CAPTURE_REWARD">$500</strong>.</p>
+          <p>At the start of your turn you collect income from your <em>developed</em> blocks. Empty lots earn nothing.</p>
+          <p class="coming-soon">Building on blocks arrives in a later phase.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When every block is claimed, the mayor with the most blocks wins. Ties go to the higher net worth.</p>
+          <p>When every block is claimed, the mayor with the most blocks wins. Ties go to the higher net worth (cash + property value).</p>
         </article>
       </div>
     </section>
@@ -119,18 +120,6 @@
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>Music</span>
             <input type="checkbox" class="toggle" name="music">
-          </label>
-        </fieldset>
-
-        <fieldset>
-          <legend>Game defaults</legend>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:coins"></span>Starting cash</span>
-            <select name="startingCash" class="select">
-              <option value="1000">$1,000</option>
-              <option value="1500">$1,500</option>
-              <option value="2000">$2,000</option>
-            </select>
           </label>
         </fieldset>
 

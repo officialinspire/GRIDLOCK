@@ -88,20 +88,18 @@ for (const vp of VIEWPORTS) {
 
     // Settings (persist across reload)
     await page.getByRole('button', { name: 'Settings' }).click();
-    await page.selectOption('select[name="startingCash"]', '2000');
     await page.locator('label.setting-row', { hasText: 'Show block coordinates' }).click();
     await noHorizontalScroll(page, 'settings');
     await shot('3-settings');
     await page.reload({ waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Settings' }).click();
-    assert.equal(await page.inputValue('select[name="startingCash"]'), '2000', 'cash persisted');
     assert.equal(await page.isChecked('input[name="showCoords"]'), true, 'coords persisted');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
     // Setup
     await page.getByRole('button', { name: 'New Game' }).click();
     assert.equal(await page.locator('.seat-card').count(), 4);
-    assert.match(await page.textContent('#setup-summary'), /4 players · \$2,000 each/);
+    assert.match(await page.textContent('#setup-summary'), /4 players · \$12,000 each/);
     await page.fill('#seat-1-name', 'Ada');
     await page.fill('#seat-2-name', '<b>Bo</b>');
     // Dropping to 1 player disables start.
@@ -130,7 +128,8 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.textContent('#hud-round'), '1');
     assert.equal(await page.textContent('#hud-roads'), '0/84');
     assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'red');
-    assert.ok((await page.textContent('#hud-left')).includes('$2,000'), 'cash shown');
+    assert.ok((await page.textContent('#hud-left')).includes('$12,000'), 'cash shown');
+    assert.match(await page.textContent('[data-screen="howto"]'), /\$12,000[\s\S]*\$500/, 'rules copy filled from ECONOMY');
     // Names are rendered as text, never HTML.
     assert.ok((await page.textContent('#hud-right')).includes('<b>Bo</b>'), 'name escaped');
 
@@ -173,12 +172,17 @@ for (const vp of VIEWPORTS) {
     await road('h-6-5').click();
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
-    assert.ok((await page.textContent('#hud-left')).includes('$2,050'), 'P4 paid income for A1');
+    const p4 = page.locator('.player-card[data-seat="4"]');
+    assert.equal(await p4.locator('.stat--cash dd').textContent(), '$12,500', 'P4 paid $500 capture reward');
+    assert.equal(await p4.locator('.stat--income dd').textContent(), '+$0', 'undeveloped block: no income');
+    assert.equal(await p4.locator('.stat--property dd').textContent(), '$1,000', 'suburbs land value');
+    assert.equal(await page.locator('.player-card[data-seat="1"] .stat--cash dd').textContent(), '$12,000');
 
     // Inspect a block
     await block('r0c0').click();
     assert.match(await page.textContent('#inspector'), /Block A1/);
     assert.match(await page.textContent('#inspector'), /Player 4/);
+    assert.match(await page.textContent('#inspector'), /Undeveloped/);
 
     // Pave every remaining road; the game must end with all 36 blocks claimed.
     const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
@@ -210,6 +214,35 @@ for (const vp of VIEWPORTS) {
     console.error(`✘ ${vp.name}: ${err.message}`);
     if (errors.length) console.error('  ' + errors.join('\n  '));
     await shot('FAIL').catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Money animation (runs with motion enabled, desktop only).
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await page.locator(`[data-road="${id}"]`).click();
+    await page.locator('[data-road="v-0-1"]').click(); // P4 captures A1
+    const p4 = page.locator('.player-card[data-seat="4"]');
+    assert.equal(await p4.locator('.cash-delta').textContent(), '+$500', 'delta chip shown');
+    assert.ok(await p4.locator('.stat--cash.is-up').count(), 'cash row pulses');
+    const mid = await p4.locator('.stat--cash dd').textContent();
+    assert.notEqual(mid, '$12,500', `cash should still be counting up (saw ${mid})`);
+    await page.waitForFunction(() =>
+      document.querySelector('.player-card[data-seat="4"] .stat--cash dd')?.textContent === '$12,500');
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: 'test-results/money-animation.png' });
+    console.log('✔ money animation');
+  } catch (err) {
+    failures++;
+    console.error(`✘ money animation: ${err.message}`);
   } finally {
     await context.close();
   }

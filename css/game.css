@@ -572,3 +572,51 @@ html[data-coords='on'] .block__coord { display: block; }
 .results__name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
 .results__score { grid-area: score; font-family: var(--font-display); font-size: 1.1rem; text-align: right; }
 .results__worth { grid-area: worth; font-size: 0.8rem; color: var(--ink-soft); text-align: right; }
+
+/* ---------- Money feedback ---------- */
+.player-card { position: relative; }
+.stat--cash dd { transition: color var(--t-med); }
+.stat--cash.is-up { animation: cash-up 900ms ease-out; }
+.stat--cash.is-down { animation: cash-down 900ms ease-out; }
+@keyframes cash-up {
+  0%, 30% { background: #cfeab0; box-shadow: 0 0 0 2px var(--green); }
+}
+@keyframes cash-down {
+  0%, 30% { background: #f6d4cf; box-shadow: 0 0 0 2px var(--red); }
+}
+.stat--cash { position: relative; }
+.cash-delta {
+  position: absolute;
+  top: -12px;
+  right: 50%;
+  z-index: 4;
+  padding: 1px 8px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  white-space: nowrap;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 0 2px 0 var(--ink);
+  pointer-events: none;
+  animation: delta-float 1400ms ease-out forwards;
+}
+.cash-delta--up { background: #dff0c9; color: #1f5d1f; }
+.cash-delta--down { background: #f6d4cf; color: var(--red-deep); }
+@keyframes delta-float {
+  0% { opacity: 0; transform: translateY(8px) scale(0.8); }
+  15% { opacity: 1; transform: translateY(0) scale(1.08); }
+  70% { opacity: 1; transform: translateY(-10px) scale(1); }
+  100% { opacity: 0; transform: translateY(-22px); }
+}
+
+.inspector__note {
+  margin-top: 6px;
+  padding-top: 6px;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-top: 2px dashed var(--note-edge);
+}
+
+@media (max-width: 560px) {
+  .cash-delta { font-size: 0.85rem; padding: 0 6px; }
+}

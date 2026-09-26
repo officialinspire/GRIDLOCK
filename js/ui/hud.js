@@ -6,18 +6,87 @@
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { PLAYER_PRESETS } from '../config.js';
-import { formatCash } from '../core/economy.js';
+import { formatCash, formatDelta } from '../core/economy.js';
 import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
 
 const LAYOUT = { left: [1, 4], right: [2, 3] };
+const TWEEN_MS = 700;
 
-function stat(label, value, icon) {
-  return h('div', { class: 'stat' },
+// Money animation state, keyed by seat. Reset whenever a new game object appears.
+let lastGame = null;
+const lastTargets = new Map(); // seat -> cash at the previous render
+const shownCash = new Map(); // value currently displayed (mid-tween values included)
+const tweens = new Map(); // seat -> requestAnimationFrame id
+
+const reducedMotion = () =>
+  document.documentElement.dataset.motion === 'reduced'
+  || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+function stat(key, label, value, icon, hint = label) {
+  return h('div', { class: `stat stat--${key}`, title: hint },
     createSprite(icon, { className: 'stat__icon' }),
     h('dt', {}, label),
     h('dd', {}, value),
   );
+}
+
+/** Counts the displayed cash from `from` to `to`, easing out. */
+function tweenCash(seat, el, from, to) {
+  cancelAnimationFrame(tweens.get(seat));
+  tweens.delete(seat);
+  if (from === to || reducedMotion()) {
+    el.textContent = formatCash(to);
+    shownCash.set(seat, to);
+    return;
+  }
+  const start = performance.now();
+  const step = (now) => {
+    const k = Math.min(1, (now - start) / TWEEN_MS);
+    const eased = 1 - (1 - k) ** 3;
+    const value = Math.round(from + (to - from) * eased);
+    shownCash.set(seat, value);
+    el.textContent = formatCash(value);
+    if (k < 1) tweens.set(seat, requestAnimationFrame(step));
+    else tweens.delete(seat);
+  };
+  tweens.set(seat, requestAnimationFrame(step));
+}
+
+/** Floating "+$500" chip and a pulse on the cash row. */
+function showCashDelta(card, delta) {
+  const dir = delta > 0 ? 'up' : 'down';
+  card.querySelector('.stat--cash')?.classList.add(`is-${dir}`);
+  const chip = h('span', { class: `cash-delta cash-delta--${dir}`, 'aria-hidden': 'true' }, formatDelta(delta));
+  (card.querySelector('.stat--cash') ?? card).append(chip);
+  chip.addEventListener('animationend', () => chip.remove(), { once: true });
+}
+
+function animateMoney(game) {
+  const fresh = game !== lastGame;
+  lastGame = game;
+  if (fresh) {
+    tweens.forEach((id) => cancelAnimationFrame(id));
+    tweens.clear();
+    shownCash.clear();
+    lastTargets.clear();
+  }
+  for (const player of game.players) {
+    const { seat, cash } = player;
+    const card = document.querySelector(`.player-card[data-seat="${seat}"]`);
+    const dd = card?.querySelector('.stat--cash dd');
+    const prevTarget = lastTargets.get(seat);
+    lastTargets.set(seat, cash);
+    if (!dd) continue;
+    if (prevTarget === undefined) {
+      shownCash.set(seat, cash);
+      dd.textContent = formatCash(cash);
+      continue;
+    }
+    // The chip shows the real change; the counter continues from what's on screen.
+    if (prevTarget !== cash) showCashDelta(card, cash - prevTarget);
+    tweenCash(seat, dd, shownCash.get(seat) ?? prevTarget, cash);
+  }
 }
 
 function playerCard(game, seat) {
@@ -48,9 +117,10 @@ function playerCard(game, seat) {
       active && h('span', { class: 'player-card__turn' }, 'Turn'),
     ),
     h('dl', { class: 'player-card__stats' },
-      stat('Cash', formatCash(stats.cash), 'icons:coins'),
-      stat('Blocks', stats.blocks, 'icons:star'),
-      stat('Income', `+${formatCash(stats.income)}`, 'icons:building'),
+      stat('cash', 'Cash', formatCash(shownCash.get(seat) ?? stats.cash), 'icons:coins'),
+      stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
+      stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', 'Income paid at the start of each turn'),
+      stat('property', 'Property', formatCash(stats.property), 'icons:building', 'Net property value (land + buildings)'),
     ),
   );
 }
@@ -58,6 +128,7 @@ function playerCard(game, seat) {
 export function renderHud(game) {
   $('#hud-left').replaceChildren(...LAYOUT.left.map((seat) => playerCard(game, seat)));
   $('#hud-right').replaceChildren(...LAYOUT.right.map((seat) => playerCard(game, seat)));
+  animateMoney(game);
   $('#hud-round').textContent = game.round;
   $('#hud-roads').textContent = `${roadsBuilt(game)}/${totalRoads(game.board)}`;
 

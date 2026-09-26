@@ -116,7 +116,7 @@ test('corner block: the final road claims it and grants another road', () => {
   assert.equal(r.extraTurn, true);
   assert.equal(getBlock(game.board, 0, 0).ownerSeat, 1);
   assert.equal(seatNow(game), 1, 'P1 moves again');
-  assert.deepEqual(game.lastMove, { road: 'v-0-1', seat: 1, captured: ['r0c0'] });
+  assert.deepEqual(game.lastMove, { road: 'v-0-1', seat: 1, captured: ['r0c0'], reward: 500 });
 });
 
 test('edge block (non-corner) is claimed by whoever paves its last side', () => {

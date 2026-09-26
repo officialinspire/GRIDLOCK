@@ -2,12 +2,12 @@
  * City board model: a grid of blocks separated by streets.
  * Pure data — rendering lives in ui/boardView.js.
  */
-import { BOARD_ROWS, BOARD_COLS } from '../config.js';
+import { BOARD_ROWS, BOARD_COLS, ECONOMY } from '../config.js';
 
 export const DISTRICTS = Object.freeze({
-  downtown: { id: 'downtown', label: 'Downtown', price: 400 },
-  midtown: { id: 'midtown', label: 'Midtown', price: 300 },
-  suburbs: { id: 'suburbs', label: 'Suburbs', price: 200 },
+  downtown: { id: 'downtown', label: 'Downtown', price: ECONOMY.LAND_VALUE.downtown },
+  midtown: { id: 'midtown', label: 'Midtown', price: ECONOMY.LAND_VALUE.midtown },
+  suburbs: { id: 'suburbs', label: 'Suburbs', price: ECONOMY.LAND_VALUE.suburbs },
 });
 
 /** Ring distance from the board edge decides the district (0 = edge). */

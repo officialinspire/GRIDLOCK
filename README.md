@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.2 core loop.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, the HUD, income and a results screen. Buying, construction and city events come in later phases.
+> **Status: v0.3 basic economy.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, turn income, the HUD and a results screen. Construction and city events come in later phases.
 
 ## How it plays
 
@@ -12,8 +12,22 @@ The city is a 6×6 grid of blocks on a 7×7 lattice of intersections, with 84 po
 2. On your turn, tap the gap between two neighbouring intersections to **pave a road**. You can't pave a road twice, and there are no diagonals.
 3. Paving the **last** road around a block **claims** it for you. The block takes your colour, border, seal and flag. One road can close two blocks.
 4. Claiming at least one block gives you **another road**, so captures can chain. A road that closes nothing passes the turn.
-5. When play wraps back to the first seat, the round ends and everyone collects income for the blocks they own.
-6. The game ends when all 36 blocks are claimed. The most blocks wins, and ties go to net worth.
+5. The game ends when all 36 blocks are claimed. The most blocks wins, and ties go to net worth.
+
+## Economy
+
+All money values live in the `ECONOMY` block in `js/config.js`. That covers starting cash, the capture reward, land values by district, and each building's cost and income. The building catalog, land values, How To Play copy and setup summary all read from it.
+
+| Rule | Default |
+| --- | --- |
+| Starting cash | $12,000 per player |
+| Capture reward | $500 per block claimed (a double capture pays $1,000) |
+| Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
+| Undeveloped blocks | $0 recurring income |
+| Net property value | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus building cost |
+| Net worth | Cash plus net property value |
+
+Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Buildings aren't placeable yet, but blocks already carry a `buildingId` and the building catalog already has cost and income, so income and property value will work as soon as placement lands.
 
 ## Play locally
 
@@ -45,7 +59,7 @@ js/
   core/                    Game rules, pure logic with no DOM (unit-tested in Node)
     board.js               6×6 block grid, districts, road/edge geometry
     game.js                placeRoad(): validation, captures, bonus roads, turns, standings
-    economy.js             Cash formatting, income, property value
+    economy.js             Safe credit/debit + ledger, rewards, turn income, property value
     buildings.js           Building catalogue (costs/income are placeholders)
     events.js              City event catalogue (not wired in yet)
     settings.js            Persisted settings (localStorage, fails safe)
@@ -62,6 +76,7 @@ dev/sprites.html           Sprite atlas: every registered crop, for checking coo
 tests/
   unit/core.test.mjs       Node unit tests for core modules
   unit/dots-and-boxes.test.mjs  Road geometry, rotation, edge/corner/double/chain captures, full games
+  unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
@@ -93,4 +108,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road → round income → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, and fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

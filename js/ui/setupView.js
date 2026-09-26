@@ -1,7 +1,7 @@
 /** New Game screen: four local seats, 2–4 must join. */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
-import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH } from '../config.js';
+import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
 import { formatCash } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
 import { bus } from '../core/bus.js';
@@ -36,7 +36,6 @@ function joinedSeats(form) {
 
 function refresh(form) {
   const seats = joinedSeats(form);
-  const s = getSettings();
   form.querySelectorAll('.seat-card').forEach((card) => {
     const on = card.querySelector('[name="join"]').checked;
     card.classList.toggle('is-out', !on);
@@ -45,7 +44,7 @@ function refresh(form) {
   const ok = seats.length >= MIN_PLAYERS;
   $('#setup-start').disabled = !ok;
   $('#setup-summary').textContent = ok
-    ? `${seats.length} players · ${formatCash(s.startingCash)} each · 6×6 city`
+    ? `${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city`
     : `At least ${MIN_PLAYERS} players must join.`;
 }
 

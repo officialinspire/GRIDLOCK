@@ -22,13 +22,11 @@ function readForm(form) {
     music: data.has('music'),
     reducedMotion: data.has('reducedMotion'),
     showCoords: data.has('showCoords'),
-    startingCash: data.get('startingCash'),
   });
 }
 
 function writeForm(form, s) {
   for (const key of ['sound', 'music', 'reducedMotion', 'showCoords']) form.elements[key].checked = s[key];
-  form.elements.startingCash.value = String(s.startingCash);
 }
 
 export function initSettingsView() {

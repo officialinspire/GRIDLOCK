@@ -3,11 +3,13 @@
  * roads: build one road per turn; enclosing a block claims it and earns
  * another road. The game ends when every block is claimed.
  */
-import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, DEFAULT_SETTINGS, MAX_NAME_LENGTH } from '../config.js';
+import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
 import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
 } from './board.js';
-import { calculateIncome, payRoundIncome, propertyValue } from './economy.js';
+import {
+  calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount,
+} from './economy.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 
@@ -24,11 +26,11 @@ export function sanitizeName(name, fallback) {
 }
 
 /**
- * @param {{ seats: Array<{seat:number, name?:string}>, settings?: object }} options
+ * @param {{ seats: Array<{seat:number, name?:string}> }} options
  *   `seats` lists the joined seats (1–4). Play order is always by seat number.
+ *   Economy values come from ECONOMY in config.js.
  */
-export function createGame({ seats, settings = {} } = {}) {
-  const opts = { ...DEFAULT_SETTINGS, ...settings };
+export function createGame({ seats } = {}) {
   if (!Array.isArray(seats) || seats.length < MIN_PLAYERS || seats.length > MAX_PLAYERS) {
     throw new RangeError(`A game needs ${MIN_PLAYERS}–${MAX_PLAYERS} players`);
   }
@@ -50,11 +52,11 @@ export function createGame({ seats, settings = {} } = {}) {
         color: preset.color,
         symbol: preset.symbol,
         hex: preset.hex,
-        cash: Number(opts.startingCash),
+        cash: toAmount(ECONOMY.STARTING_CASH),
       };
     });
 
-  return {
+  const game = {
     board: createBoard(),
     players,
     round: 1,
@@ -62,7 +64,11 @@ export function createGame({ seats, settings = {} } = {}) {
     phase: PHASES.PLAYING,
     lastMove: null,
     log: [],
+    ledger: [],
+    turnStartIncome: null,
   };
+  beginTurn(game);
+  return game;
 }
 
 export function currentPlayer(game) {
@@ -73,11 +79,15 @@ export function getPlayer(game, seat) {
   return game.players.find((p) => p.seat === seat) ?? null;
 }
 
+/** Everything the HUD shows for a player. `income` is paid at the start of their next turn. */
 export function playerStats(game, player) {
+  const property = propertyValue(game.board, player.seat);
   return {
     cash: player.cash,
     blocks: blocksOwnedBy(game.board, player.seat).length,
     income: calculateIncome(game.board, player.seat),
+    property,
+    netWorth: player.cash + property,
   };
 }
 
@@ -98,19 +108,31 @@ export function validateRoad(game, id) {
 }
 
 /**
- * Passes play to the next seat. Wrapping back to the first seat closes the
- * round and pays income. Returns { roundEnded, income }.
+ * Starts the current player's turn: pays income from their developed blocks.
+ * Bonus roads after a capture are part of the same turn and don't call this.
+ * Returns { seat, amount }.
+ */
+export function beginTurn(game) {
+  const player = currentPlayer(game);
+  const amount = payTurnIncome(game, player);
+  game.turnStartIncome = { seat: player.seat, amount };
+  return game.turnStartIncome;
+}
+
+/**
+ * Passes play to the next seat and begins their turn. Wrapping back to the
+ * first seat starts a new round. Returns { roundEnded, turnIncome }.
  */
 export function endTurn(game) {
-  const summary = { roundEnded: false, income: null };
+  const summary = { roundEnded: false, turnIncome: null };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
     game.turnIndex = 0;
     summary.roundEnded = true;
-    summary.income = payRoundIncome(game);
-    game.log.push({ type: 'round-end', round: game.round, income: summary.income });
+    game.log.push({ type: 'round-end', round: game.round });
     game.round += 1;
   }
+  summary.turnIncome = beginTurn(game);
   return summary;
 }
 
@@ -121,8 +143,10 @@ export function endTurn(game) {
  * - Otherwise the turn passes to the next seat.
  * - Once every block is claimed the game ends.
  *
+ * - Each claimed block pays ECONOMY.CAPTURE_REWARD to the builder.
+ *
  * Returns { ok:false, error } for rejected moves, or
- * { ok:true, road, seat, captured:[blockIds], extraTurn, roundEnded, income, gameEnded }.
+ * { ok:true, road, seat, captured:[blockIds], reward, extraTurn, roundEnded, turnIncome, gameEnded }.
  */
 export function placeRoad(game, id) {
   const error = validateRoad(game, id);
@@ -140,12 +164,14 @@ export function placeRoad(game, id) {
     }
   }
 
-  game.lastMove = { road: id, seat, captured };
-  game.log.push({ type: 'road', road: id, seat, captured });
+  const reward = captured.length ? payCaptureReward(game, currentPlayer(game), captured) : 0;
+
+  game.lastMove = { road: id, seat, captured, reward };
+  game.log.push({ type: 'road', road: id, seat, captured, reward });
 
   const result = {
-    ok: true, road: id, seat, captured,
-    extraTurn: false, roundEnded: false, income: null, gameEnded: false,
+    ok: true, road: id, seat, captured, reward,
+    extraTurn: false, roundEnded: false, turnIncome: null, gameEnded: false,
   };
 
   if (board.blocks.every((b) => b.ownerSeat != null)) {
@@ -167,7 +193,7 @@ export function standings(game) {
   const rows = game.players.map((p) => ({
     player: p,
     blocks: blocksOwnedBy(game.board, p.seat).length,
-    worth: p.cash + propertyValue(game.board, p.seat),
+    worth: netWorth(game, p),
   }));
   rows.sort((a, b) => b.blocks - a.blocks || b.worth - a.worth);
   rows.forEach((row, i) => {
