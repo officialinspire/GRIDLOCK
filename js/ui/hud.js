@@ -148,7 +148,7 @@ function playerCard(game, seat) {
       stat('cash', 'Cash', money(shownCash.get(seat) ?? stats.cash), 'icons:coins', formatCash(stats.cash)),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
       incomeStat(stats),
-      stat('property', 'Property', formatCash(stats.property), 'icons:building', 'Net property value (land + buildings)'),
+      stat('property', 'Property', formatCash(stats.property), 'icons:building', 'City value of property (land + actual construction cost basis)'),
     ),
   );
 }

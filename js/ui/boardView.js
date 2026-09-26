@@ -14,7 +14,7 @@ import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/boar
 import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
 import { isDeveloped, MAX_LEVEL } from '../core/development.js';
 import { blockEventState } from './eventView.js';
-import { getPlayer, currentPlayer, PHASES } from '../core/game.js';
+import { getPlayer, currentPlayer, PHASES, TURN_PHASES } from '../core/game.js';
 import { isInDistress } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
 
@@ -60,12 +60,15 @@ function roadCell(game, dir, r, c) {
   if (id === armedId && !built) cls.push('is-armed');
 
   const who = built ? getPlayer(game, builder)?.name : null;
+  const disabled = built || game.phase !== PHASES.PLAYING
+    || ![TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
   return h('button', {
     type: 'button',
     class: cls.join(' '),
     dataset: { road: id },
     'aria-label': built ? `${roadLabel(dir, r, c)}, paved by ${who}` : `Pave ${roadLabel(dir, r, c)}`,
-    'aria-disabled': built || game.phase !== PHASES.PLAYING ? 'true' : null,
+    disabled,
+    'aria-disabled': disabled ? 'true' : null,
   }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
     built && createSprite(ART.road[dir], { className: 'road__tile' })));
 }

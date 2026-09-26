@@ -19,8 +19,15 @@ async function loadPlaywright() {
   }
 }
 
-const { chromium } = await loadPlaywright();
-const launchOpts = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {};
+const playwright = await loadPlaywright();
+const browserName = process.env.BROWSER ?? 'chromium';
+const browserType = playwright[browserName];
+if (!['chromium', 'webkit', 'firefox'].includes(browserName) || !browserType) {
+  throw new Error(`Unsupported BROWSER=${browserName}; expected chromium, webkit, or firefox`);
+}
+const launchOpts = browserName === 'chromium' && process.env.CHROMIUM_PATH
+  ? { executablePath: process.env.CHROMIUM_PATH }
+  : {};
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -37,7 +44,8 @@ async function dismissEvent(page) {
 
 const server = await startServer(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
-const browser = await chromium.launch(launchOpts);
+const browser = await browserType.launch(launchOpts);
+console.log(`Running smoke tests in ${browserName}`);
 await rm('test-results', { recursive: true, force: true });
 await mkdir('test-results', { recursive: true });
 
@@ -48,10 +56,44 @@ async function noHorizontalScroll(page, label) {
   assert.ok(overflow <= 1, `${label}: horizontal overflow of ${overflow}px`);
 }
 
+function watchForBrowserErrors(page) {
+  const errors = [];
+  const optionalFont = (url) => /fonts\.(?:googleapis|gstatic)\.com/.test(url);
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+  page.on('console', (message) => {
+    const source = message.location().url ?? '';
+    if (message.type() === 'error' && !optionalFont(source)) errors.push(`console: ${message.text()}`);
+    if (message.type() === 'warning' && /\[assets\]/.test(message.text())) errors.push(`asset warning: ${message.text()}`);
+  });
+  page.on('requestfailed', (request) => {
+    if (!optionalFont(request.url())) errors.push(`requestfailed: ${request.url()}`);
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !optionalFont(response.url())) {
+      errors.push(`HTTP ${response.status()}: ${response.url()}`);
+    }
+  });
+  return errors;
+}
+
+async function prepareToPave(page) {
+  while (await page.locator('#capture-choice-dialog[open]').count()) {
+    await page.locator('[data-capture-choice="vacant"]').click();
+  }
+  if (await page.locator('#action-pave:visible').count()) await page.click('#action-pave');
+}
+
+async function pave(page, locator) {
+  await prepareToPave(page);
+  await locator.click();
+}
+
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
-    isMobile: vp.isMobile ?? false,
+    // Firefox does not implement Playwright's mobile emulation. Touch-specific
+    // coverage still runs there in a touch-enabled desktop context below.
+    ...(browserName === 'firefox' ? {} : { isMobile: vp.isMobile ?? false }),
     hasTouch: vp.hasTouch ?? false,
     deviceScaleFactor: 1,
     reducedMotion: 'reduce', // stable screenshots
@@ -65,12 +107,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => m.type() === 'error' && !/fonts\.g/.test(m.text() + m.location().url) && errors.push(`console: ${m.text()}`));
-  page.on('console', (m) => m.type() === 'warning' && /\[assets\]/.test(m.text()) && errors.push(`warn: ${m.text()}`));
-  page.on('requestfailed', (r) => !/fonts\.g/.test(r.url()) && errors.push(`requestfailed: ${r.url()}`));
-  page.on('response', (r) => r.status() >= 400 && errors.push(`HTTP ${r.status()}: ${r.url()}`));
+  const errors = watchForBrowserErrors(page);
 
   const shot = (step) => page.screenshot({ path: `test-results/${vp.name}-${step}.png` });
 
@@ -111,9 +148,11 @@ for (const vp of VIEWPORTS) {
     // Setup
     await page.getByRole('button', { name: 'New Game' }).click();
     assert.equal(await page.locator('.seat-card').count(), 4);
-    assert.match(await page.textContent('#setup-summary'), /4 players · \$12,000 each/);
+    assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players · \$12,000 each/);
+    assert.equal(await page.locator('[name="join"]:disabled').count(), 4, 'Standard Game locks all four seats');
     await page.fill('#seat-1-name', 'Ada');
     await page.fill('#seat-2-name', '<b>Bo</b>');
+    await page.check('[name="gameType"][value="custom"]');
     // Dropping to 1 player disables start.
     for (const s of [2, 3, 4]) await page.locator(`label[for="seat-${s}-join"]`).click();
     assert.equal(await page.isDisabled('#setup-start'), true, 'start disabled with 1 player');
@@ -155,7 +194,8 @@ for (const vp of VIEWPORTS) {
     await shot('5-game');
 
     // P1 → P2 → P3 → P4 rotation, building three sides of A1.
-    await road('h-0-0').click();
+    assert.match(await page.textContent('#turn-prompt'), /MANAGE CITY/);
+    await pave(page, road('h-0-0'));
     assert.match(await banner(), /<b>Bo<\/b>'s turn/);
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-built') && el.classList.contains('road--red')));
     assert.equal(await page.getAttribute('#board-frame', 'data-turn'), 'blue');
@@ -167,49 +207,39 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#toasts'), /already paved/);
     assert.equal(await page.textContent('#hud-roads'), '1/84');
 
-    await road('v-0-0').click();
+    await pave(page, road('v-0-0'));
     assert.match(await banner(), /Player 3's turn/);
-    await road('h-1-0').click();
+    await pave(page, road('h-1-0'));
     assert.match(await banner(), /Player 4's turn/);
 
     // P4 paves the final side: claims A1 and keeps the turn.
-    await road('v-0-1').click();
+    await pave(page, road('v-0-1'));
     assert.ok(await block('r0c0').evaluate((el) => el.classList.contains('block--green')), 'A1 claimed by P4');
-    assert.match(await banner(), /Player 4's turn/, 'bonus road');
-    assert.match(await page.textContent('#turn-prompt'), /bonus road/i);
+    assert.match(await banner(), /Player 4's turn/, 'capturing player keeps control');
+    assert.match(await page.textContent('#turn-prompt'), /CAPTURE \/ DEVELOP/);
     assert.match(await page.textContent('#toasts'), /claims A1/);
     await shot('6-capture');
 
     // Development: P4 (still on their bonus turn) opens the Build panel on A1.
     const panel = page.locator('#build-dialog');
     const p4cash = () => page.locator('.player-card[data-seat="4"] .stat--cash dd').textContent();
-    await block('r0c0').click();
+    assert.ok(await page.isVisible('#capture-choice-dialog'), 'capture development choice opens');
+    assert.match(await page.textContent('#capture-choice-dialog'), /Develop Now[\s\S]*Leave Vacant/);
+    await page.click('[data-capture-choice="develop"]');
     assert.ok(await panel.isVisible(), 'build panel opens for owner');
     assert.match(await panel.textContent(), /Vacant · Level 0/);
     assert.equal(await panel.locator('[data-build]').count(), 6, 'six categories');
     await shot('7-build-panel');
-    await panel.getByRole('button', { name: 'Leave Vacant' }).click();
-    assert.equal(await panel.isVisible(), false, 'Leave Vacant closes the panel');
-    assert.equal(await p4cash(), '$12,500', 'leaving vacant costs nothing');
-
-    await block('r0c0').click();
     await panel.locator('[data-build="residential"]').click();
     assert.equal(await panel.isVisible(), false);
     assert.equal(await p4cash(), '$11,500', 'Level 1 residential costs $1,000');
     assert.equal(await block('r0c0').locator('.block__badge .pip.is-on').count(), 1, 'badge shows level 1');
     assert.match(await block('r0c0').getAttribute('aria-label'), /Residential · Level 1 · House/);
-    assert.match(await page.textContent('#inspector'), /Residential · Level 1/);
-
-    // Upgrade via the action-bar Build button (block still selected).
-    await page.click('#action-build');
-    assert.match(await panel.textContent(), /Upgrade to Level 2/);
-    await panel.locator('[data-upgrade]').click();
-    assert.equal(await p4cash(), '$10,000', 'upgrade to L2 costs $1,500');
-    assert.equal(await block('r0c0').locator('.block__badge .pip.is-on').count(), 2);
+    assert.match(await page.textContent('#turn-prompt'), /BONUS ROAD/);
     await shot('8-developed');
 
     // P4's bonus road closes nothing → round wraps to P1 and a city event is drawn.
-    await road('h-6-5').click();
+    await pave(page, road('h-6-5'));
     const eventCard = page.locator('#event-dialog');
     assert.ok(await eventCard.isVisible(), 'event card after the first full round');
     assert.match(await eventCard.textContent(),
@@ -222,28 +252,28 @@ for (const vp of VIEWPORTS) {
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-round'), '2', 'round advanced');
     const p4 = page.locator('.player-card[data-seat="4"]');
-    assert.equal(await p4.locator('.stat--cash dd').textContent(), '$10,000', '+$500 reward − $2,500 development');
-    assert.equal(await p4.locator('.stat--income').getAttribute('data-normal'), '600', 'Residential L2 income (before events)');
-    assert.equal(await p4.locator('.stat--property dd').textContent(), '$3,500', 'land + invested');
+    assert.equal(await p4.locator('.stat--cash dd').textContent(), '$11,500', '+$500 reward − $1,000 development');
+    assert.equal(await p4.locator('.stat--income').getAttribute('data-normal'), '300', 'Residential L1 income (before events)');
+    assert.equal(await p4.locator('.stat--property dd').textContent(), '$2,000', 'land + invested');
     assert.equal(await page.locator('.player-card[data-seat="1"] .stat--cash dd').textContent(), '$12,000');
 
     // Inspect a block
     await block('r0c0').click();
     assert.match(await page.textContent('#inspector'), /Block A1/);
     assert.match(await page.textContent('#inspector'), /Player 4/);
-    assert.match(await page.textContent('#inspector'), /Residential · Level 2 · Rowhouses/);
+    assert.match(await page.textContent('#inspector'), /Residential · Level 1 · House/);
     assert.equal(await panel.isVisible(), false, 'non-owners get the inspector, not the build panel');
     assert.equal(await page.isDisabled('#action-build'), true);
     // Compact layouts show the same details in a bottom sheet instead.
     if (await page.isVisible('#info-dialog')) {
-      assert.match(await page.textContent('#info-dialog'), /Residential · Level 2 · Rowhouses/);
+      assert.match(await page.textContent('#info-dialog'), /Residential · Level 1 · House/);
       await page.click('[data-info-close]');
     }
 
     // Pave every remaining road; the game must end with all 36 blocks claimed.
     const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
     for (const id of remaining) {
-      await road(id).click();
+      await pave(page, road(id));
       await dismissEvent(page);
     }
     await page.waitForSelector('#results-dialog[open]');
@@ -310,8 +340,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=5&debug`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -336,7 +365,7 @@ for (const vp of VIEWPORTS) {
       game.players[2].cash = -5000;
     });
 
-    await road('h-3-3').click(); // P1 → P2's turn: income, then upkeep → distress
+    await pave(page, road('h-3-3')); // P1 → P2's turn: income, then upkeep → distress
     assert.ok(await fin.isVisible(), 'distress panel opens');
     assert.match(await fin.textContent(), /Player 2 is \$\d[\d,]* in debt/);
     assert.equal(await fin.locator('#declare-bankruptcy').count(), 0, 'can still recover → no bankruptcy button');
@@ -354,7 +383,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await fin.isVisible(), false, 'recovered → panel closes');
     assert.match(await page.textContent('#toasts'), /Back in the black/);
     assert.equal(await page.locator('.player-card[data-seat="2"].is-distress').count(), 0);
-    await road('h-3-4').click(); // P2 can pave again → P3's turn: deep debt
+    await pave(page, road('h-3-4')); // P2 can pave again → P3's turn: deep debt
     assert.ok(await fin.isVisible());
     await fin.locator('#declare-bankruptcy').click();
     assert.match(await fin.textContent(), /Player 3 declares bankruptcy/);
@@ -371,7 +400,7 @@ for (const vp of VIEWPORTS) {
     await page.screenshot({ path: 'test-results/finance-abandoned.png' });
 
     // P3 carries on; P4 restores the ruined home and rebuilds the empty lot.
-    await road('h-3-5').click(); // P3 → P4
+    await pave(page, road('h-3-5')); // P3 → P4
     const panel = page.locator('#build-dialog');
     await page.locator('[data-block="r0c0"]').click();
     assert.match(await panel.textContent(), /Abandoned by Player 3/);
@@ -407,8 +436,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=12`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -417,7 +445,7 @@ for (const vp of VIEWPORTS) {
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await road(id).click(); // P4 claims A1
     await page.locator('[data-block="r0c0"]').click();
     await page.locator('#build-dialog [data-build="residential"]').click();
-    await road('h-6-5').click(); // round wraps → event
+    await pave(page, road('h-6-5')); // round wraps → event
 
     const card = page.locator('#event-dialog');
     assert.ok(await card.isVisible());
@@ -460,8 +488,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -523,8 +550,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -542,7 +568,7 @@ for (const vp of VIEWPORTS) {
       b.abandonedBy = 4;
       return ids.at(-1);
     });
-    await page.locator(`[data-road="${last}"]`).click();
+    await pave(page, page.locator(`[data-road="${last}"]`));
     const dialog = page.locator('#results-dialog');
     await dialog.waitFor({ state: 'visible' });
     assert.match(await page.textContent('#results-heading'), /^Tie! All mayors share the city$/);
@@ -580,9 +606,7 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('response', (r) => r.status() >= 400 && errors.push(`HTTP ${r.status()} ${r.url()}`));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
     const btn = await page.locator('[data-nav="setup"]').evaluate((el) => getComputedStyle(el).borderImageSource);
@@ -597,7 +621,7 @@ for (const vp of VIEWPORTS) {
       b.ownerSeat = 1;
       applyDevelopment(b, 'commercial', 3);
     });
-    await page.locator('[data-road="h-0-0"]').click();
+    await pave(page, page.locator('[data-road="h-0-0"]'));
     await page.waitForLoadState('networkidle');
     const loaded = await page.evaluate(() => performance.getEntriesByType('resource').map((e) => e.name));
     assert.ok(loaded.some((u) => /generated\/[a-z-]+\.webp$/.test(u)), 'WebP sheets used');
@@ -631,8 +655,7 @@ for (const vp of VIEWPORTS) {
   });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   const page = await context.newPage();
-  const errors = [];
-  page.on('pageerror', (e) => errors.push(e.message));
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
@@ -645,6 +668,7 @@ for (const vp of VIEWPORTS) {
     const cardsFit = await page.$$eval('.player-card', (els) => els.every((e) => e.scrollWidth <= e.clientWidth + 1));
     assert.ok(cardsFit, 'HUD cards do not overflow');
 
+    await page.click('#action-pave');
     await road('h-3-3').tap();
     assert.ok(await road('h-3-3').evaluate((e) => e.classList.contains('is-armed')), 'first tap arms');
     assert.equal(await page.textContent('#hud-round'), '1');
@@ -696,12 +720,13 @@ for (const vp of VIEWPORTS) {
     }
   });
   const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'New Game' }).click();
     await page.click('#setup-start');
-    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await page.locator(`[data-road="${id}"]`).click();
-    await page.locator('[data-road="v-0-1"]').click(); // P4 captures A1
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
+    await pave(page, page.locator('[data-road="v-0-1"]')); // P4 captures A1
     const p4 = page.locator('.player-card[data-seat="4"]');
     assert.equal(await p4.locator('.cash-delta').textContent(), '+$500', 'delta chip shown');
     assert.ok(await p4.locator('.stat--cash.is-up').count(), 'cash row pulses');
@@ -711,6 +736,7 @@ for (const vp of VIEWPORTS) {
       document.querySelector('.player-card[data-seat="4"] .stat--cash dd')?.textContent === '$12,500');
     await page.waitForTimeout(250);
     await page.screenshot({ path: 'test-results/money-animation.png' });
+    assert.deepEqual(errors, []);
     console.log('✔ money animation');
   } catch (err) {
     failures++;

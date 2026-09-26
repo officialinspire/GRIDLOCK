@@ -31,7 +31,7 @@ function playerCard(row, awardsBySeat, isWinner) {
       h('span', {}, 'City Value'),
       h('strong', { class: 'result-card__city-value' }, formatCash(row.cityValue))),
     h('p', { class: 'result-card__breakdown' },
-      `${formatCash(row.cash)} cash + ${formatCash(row.landValue)} land + ${formatCash(row.buildingValue)} buildings`),
+      `${formatCash(row.cash)} cash + ${formatCash(row.landValue)} land + ${formatCash(row.buildingValue)} invested cost`),
     h('dl', { class: 'result-card__stats' },
       stat('Cash', formatCash(row.cash), row.cash < 0 ? 'is-negative' : ''),
       stat('Blocks owned', row.blocks),
@@ -77,8 +77,8 @@ export function renderResults(game) {
 
   const tie = res.rows.length > 1 && res.rows[0].cityValue === res.rows[1].cityValue;
   $('.results__formula').textContent = tie
-    ? `City Value = cash + land + buildings · ties broken by ${TIEBREAKERS.slice(1).map((t) => t.label).join(', then ')}`
-    : 'City Value = cash + land + buildings';
+    ? `City Value = cash + land + invested construction cost · ties broken by ${TIEBREAKERS.slice(1).map((t) => t.label).join(', then ')}`
+    : 'City Value = cash + land + invested construction cost';
 }
 
 export function showResults(game) {

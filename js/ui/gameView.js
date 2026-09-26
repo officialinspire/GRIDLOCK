@@ -4,7 +4,8 @@ import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES,
+  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES,
+  startPaving, resolveCapture,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
@@ -59,7 +60,7 @@ function renderInspector(blockId, panel = $('#inspector')) {
       row('Owner', owner ? owner.name : 'Unclaimed'),
       row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
       owner && row('Upkeep', `−${formatCash(blockUpkeep(block))}/turn`),
-      owner && row('Value', formatCash(blockValue(block))),
+      owner && row('City value', formatCash(blockValue(block))),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),
@@ -83,9 +84,13 @@ function renderPrompt() {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
     return;
   }
-  prompt.textContent = chain > 0
-    ? `${p.name}: bonus road! Pave another.`
-    : `${p.name}: pave a road.`;
+  const copy = {
+    [TURN_PHASES.MANAGE_CITY]: 'MANAGE CITY · Develop or upgrade, then choose Pave Road.',
+    [TURN_PHASES.PAVE_ROAD]: 'PAVE ROAD · Choose one open road.',
+    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Resolve each newly claimed block.',
+    [TURN_PHASES.BONUS_ROAD]: 'BONUS ROAD · Pave another road.',
+  }[game.turnPhase];
+  prompt.textContent = `${p.name}: ${copy}`;
 }
 
 /** Shows results once the final road's feedback (capture pop, toasts) has played and any dialog is closed. */
@@ -107,6 +112,9 @@ function renderActions() {
   const manageable = game && canManage(game, getSelectedBlock());
   build.disabled = !manageable;
   build.title = manageable ? 'Develop the selected block' : 'Select one of your blocks to develop it';
+  const pave = $('#action-pave');
+  pave.hidden = !(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY);
+  pave.disabled = distress;
 }
 
 function render() {
@@ -120,11 +128,34 @@ function render() {
 
 /** Re-render after a build/upgrade and celebrate any new bonus income. */
 function handleDevelopment({ bonusBefore }) {
+  const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
+  if (captured) resolveCapture(game, captured);
   render();
   play('build');
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
+  if (captured) showCaptureChoice();
+}
+
+function showCaptureChoice() {
+  const dialog = $('#capture-choice-dialog');
+  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP) {
+    if (dialog.open) dialog.close();
+    render();
+    return;
+  }
+  const block = getBlockById(game.board, game.pendingCaptures[0]);
+  $('#capture-choice-copy').textContent = `Block ${block.label} is yours. Develop it now, or leave it vacant and continue to your bonus road.`;
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector('[data-capture-choice="develop"]').focus();
+  render();
+}
+
+function leaveCapturedBlock(blockId) {
+  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
+  resolveCapture(game, blockId);
+  showCaptureChoice();
 }
 
 function handleBlockSelect(id) {
@@ -205,6 +236,7 @@ function handleRoad(id) {
     bus.emit('game:move', result);
     return;
   }
+  if (n > 0) showCaptureChoice();
   if (result.event?.started) {
     play('event');
     showEventCard(game, result.event.started, result.event.expired);
@@ -285,10 +317,26 @@ export function initGameView() {
   info.addEventListener('click', (e) => {
     if (e.target === info || e.target.closest('[data-info-close]')) info.close();
   });
-  initBuildPanel({ onChange: handleDevelopment });
+  initBuildPanel({ onChange: handleDevelopment, onLeave: ({ blockId }) => leaveCapturedBlock(blockId) });
   initFinanceView({ onChange: () => render() });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
+  $('#action-pave').addEventListener('click', () => {
+    if (startPaving(game)) {
+      clearSelection();
+      disarm();
+      render();
+    }
+  });
+  $('#capture-choice-dialog').addEventListener('cancel', (e) => e.preventDefault());
+  $('#capture-choice-dialog').addEventListener('click', (e) => {
+    const action = e.target.closest('[data-capture-choice]')?.dataset.captureChoice;
+    if (!action || !game?.pendingCaptures.length) return;
+    const blockId = game.pendingCaptures[0];
+    $('#capture-choice-dialog').close();
+    if (action === 'develop') openBuildPanel(game, blockId);
+    if (action === 'vacant') leaveCapturedBlock(blockId);
+  });
   initDialogs();
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });

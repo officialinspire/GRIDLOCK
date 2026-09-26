@@ -7,7 +7,7 @@ import {
 } from '../../js/core/board.js';
 import {
   createGame, placeRoad, currentPlayer, roadsBuilt, roadsRemaining, standings, validateRoad,
-  MOVE_ERRORS, PHASES,
+  MOVE_ERRORS, PHASES, TURN_PHASES, startPaving, resolveCapture,
 } from '../../js/core/game.js';
 
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) });
@@ -68,6 +68,17 @@ test('edge roads border one block, inner roads border two', () => {
 });
 
 /* ---------------- moves & validation ---------------- */
+
+test('turn phases preserve management before paving and pass only after a committed quiet road', () => {
+  const game = four();
+  assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
+  assert.equal(startPaving(game), true);
+  assert.equal(game.turnPhase, TURN_PHASES.PAVE_ROAD);
+  const result = placeRoad(game, 'h-0-0');
+  assert.equal(result.captured.length, 0);
+  assert.equal(seatNow(game), 2);
+  assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
+});
 
 test('players rotate P1 → P2 → P3 → P4 → P1 on non-capturing roads', () => {
   const game = four();
@@ -150,6 +161,13 @@ test('one road can close two blocks at once (double capture)', () => {
   assert.equal(r.extraTurn, true);
   assert.equal(getBlock(game.board, 1, 1).ownerSeat, 1);
   assert.equal(getBlock(game.board, 1, 2).ownerSeat, 1);
+  assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
+  assert.deepEqual(game.pendingCaptures, ['r1c1', 'r1c2']);
+  assert.equal(resolveCapture(game, 'r1c2'), false, 'double captures resolve in board order');
+  assert.equal(resolveCapture(game, 'r1c1'), true);
+  assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
+  assert.equal(resolveCapture(game, 'r1c2'), true);
+  assert.equal(game.turnPhase, TURN_PHASES.BONUS_ROAD);
 });
 
 test('chains: each capture earns another road until a road closes nothing', () => {

@@ -162,6 +162,9 @@
 
 /* Setup */
 .setup { display: grid; gap: 22px; padding-bottom: 24px; }
+.setup__mode { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 28px; padding: 14px 18px; }
+.setup__mode legend { padding: 0 8px; font-family: var(--font-display); font-size: 1.15rem; }
+.setup__mode label { cursor: pointer; }
 .setup__players {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -53,6 +53,21 @@ test('generated assets exist for every sheet and UI frame', async () => {
   for (const m of css.matchAll(/url\('\.\.\/([^']+)'\)/g)) assert.ok(await exists(m[1]), `css references ${m[1]}`);
 });
 
+test('the repository root is a self-contained GitHub Pages site', async () => {
+  assert.ok(await exists('index.html'), 'root index.html exists');
+  assert.ok(await exists('.nojekyll'), '.nojekyll exists');
+
+  const html = await readFile(`${ROOT}index.html`, 'utf8');
+  const localUrls = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+    .map(([, url]) => url)
+    .filter((url) => !/^(?:https?:|data:|#)/.test(url));
+  assert.ok(localUrls.length > 0, 'index contains local assets');
+  for (const url of localUrls) {
+    assert.ok(!url.startsWith('/'), `${url} must be relative for a Pages project subpath`);
+    assert.ok(await exists(decodeURI(url.split(/[?#]/, 1)[0])), `${url} resolves from the repository root`);
+  }
+});
+
 test('every semantic art role resolves to a real sprite', () => {
   const refs = allArtRefs();
   assert.ok(refs.length > 30);

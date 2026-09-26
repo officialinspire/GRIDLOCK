@@ -504,6 +504,9 @@ html[data-coords='on'] .block__coord { display: block; }
   border: 3px solid var(--player);
   border-radius: var(--radius-sm);
 }
+.capture-choice { width: min(440px, calc(100vw - 28px)); text-align: center; }
+.capture-choice h3 { margin-top: 0; font-family: var(--font-display); font-size: 1.6rem; }
+.capture-choice__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
 /* ---------- Tablet / phone portrait ---------- */
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {

@@ -8,9 +8,10 @@ import { refreshBonuses } from '../../js/core/bonuses.js';
 import {
   EVENT_POOL, getEventDef, drawEvent, drawableEvents, startEvent, expireEvents, onRoundStart,
   incomeMultiplier, effectiveIncome, effectiveBlockIncome, costMultiplier, eligibleTargets,
-  eventFootprint, roundsLeft, blockImpacts,
+  eventFootprint, roundsLeft, blockImpacts, blockEventState,
 } from '../../js/core/events.js';
 import { calculateIncome, isValidAmount, TXN } from '../../js/core/economy.js';
+import { scorePlayer } from '../../js/core/scoring.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
 import { distressStatus, sellDevelopment, declareBankruptcy, ownershipProblems } from '../../js/core/finance.js';
 import { getSpriteRect } from '../../js/assets.js';
@@ -191,6 +192,22 @@ test('overlapping events multiply and are clamped; no permanent change after bot
   for (const b of [park, shop]) assert.equal(effectiveBlockIncome(game, b), b.income);
 });
 
+test('board event state follows the final combined multiplier, not the first modifier', () => {
+  const game = calm();
+  const shop = dev(game, 0, 0, 1, 'commercial');
+  startEvent(game, 'recession'); // ×0.8 is encountered first
+  startEvent(game, 'city-festival'); // ×1.5 makes the combined result ×1.2
+  assert.ok(Math.abs(incomeMultiplier(game, shop) - 1.2) < Number.EPSILON * 2);
+  assert.equal(blockEventState(game, shop).state, 'boost');
+
+  const protectedGame = calm();
+  dev(protectedGame, 0, 0, 1, 'civic', 3);
+  const shielded = dev(protectedGame, 0, 1, 1, 'commercial');
+  refreshBonuses(protectedGame.board);
+  startEvent(protectedGame, 'snowstorm');
+  assert.equal(blockEventState(protectedGame, shielded).state, 'shielded');
+});
+
 test('Heavy Rain zeroes park income; other categories unaffected', () => {
   const game = calm();
   const park = dev(game, 0, 0, 1, 'park');
@@ -284,14 +301,21 @@ test('cost modifiers change quotes and the amount charged, then revert', () => {
   const game = calm();
   getBlock(game.board, 0, 0).ownerSeat = 1;
   const base = TABLE.park[1].cost;
+  const worthBefore = getPlayer(game, 1).cash + getBlock(game.board, 0, 0).value;
   startEvent(game, 'beautification-grant'); // park ×0.5
   const q = quoteBuild(game, 'r0c0', 'park');
-  assert.deepEqual([q.cost, q.baseCost], [base / 2, base]);
+  assert.deepEqual([q.actualCost, q.baseCost], [base / 2, base]);
   const before = getPlayer(game, 1).cash;
   const r = buildOnBlock(game, 'r0c0', 'park');
   assert.equal(r.cost, base / 2);
   assert.equal(getPlayer(game, 1).cash, before - base / 2);
-  assert.equal(getBlock(game.board, 0, 0).value, getBlock(game.board, 0, 0).price + base, 'value uses list price');
+  const park = getBlock(game.board, 0, 0);
+  assert.equal(park.investedCostBasis, base / 2, 'cost basis is what was actually paid');
+  assert.equal(park.value, park.price + base / 2, 'scoring value uses cost basis');
+  assert.equal(park.marketValue, park.price + base, 'optional market value remains list-priced');
+  assert.equal(getPlayer(game, 1).cash + park.value, worthBefore, 'discount creates no free City Value');
+  assert.equal(scorePlayer(game, getPlayer(game, 1)).cityValue, worthBefore,
+    'final scoring uses actual cost basis');
   assert.deepEqual(game.ledger.at(-1).delta, -base / 2);
 
   game.round = 5;
@@ -300,7 +324,14 @@ test('cost modifiers change quotes and the amount charged, then revert', () => {
   assert.equal(quoteBuild(game, 'r0c1', 'park').cost, base);
 
   startEvent(game, 'housing-boom'); // residential ×1.25
-  assert.equal(quoteBuild(game, 'r0c1', 'residential').cost, 1250);
+  const beforeSurcharge = getPlayer(game, 1).cash + getBlock(game.board, 0, 1).value;
+  assert.equal(quoteBuild(game, 'r0c1', 'residential').actualCost, 1250);
+  buildOnBlock(game, 'r0c1', 'residential');
+  const home = getBlock(game.board, 0, 1);
+  assert.equal(home.investedCostBasis, 1250);
+  assert.equal(home.marketValue, home.price + 1000);
+  assert.equal(getPlayer(game, 1).cash + park.value + home.value, beforeSurcharge + park.value,
+    'surcharge is retained in the cost basis rather than disappearing at scoring');
 });
 
 /* ---------------- safety ---------------- */

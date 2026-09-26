@@ -6,7 +6,7 @@ import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { getBlockById } from '../core/board.js';
-import { getEventDef, eventFootprint, roundsLeft, blockImpacts } from '../core/events.js';
+import { getEventDef, eventFootprint, roundsLeft, blockImpacts, blockEventState } from '../core/events.js';
 import { getPlayer } from '../core/game.js';
 
 const KIND_LABEL = { emergency: 'City Emergency', boon: 'Good News', downturn: 'Downturn' };
@@ -18,17 +18,7 @@ const pct = (m) => {
 
 const roundsText = (n) => `${n} round${n === 1 ? '' : 's'}`;
 
-/** How a block is touched by active events: 'hurt' | 'boost' | 'shielded' | null, plus the lead impact. */
-export function blockEventState(game, block) {
-  const impacts = blockImpacts(game, block);
-  if (!impacts.length) return { state: null, lead: null };
-  const live = impacts.filter((i) => !i.mitigated);
-  const hurt = live.find((i) => i.multiplier < 1);
-  const boost = live.find((i) => i.multiplier > 1);
-  if (hurt) return { state: 'hurt', lead: hurt };
-  if (boost) return { state: 'boost', lead: boost };
-  return { state: 'shielded', lead: impacts[0] };
-}
+export { blockEventState };
 
 /** Inspector lines: "🌧 Heavy Rain · no income · 1 round" / "🛡 Snowstorm · shielded by civic". */
 export function eventLines(game, block) {

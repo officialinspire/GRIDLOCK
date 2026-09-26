@@ -83,7 +83,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:road"></span>
           <h3>Pave a Road</h3>
-          <p>On your turn, tap the gap between two neighbouring intersections to pave one road. Players go in seat order: 1 → 2 → 3 → 4.</p>
+          <p><strong>Standard Game is for exactly four players.</strong> Each turn starts at MANAGE CITY; when ready, choose PAVE ROAD and tap a gap between neighbouring intersections. Play goes 1 → 2 → 3 → 4.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:star"></span>
@@ -93,7 +93,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:swap"></span>
           <h3>Keep Going</h3>
-          <p>Claiming a block earns you another road straight away, so you can chain captures. If your road closes nothing, play passes on.</p>
+          <p>After a capture, resolve CAPTURE / DEVELOP for each new block, then take your BONUS ROAD. Captures can chain. A road that closes nothing passes play only after you deliberately entered PAVE ROAD.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:coins"></span>
@@ -104,8 +104,8 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:building"></span>
           <h3>Develop</h3>
-          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). On your turn, tap one of your blocks to build Residential, Commercial, Park, Civic, Industrial or a Landmark, then upgrade it up to <strong>Level 3</strong> for more income.</p>
-          <p>Costs are paid immediately. You can also leave a block vacant.</p>
+          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). Choose <strong>Develop Now</strong> or <strong>Leave Vacant</strong>; double captures are offered one at a time. During a later MANAGE CITY phase, tap your blocks to build or upgrade up to <strong>Level 3</strong>.</p>
+          <p>Costs are paid immediately. Once you choose PAVE ROAD, management ends for that turn unless you capture another block.</p>
           <p><strong>★ Bonuses:</strong> 3+ connected homes or shops form a district, parks boost the homes next to them, and a connected home + shop + park cluster earns a mixed-use bonus.</p>
         </article>
         <article class="paper howto-card">
@@ -123,7 +123,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When every block is enclosed, the mayor with the highest <strong>City Value</strong> wins: cash + land + buildings.</p>
+          <p>When every block is enclosed, every mayor finishes the same economic round. Highest <strong>City Value</strong> wins: cash + land + actual construction cost invested.</p>
           <p>Ties go to more blocks, then more developed blocks, then more cash. Awards like Most Blocks and Greenest City go to standouts too.</p>
         </article>
       </div>
@@ -177,6 +177,11 @@
       </header>
 
       <form class="page-body setup" id="setup-form" autocomplete="off" novalidate>
+        <fieldset class="paper setup__mode">
+          <legend>Game type</legend>
+          <label><input type="radio" name="gameType" value="standard" checked> <strong>Standard Game</strong> · exactly 4 players</label>
+          <label><input type="radio" name="gameType" value="custom"> <strong>Custom Game</strong> · 2–4 players</label>
+        </fieldset>
         <div class="setup__players" id="setup-players"></div>
 
         <div class="setup__footer paper">
@@ -230,11 +235,25 @@
         <button class="btn" id="action-build" disabled title="Coming soon">
           <span class="btn__icon" data-sprite="icons:building"></span><span>Build</span>
         </button>
+        <button class="btn btn--gold" id="action-pave">
+          <span class="btn__icon" data-sprite="icons:road"></span><span>Pave Road</span>
+        </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
         <button class="btn btn--danger" id="action-finance" hidden>
           <span class="btn__icon" data-sprite="icons:coins"></span><span>Resolve Debt</span>
         </button>
       </footer>
+
+      <dialog class="modal paper capture-choice" id="capture-choice-dialog" aria-labelledby="capture-choice-title">
+        <h3 id="capture-choice-title">Block captured!</h3>
+        <p id="capture-choice-copy"></p>
+        <div class="capture-choice__actions">
+          <button type="button" class="btn btn--gold" data-capture-choice="develop">
+            <span class="btn__icon" data-sprite="icons:building"></span><span>Develop Now</span>
+          </button>
+          <button type="button" class="btn" data-capture-choice="vacant">Leave Vacant</button>
+        </div>
+      </dialog>
 
       <dialog class="modal paper finance-panel" id="finance-dialog" aria-labelledby="finance-title">
         <div class="finance-panel__body" id="finance-body"></div>
@@ -263,7 +282,7 @@
           <span class="results__trophy" data-sprite="icons:trophy"></span>
           <p class="results__kicker">City complete · final results</p>
           <h3 id="results-heading" class="results__title">City Complete!</h3>
-          <p class="results__formula">City Value = cash + land + buildings</p>
+          <p class="results__formula">City Value = cash + land + invested construction cost</p>
         </header>
         <ol class="results__grid" id="results-list"></ol>
         <section class="results__awards" aria-labelledby="awards-heading">

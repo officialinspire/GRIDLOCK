@@ -1,4 +1,4 @@
-/** New Game screen: four local seats, 2–4 must join. */
+/** New Game screen: Standard is four players; Custom preserves 2–4 seats. */
 import { $, h } from './dom.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
@@ -36,16 +36,21 @@ function joinedSeats(form) {
 }
 
 function refresh(form) {
+  const standard = form.elements.gameType.value === 'standard';
+  form.querySelectorAll('.seat-card [name="join"]').forEach((join) => {
+    if (standard) join.checked = true;
+    join.disabled = standard;
+  });
   const seats = joinedSeats(form);
   form.querySelectorAll('.seat-card').forEach((card) => {
     const on = card.querySelector('[name="join"]').checked;
     card.classList.toggle('is-out', !on);
     card.querySelector('[name="name"]').disabled = !on;
   });
-  const ok = seats.length >= MIN_PLAYERS;
+  const ok = standard ? seats.length === PLAYER_PRESETS.length : seats.length >= MIN_PLAYERS;
   $('#setup-start').disabled = !ok;
   $('#setup-summary').textContent = ok
-    ? `${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city`
+    ? `${standard ? 'Standard Game' : 'Custom Game'} · ${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city`
     : `At least ${MIN_PLAYERS} players must join.`;
 }
 
@@ -58,8 +63,9 @@ export function initSetupView() {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const seats = joinedSeats(form);
-    if (seats.length < MIN_PLAYERS) return;
-    bus.emit('game:start', { seats, settings: getSettings() });
+    const standard = form.elements.gameType.value === 'standard';
+    if ((standard && seats.length !== PLAYER_PRESETS.length) || (!standard && seats.length < MIN_PLAYERS)) return;
+    bus.emit('game:start', { seats, settings: getSettings(), gameType: standard ? 'standard' : 'custom' });
   });
   bus.on('settings:changed', () => refresh(form));
   bus.on('screen:shown', ({ name }) => {

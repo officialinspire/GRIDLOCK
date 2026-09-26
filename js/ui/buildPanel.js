@@ -14,14 +14,14 @@ import {
 } from '../core/development.js';
 import { formatCash, blockIncome, bonusIncome } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
-import { currentPlayer, getPlayer } from '../core/game.js';
+import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
 import { toast } from './toast.js';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned, ACQUIRE_MODES, FIN_ERRORS,
 } from '../core/finance.js';
 import { ECONOMY } from '../config.js';
 
-let state = { game: null, blockId: null, onChange: () => {} };
+let state = { game: null, blockId: null, onChange: () => {}, onLeave: () => {} };
 
 const ERROR_TEXT = {
   [DEV_ERRORS.NOT_OWNER]: 'Only the owner can develop this block, on their turn.',
@@ -31,6 +31,7 @@ const ERROR_TEXT = {
   [DEV_ERRORS.UNKNOWN_TYPE]: 'Unknown building type.',
   [DEV_ERRORS.NOT_DEVELOPED]: 'Build something here first.',
   [DEV_ERRORS.NO_BLOCK]: 'That block does not exist.',
+  [DEV_ERRORS.WRONG_PHASE]: 'Develop during Manage City, or immediately after capturing this block.',
 };
 
 function pips(level) {
@@ -54,7 +55,7 @@ function header(block, player) {
         pips(block.level),
         h('span', {}, `+${formatCash(blockIncome(block))}/turn`),
         bonusIncome(block) > 0 && h('span', { class: 'build-panel__bonus' }, `★ incl. ${formatCash(bonusIncome(block))} bonus`),
-        h('span', {}, `Value ${formatCash(block.value)}`),
+        h('span', {}, `City value ${formatCash(block.value)}`),
       ),
     ),
     h('div', { class: 'build-panel__cash' },
@@ -269,6 +270,9 @@ function handleAcquire(result) {
 export function canManage(game, blockId) {
   const block = game && getBlockById(game.board, blockId);
   if (!block || game.phase !== 'playing') return false;
+  const legalPhase = game.turnPhase === TURN_PHASES.MANAGE_CITY
+    || (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures[0] === block.id);
+  if (!legalPhase) return false;
   return block.ownerSeat === currentPlayer(game).seat || (block.abandoned && block.ownerSeat == null);
 }
 
@@ -287,11 +291,15 @@ export function closeBuildPanel() {
   if (dialog.open) dialog.close();
 }
 
-export function initBuildPanel({ onChange }) {
+export function initBuildPanel({ onChange, onLeave = () => {} }) {
   state.onChange = onChange;
+  state.onLeave = onLeave;
   const dialog = $('#build-dialog');
   dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) return dialog.close(); // backdrop
+    if (e.target === dialog) {
+      dialog.close();
+      return state.onLeave({ blockId: state.blockId });
+    }
     const build = e.target.closest('[data-build]');
     const bonusBefore = playerBonus();
     if (build) return handleResult(buildOnBlock(state.game, state.blockId, build.dataset.build), 'Built', bonusBefore);
@@ -302,6 +310,9 @@ export function initBuildPanel({ onChange }) {
     if (sell) return handleSale(sellDevelopment(state.game, sell.dataset.sell), 'Sold development');
     const acquire = e.target.closest('[data-acquire]');
     if (acquire) return handleAcquire(acquireAbandoned(state.game, state.blockId, acquire.dataset.acquire));
-    if (e.target.closest('[data-action="close"]')) dialog.close();
+    if (e.target.closest('[data-action="close"]')) {
+      dialog.close();
+      state.onLeave({ blockId: state.blockId });
+    }
   });
 }

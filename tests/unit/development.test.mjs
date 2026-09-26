@@ -9,7 +9,7 @@ import {
   isDeveloped, levelStats,
 } from '../../js/core/development.js';
 import { TXN, isValidAmount, calculateIncome, propertyValue, upkeepFor } from '../../js/core/economy.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
+import { createGame, placeRoad, resolveCapture, currentPlayer, getPlayer, playerStats, PHASES, TURN_PHASES } from '../../js/core/game.js';
 
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
 const cash = (game, seat) => getPlayer(game, seat).cash;
@@ -83,6 +83,18 @@ test('a captured block starts Vacant Level 0 with land value and no income', () 
 });
 
 /* ---------------- purchases ---------------- */
+
+test('development is legal during management and for the queued capture, but not during road phases', () => {
+  const game = p1CapturesA1();
+  assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
+  assert.equal(quoteBuild(game, 'r0c0', 'park').ok, true, 'captured block can be developed immediately');
+  assert.equal(buildOnBlock(game, 'r0c0', 'park').ok, true);
+  resolveCapture(game, 'r0c0');
+  assert.equal(game.turnPhase, TURN_PHASES.BONUS_ROAD);
+  assert.equal(quoteUpgrade(game, 'r0c0').error, DEV_ERRORS.WRONG_PHASE);
+  placeRoad(game, 'h-6-5');
+  assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
+});
 
 test('building deducts cash immediately and the block stores type/level/value/income', () => {
   const game = p1CapturesA1();

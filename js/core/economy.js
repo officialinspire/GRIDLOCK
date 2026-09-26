@@ -118,10 +118,11 @@ export function canAfford(player, cost) {
 /** Financial distress = negative cash. Derived, so it can never go stale. */
 export const isInDistress = (player) => isValidBalance(player) && player.cash < 0;
 
-/** Development cost sunk into a block (value minus land). */
+/** Actual construction cost basis retained in a block. */
 export function investedIn(block) {
-  const v = blockValue(block) - block.price;
-  return v > 0 ? v : 0;
+  if (isValidAmount(block.investedCostBasis)) return block.investedCostBasis;
+  const legacy = (isValidAmount(block.value) ? block.value : block.price) - block.price;
+  return legacy > 0 ? legacy : 0;
 }
 
 /** Upkeep an owned, active block costs at the start of its owner's turn: land tax + development upkeep. */
@@ -167,9 +168,9 @@ export function calculateIncome(board, seat) {
   return blocksOwnedBy(board, seat).reduce((sum, block) => sum + blockIncome(block), 0);
 }
 
-/** Stored block value: land price + everything invested in development. */
+/** Scoring/property value: land plus actual invested construction cost basis. */
 export function blockValue(block) {
-  return isValidAmount(block.value) ? block.value : block.price;
+  return block.price + investedIn(block);
 }
 
 /** Net property value: land + development of everything a player owns. */

@@ -31,8 +31,11 @@ function checkInvariants(game, ctx) {
     const sum = game.ledger.filter((e) => e.seat === p.seat).reduce((n, e) => n + e.delta, 0);
     assert.equal(p.cash, ECONOMY.STARTING_CASH + sum, `${where}: ledger seat ${p.seat}`);
   }
-  // Only the current player can ever be in debt (upkeep hits at their turn start).
-  for (const p of game.players) if (p !== currentPlayer(game)) assert.ok(p.cash >= 0, `${where}: seat ${p.seat} in debt off-turn`);
+  // During play only the current player can be in debt. Final settlement may
+  // charge several not-yet-settled players immediately before scoring.
+  if (game.phase === PHASES.PLAYING) {
+    for (const p of game.players) if (p !== currentPlayer(game)) assert.ok(p.cash >= 0, `${where}: seat ${p.seat} in debt off-turn`);
+  }
 
   // Ownership.
   assert.deepEqual(ownershipProblems(game), [], where);
@@ -40,8 +43,10 @@ function checkInvariants(game, ctx) {
     if (b.ownerSeat != null || b.abandoned) assert.ok(isBlockEnclosed(board, b), `${where}: ${b.id} owned but not enclosed`);
     if (b.ownerSeat == null && !b.abandoned) assert.equal(b.level, 0, `${where}: unowned ${b.id} developed`);
     // Stored development numbers match the tables.
-    const inv = b.level > 0 ? TABLE[b.type][b.level].invested : 0;
-    assert.equal(b.value, b.price + inv, `${where}: ${b.id} value`);
+    const listInvestment = b.level > 0 ? TABLE[b.type][b.level].invested : 0;
+    assert.equal(b.marketValue, b.price + listInvestment, `${where}: ${b.id} market value`);
+    assert.equal(b.investedCostBasis, b.constructionCosts.reduce((sum, cost) => sum + cost, 0), `${where}: ${b.id} cost basis`);
+    assert.equal(b.value, b.price + b.investedCostBasis, `${where}: ${b.id} scoring value`);
     assert.equal(b.income, b.level > 0 ? TABLE[b.type][b.level].income : 0, `${where}: ${b.id} income`);
     if (b.level === 0) assert.equal(b.type, 'vacant');
     else assert.ok(CATEGORY_ORDER.includes(b.type));
