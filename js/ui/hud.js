@@ -85,7 +85,23 @@ function showCashDelta(card, delta) {
   card.querySelector('.stat--cash')?.classList.add(`is-${dir}`);
   const chip = h('span', { class: `cash-delta cash-delta--${dir}`, 'aria-hidden': 'true' }, formatDelta(delta));
   (card.querySelector('.stat--cash') ?? card).append(chip);
-  chip.addEventListener('animationend', () => chip.remove(), { once: true });
+
+  // With reduced motion the CSS animation is intentionally disabled. Keep the
+  // numeric delta visible long enough to be useful, then remove it without
+  // motion. In normal mode animationend remains the primary cleanup path, with
+  // a fallback so interrupted animations never leave stale chips behind.
+  if (reducedMotion()) {
+    setTimeout(() => chip.remove(), 1200);
+  } else {
+    let removed = false;
+    const remove = () => {
+      if (removed) return;
+      removed = true;
+      chip.remove();
+    };
+    chip.addEventListener('animationend', remove, { once: true });
+    setTimeout(remove, 2200);
+  }
 }
 
 function animateMoney(game) {
