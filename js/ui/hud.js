@@ -34,6 +34,7 @@ function stat(key, label, value, icon, hint = label) {
 /** Income (base + bonuses). A small ★ marks bonus income; details live in the tooltip / block info. */
 function incomeStat(stats) {
   const notes = ['Income paid at the start of each turn'];
+  if (stats.upkeep > 0) notes.push(`upkeep −${formatCash(stats.upkeep)} is charged after it`);
   if (stats.bonus > 0) notes.push(`includes ${formatCash(stats.bonus)} adjacency bonus`);
   if (stats.eventDelta) notes.push(`${formatDelta(stats.eventDelta)} from city events (normally ${formatCash(stats.normalIncome)})`);
   const el = stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', notes.join('; '));
@@ -126,15 +127,17 @@ function playerCard(game, seat) {
   const stats = playerStats(game, player);
   const active = game.phase === PHASES.PLAYING && currentPlayer(game).seat === seat;
   return h('article', {
-    class: `player-card paper player-card--${preset.color}${active ? ' is-active' : ''}`,
-    'aria-label': `${player.name}${active ? ', current turn' : ''}`,
+    class: `player-card paper player-card--${preset.color}${active ? ' is-active' : ''}${stats.distress ? ' is-distress' : ''}`,
+    'aria-label': `${player.name}${active ? ', current turn' : ''}${stats.distress ? ', in debt' : ''}`,
     'aria-current': active ? 'true' : null,
     dataset: { seat },
   },
     h('header', { class: 'player-card__head' },
       createSprite(`markers:chip-${preset.color}`, { className: 'player-card__token' }),
       h('span', { class: 'player-card__name' }, player.name),
-      active && h('span', { class: 'player-card__turn' }, 'Turn'),
+      stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
+      !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
+      stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
     ),
     h('dl', { class: 'player-card__stats' },
       stat('cash', 'Cash', formatCash(shownCash.get(seat) ?? stats.cash), 'icons:coins'),

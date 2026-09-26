@@ -74,6 +74,31 @@ export const ECONOMY = Object.freeze({
   }),
 
   /**
+   * Financial failure & recovery (core/finance.js).
+   * Cash can only go negative through mandatory upkeep; purchases never overdraw.
+   */
+  FINANCE: Object.freeze({
+    /**
+     * Upkeep, charged at the start of each turn after income, per owned block:
+     *   LAND_TAX_PERCENT of its land value + UPKEEP_PERCENT of its invested development cost.
+     * Idle land costs money, so over-expanding without developing can lead to distress.
+     */
+    LAND_TAX_PERCENT: 5,
+    UPKEEP_PERCENT: 5,
+    /** Downgrading or selling refunds this % of the development cost removed. */
+    SALE_REFUND_PERCENT: 50,
+    /** Capital a bankrupt player restarts with… */
+    FRESH_START_CAPITAL: 2000,
+    /** …for their first N bankruptcies; after that they restart with $0 (prevents farming). */
+    FRESH_START_LIMIT: 2,
+    /** Buying an abandoned block: land at this % of land value, plus (to restore) this % of the ruin's invested cost. */
+    REDEVELOP_LAND_PERCENT: 100,
+    RESTORE_PERCENT: 40,
+    /** Former owners can't buy back blocks they abandoned. */
+    FORMER_OWNER_MAY_BUY: false,
+  }),
+
+  /**
    * Adjacency / district bonuses (core/bonuses.js). Percentages apply to a
    * block's BASE income (its level income), never to other bonuses, so bonuses
    * can't compound. Each bonus type applies at most once per block.

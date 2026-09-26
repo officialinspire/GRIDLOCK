@@ -8,7 +8,7 @@ import {
   TABLE, MAX_LEVEL, DEV_ERRORS, quoteBuild, quoteUpgrade, buildOnBlock, upgradeBlock,
   isDeveloped, levelStats,
 } from '../../js/core/development.js';
-import { TXN, isValidAmount, calculateIncome, propertyValue } from '../../js/core/economy.js';
+import { TXN, isValidAmount, calculateIncome, propertyValue, upkeepFor } from '../../js/core/economy.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
 
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
@@ -105,7 +105,8 @@ test('building deducts cash immediately and the block stores type/level/value/in
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
-    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0, bonus: 0, property: 2500, netWorth: 13500,
+    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0, upkeep: 50 + 75, distress: false, bankruptcies: 0,
+    bonus: 0, property: 2500, netWorth: 13500,
   });
 });
 
@@ -234,7 +235,10 @@ test('developed income is paid at the start of the owner\'s next turn', () => {
   placeRoad(game, 'h-6-5'); // P1 bonus road ends turn → P2
   placeRoad(game, 'h-6-4'); // → P3
   placeRoad(game, 'h-6-3'); // → P4
+  const upkeep = upkeepFor(game.board, 1); // land tax + development upkeep
+  assert.equal(upkeep, 50 + Math.round((1750 + 2625) * ECONOMY.FINANCE.UPKEEP_PERCENT / 100));
   const r = placeRoad(game, 'h-6-2'); // → P1's turn begins
   assert.deepEqual(r.turnIncome, { seat: 1, amount: 1200 });
-  assert.equal(cash(game, 1), 12500 - 1750 - 2625 + 1200);
+  assert.deepEqual(r.turnUpkeep, { seat: 1, amount: upkeep, distress: false });
+  assert.equal(cash(game, 1), 12500 - 1750 - 2625 + 1200 - upkeep);
 });

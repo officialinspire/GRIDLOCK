@@ -106,9 +106,15 @@
           <p>Emergencies skip blocks inside a <strong>civic building's</strong> protection zone.</p>
         </article>
         <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:restart"></span>
+          <h3>Debt &amp; Bankruptcy</h3>
+          <p>Every turn you pay <strong>upkeep</strong>: a small land tax plus maintenance on your buildings. If it pushes you below $0, sell or downgrade buildings (50% back) before you can play on.</p>
+          <p>If even that can't cover it, declare bankruptcy: your blocks are <strong>abandoned</strong>, the debt is wiped, and you restart with fresh capital. Other mayors can buy and restore abandoned blocks.</p>
+        </article>
+        <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When every block is claimed, the mayor with the most blocks wins. Ties go to the higher net worth (cash + property value).</p>
+          <p>When every road is paved, the mayor with the most blocks wins. Ties go to the higher net worth (cash + property value).</p>
         </article>
       </div>
     </section>
@@ -214,7 +220,14 @@
           <span class="btn__icon" data-sprite="icons:building"></span><span>Build</span>
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
+        <button class="btn btn--danger" id="action-finance" hidden>
+          <span class="btn__icon" data-sprite="icons:coins"></span><span>Resolve Debt</span>
+        </button>
       </footer>
+
+      <dialog class="modal paper finance-panel" id="finance-dialog" aria-labelledby="finance-title">
+        <div class="finance-panel__body" id="finance-body"></div>
+      </dialog>
 
       <dialog class="modal event-card" id="event-dialog" aria-labelledby="event-title">
         <div class="event-card__body" id="event-body"></div>

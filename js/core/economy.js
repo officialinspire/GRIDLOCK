@@ -1,9 +1,11 @@
 /**
  * Economy rules. All numbers come from ECONOMY in config.js.
  *
- * Money safety: every change to a player's cash goes through credit()/debit(),
- * which accept only finite, non-negative whole-dollar amounts and never let a
- * balance drop below zero or become NaN. Each change is logged in game.ledger.
+ * Money safety: every change to a player's cash goes through credit()/debit()/
+ * charge(), which accept only finite, non-negative whole-dollar amounts and
+ * never produce NaN. Voluntary spending (debit) can't overdraw; only mandatory
+ * charges (upkeep) can push a balance below $0, which puts the player into
+ * financial distress (core/finance.js). Each change is logged in game.ledger.
  */
 import { ECONOMY } from '../config.js';
 import { blocksOwnedBy } from './board.js';
@@ -18,6 +20,11 @@ export const TXN = Object.freeze({
   TURN_INCOME: 'turn-income',
   BUILD: 'build',
   UPGRADE: 'upgrade',
+  UPKEEP: 'upkeep',
+  SALE: 'sale',
+  DEBT_WRITE_OFF: 'debt-write-off',
+  FRESH_START: 'fresh-start',
+  ACQUIRE: 'acquire',
 });
 
 const cashFormat = new Intl.NumberFormat('en-US', {
@@ -45,8 +52,9 @@ export function toAmount(value) {
   return value;
 }
 
+/** Balances are whole dollars; negative only while in financial distress. */
 export function isValidBalance(player) {
-  return isValidAmount(player?.cash);
+  return typeof player?.cash === 'number' && Number.isSafeInteger(player.cash);
 }
 
 function record(game, player, delta, reason, meta) {
@@ -61,9 +69,23 @@ export function credit(game, player, amount, reason, meta = {}) {
   if (!isValidBalance(player)) throw new RangeError(`Corrupt balance for seat ${player?.seat}`);
   if (amount === 0) return null;
   const next = player.cash + amount;
-  toAmount(next); // guards against overflow past MAX_SAFE_INTEGER
+  if (!Number.isSafeInteger(next)) throw new RangeError('Balance overflow');
   player.cash = next;
   return record(game, player, amount, reason, meta);
+}
+
+/**
+ * Mandatory charge (upkeep): always applied, may take the balance below $0.
+ * Returns the ledger entry (or null for $0).
+ */
+export function charge(game, player, amount, reason, meta = {}) {
+  toAmount(amount);
+  if (!isValidBalance(player)) throw new RangeError(`Corrupt balance for seat ${player?.seat}`);
+  if (amount === 0) return null;
+  const next = player.cash - amount;
+  if (!Number.isSafeInteger(next)) throw new RangeError('Balance overflow');
+  player.cash = next;
+  return record(game, player, -amount, reason, meta);
 }
 
 /**
@@ -80,7 +102,34 @@ export function debit(game, player, amount, reason, meta = {}) {
 }
 
 export function canAfford(player, cost) {
-  return isValidAmount(cost) && isValidBalance(player) && player.cash >= cost;
+  return isValidAmount(cost) && isValidBalance(player) && player.cash >= 0 && player.cash >= cost;
+}
+
+/** Financial distress = negative cash. Derived, so it can never go stale. */
+export const isInDistress = (player) => isValidBalance(player) && player.cash < 0;
+
+/** Development cost sunk into a block (value minus land). */
+export function investedIn(block) {
+  const v = blockValue(block) - block.price;
+  return v > 0 ? v : 0;
+}
+
+/** Upkeep an owned, active block costs at the start of its owner's turn: land tax + development upkeep. */
+export function blockUpkeep(block) {
+  if (block.ownerSeat == null || block.abandoned) return 0;
+  const { LAND_TAX_PERCENT, UPKEEP_PERCENT } = ECONOMY.FINANCE;
+  return Math.round((block.price * LAND_TAX_PERCENT) / 100) + Math.round((investedIn(block) * UPKEEP_PERCENT) / 100);
+}
+
+export function upkeepFor(board, seat) {
+  return blocksOwnedBy(board, seat).reduce((sum, b) => sum + blockUpkeep(b), 0);
+}
+
+/** Charges a player's upkeep as their turn begins (after income). Returns the amount. */
+export function chargeUpkeep(game, player) {
+  const amount = upkeepFor(game.board, player.seat);
+  charge(game, player, amount, TXN.UPKEEP);
+  return amount;
 }
 
 /** Base income for the block's development level (no bonuses). */

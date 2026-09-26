@@ -14,6 +14,7 @@ import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js
 import { isDeveloped, MAX_LEVEL } from '../core/development.js';
 import { blockEventState } from './eventView.js';
 import { getPlayer, currentPlayer, PHASES } from '../core/game.js';
+import { isInDistress } from '../core/economy.js';
 
 let selectedId = null;
 // One-shot effects play only on the render right after the move/build that caused them.
@@ -65,8 +66,8 @@ function blockDescription(game, block) {
   return [
     `Block ${block.label}`,
     DISTRICTS[block.district].label,
-    owner ? `claimed by ${owner.name}` : `${builtSides(game.board, block)} of 4 roads`,
-    owner && describeDevelopment(block),
+    owner ? `claimed by ${owner.name}` : block.abandoned ? 'abandoned' : `${builtSides(game.board, block)} of 4 roads`,
+    (owner || block.abandoned) && describeDevelopment(block),
     block.bonusIncome > 0 && `bonus +$${block.bonusIncome} per turn`,
     blockEventState(game, block).state && `city event: ${blockEventState(game, block).state}`,
   ].filter(Boolean).join(', ');
@@ -86,14 +87,16 @@ function levelBadge(block) {
 
 function blockCell(game, block) {
   const color = colorOf(block.ownerSeat);
-  const developed = isDeveloped(block);
-  const art = developed ? levelArt(block.type, block.level) : null;
+  const developed = isDeveloped(block) && !block.abandoned;
+  const ruin = block.abandoned;
+  const art = isDeveloped(block) ? levelArt(block.type, block.level) : null;
   const selected = block.id === selectedId;
   const fresh = fx.move && game.lastMove?.captured.includes(block.id);
   const justBuilt = fx.development && game.lastDevelopment?.block === block.id;
   const cls = ['block', `block--${block.district}`];
   if (color) cls.push('block--owned', `block--${color}`);
   if (developed) cls.push('block--developed', `block--lv${block.level}`);
+  if (ruin) cls.push('block--abandoned');
   if (selected) cls.push('is-selected');
   if (fresh) cls.push('is-captured');
   if (justBuilt) cls.push('is-just-built');
@@ -111,6 +114,7 @@ function blockCell(game, block) {
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
     color && createSprite(`markers:frame-${color}`, { className: 'block__frame' }),
     art && createSprite(art.sprite, { className: 'block__building' }),
+    ruin && h('span', { class: 'block__abandoned', 'aria-hidden': 'true' }, 'Abandoned'),
     color && !art && createSprite(`markers:seal-${color}`, { className: 'block__seal' }),
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
@@ -141,7 +145,7 @@ export function renderBoard(game) {
   const playing = game.phase === PHASES.PLAYING;
   const turnColor = playing ? currentPlayer(game).color : null;
   frame.dataset.turn = turnColor ?? 'none';
-  el.classList.toggle('is-locked', !playing);
+  el.classList.toggle('is-locked', !playing || isInDistress(currentPlayer(game)));
 
   const cells = [];
   for (let R = 0; R <= board.rows * 2; R++) {

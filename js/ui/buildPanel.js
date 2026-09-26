@@ -13,8 +13,12 @@ import {
 } from '../core/development.js';
 import { formatCash, blockIncome, bonusIncome } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
-import { currentPlayer } from '../core/game.js';
+import { currentPlayer, getPlayer } from '../core/game.js';
 import { toast } from './toast.js';
+import {
+  quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned, ACQUIRE_MODES, FIN_ERRORS,
+} from '../core/finance.js';
+import { ECONOMY } from '../config.js';
 
 let state = { game: null, blockId: null, onChange: () => {} };
 
@@ -131,19 +135,81 @@ function developedView(game, block, player) {
       }, createSprite('icons:star', { className: 'btn__icon' }), h('span', {}, `Upgrade · ${formatCash(quote.cost)}`)),
     ));
   }
+  nodes.push(sellSection(game, block));
   nodes.push(h('div', { class: 'build-panel__actions' },
     h('button', { type: 'button', class: 'btn', dataset: { action: 'close' } },
       createSprite('icons:undo', { className: 'btn__icon' }), h('span', {}, block.level >= MAX_LEVEL ? 'Close' : 'Keep as is'))));
   return nodes;
 }
 
+/** Downgrade one level / sell everything for SALE_REFUND_PERCENT of what's removed. */
+function sellSection(game, block) {
+  const down = quoteDowngrade(game, block.id);
+  const sell = quoteSale(game, block.id);
+  if (!sell.ok) return null;
+  return h('details', { class: 'sell-section' },
+    h('summary', {}, `Sell or downgrade (${ECONOMY.FINANCE.SALE_REFUND_PERCENT}% refund)`),
+    h('div', { class: 'sell-section__actions' },
+      block.level > 1 && h('button', { type: 'button', class: 'btn btn--sm', dataset: { downgrade: block.id } },
+        `Downgrade to Level ${down.toLevel} · +${formatCash(down.refund)}`),
+      h('button', { type: 'button', class: 'btn btn--sm btn--danger', dataset: { sell: block.id } },
+        `Sell development · +${formatCash(sell.refund)}`)),
+  );
+}
+
+/** Abandoned block: buy the land and restore the ruin, or clear it to rebuild. */
+function abandonedView(game, block, player) {
+  const former = block.abandonedBy ? getPlayer(game, block.abandonedBy) : null;
+  const art = levelArt(block.type, block.level);
+  const option = (mode, title, detail) => {
+    const q = quoteAcquire(game, block.id, mode);
+    const blocked = q.error && q.error !== FIN_ERRORS.INSUFFICIENT_FUNDS;
+    if (blocked && q.error === FIN_ERRORS.NOT_DEVELOPED) return null;
+    return h('button', {
+      type: 'button',
+      class: `acquire-option${q.ok ? '' : ' is-unaffordable'}`,
+      dataset: { acquire: mode },
+      'aria-disabled': q.ok ? null : 'true',
+    },
+      h('strong', { class: 'acquire-option__title' }, title),
+      h('span', { class: 'acquire-option__detail' }, detail(q)),
+      h('span', { class: 'price__cost' }, formatCash(q.cost)),
+      q.error === FIN_ERRORS.INSUFFICIENT_FUNDS && h('span', { class: 'price__short' }, `Need ${formatCash(q.shortfall)} more`),
+      q.error === FIN_ERRORS.FORMER_OWNER && h('span', { class: 'price__short' }, 'You abandoned this block'),
+      q.error === FIN_ERRORS.IN_DISTRESS && h('span', { class: 'price__short' }, 'Clear your debt first'),
+    );
+  };
+  return [
+    h('header', { class: 'build-panel__head' },
+      art ? createSprite(art.sprite, { className: 'build-panel__art is-abandoned' }) : createSprite('roads:lot-construction', { className: 'build-panel__art' }),
+      h('div', { class: 'build-panel__titles' },
+        h('h3', { id: 'build-title', class: 'build-panel__title' }, `Block ${block.label} · Abandoned`),
+        h('p', { class: 'build-panel__sub' },
+          `${DISTRICTS[block.district].label} · ${describeDevelopment(block)} (inactive)`),
+        former && h('p', { class: 'build-panel__stats' }, `Abandoned by ${former.name} after bankruptcy`)),
+      h('div', { class: 'build-panel__cash' }, h('span', {}, 'Your cash'), h('strong', {}, formatCash(player.cash))),
+    ),
+    h('div', { class: 'acquire-grid' },
+      option(ACQUIRE_MODES.RESTORE, `Restore ${art?.name ?? ''}`.trim(),
+        (q) => `Land ${formatCash(q.land)} + ${ECONOMY.FINANCE.RESTORE_PERCENT}% repairs ${formatCash(q.restore)}. Keeps Level ${block.level}.`),
+      option(ACQUIRE_MODES.REBUILD, 'Clear & rebuild',
+        (q) => `Land ${formatCash(q.land)}. Starts Vacant: build any category after.`),
+    ),
+    h('div', { class: 'build-panel__actions' },
+      h('button', { type: 'button', class: 'btn', dataset: { action: 'close' } },
+        createSprite('icons:undo', { className: 'btn__icon' }), h('span', {}, 'Leave it'))),
+  ];
+}
+
 function render() {
   const { game, blockId } = state;
   const block = getBlockById(game.board, blockId);
   const player = currentPlayer(game);
-  $('#build-body').replaceChildren(...(isDeveloped(block)
-    ? developedView(game, block, player)
-    : vacantView(game, block, player)).filter(Boolean));
+  let view;
+  if (block.abandoned) view = abandonedView(game, block, player);
+  else if (isDeveloped(block)) view = developedView(game, block, player);
+  else view = vacantView(game, block, player);
+  $('#build-body').replaceChildren(...view.filter(Boolean));
 }
 
 function refuse(error, shortfall) {
@@ -170,10 +236,39 @@ function handleResult(result, verb, bonusBefore) {
   state.onChange({ ...result, bonusBefore });
 }
 
-/** True if the current player may open the panel for this block. */
+function handleSale(result, verb) {
+  if (!result.ok) {
+    refuse(result.error);
+    return;
+  }
+  toast(`${verb} · +${formatCash(result.refund)}`, { tone: 'success' });
+  $('#build-dialog').close();
+  state.onChange({ ...result, bonusBefore: Infinity });
+}
+
+function handleAcquire(result) {
+  if (!result.ok) {
+    const text = {
+      [FIN_ERRORS.FORMER_OWNER]: 'You can\'t buy back a block you abandoned.',
+      [FIN_ERRORS.IN_DISTRESS]: 'Clear your debt first.',
+    }[result.error];
+    if (text) toast(text, { tone: 'warn' });
+    else refuse(result.error, result.shortfall);
+    render();
+    return;
+  }
+  toast(result.mode === 'restore' ? `Restored Block · −${formatCash(result.cost)}` : `Bought the lot · −${formatCash(result.cost)}. Build something!`, { tone: 'success' });
+  const reopen = result.mode === ACQUIRE_MODES.REBUILD;
+  $('#build-dialog').close();
+  state.onChange({ ...result, bonusBefore: Infinity });
+  if (reopen) openBuildPanel(state.game, result.block); // go straight to choosing what to build
+}
+
+/** True if the current player may open the panel: their own block, or an abandoned one. */
 export function canManage(game, blockId) {
   const block = game && getBlockById(game.board, blockId);
-  return Boolean(block && game.phase === 'playing' && block.ownerSeat === currentPlayer(game).seat);
+  if (!block || game.phase !== 'playing') return false;
+  return block.ownerSeat === currentPlayer(game).seat || (block.abandoned && block.ownerSeat == null);
 }
 
 export function openBuildPanel(game, blockId) {
@@ -200,6 +295,12 @@ export function initBuildPanel({ onChange }) {
     const bonusBefore = playerBonus();
     if (build) return handleResult(buildOnBlock(state.game, state.blockId, build.dataset.build), 'Built', bonusBefore);
     if (e.target.closest('[data-upgrade]')) return handleResult(upgradeBlock(state.game, state.blockId), 'Upgraded to', bonusBefore);
+    const down = e.target.closest('[data-downgrade]');
+    if (down) return handleSale(downgradeBlock(state.game, down.dataset.downgrade), 'Downgraded');
+    const sell = e.target.closest('[data-sell]');
+    if (sell) return handleSale(sellDevelopment(state.game, sell.dataset.sell), 'Sold development');
+    const acquire = e.target.closest('[data-acquire]');
+    if (acquire) return handleAcquire(acquireAbandoned(state.game, state.blockId, acquire.dataset.acquire));
     if (e.target.closest('[data-action="close"]')) dialog.close();
   });
 }

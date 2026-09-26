@@ -12,6 +12,7 @@ import {
 } from '../../js/core/events.js';
 import { calculateIncome, isValidAmount, TXN } from '../../js/core/economy.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
+import { distressStatus, sellDevelopment, declareBankruptcy, ownershipProblems } from '../../js/core/finance.js';
 import { getSpriteRect } from '../../js/assets.js';
 
 const seats = (n = 4) => Array.from({ length: n }, (_, i) => ({ seat: i + 1 }));
@@ -327,12 +328,20 @@ test('full random games with events: valid balances, reconciled ledger, clean ex
     while (game.phase === PHASES.PLAYING) {
       // The current player develops something whenever they can, to exercise events.
       const me = currentPlayer(game);
+      // Resolve financial distress first (paving is blocked while in debt).
+      while (me.cash < 0) {
+        const st = distressStatus(game, me);
+        if (st.canDeclare) { assert.equal(declareBankruptcy(game).ok, true); break; }
+        const sellable = game.board.blocks.find((b) => b.ownerSeat === me.seat && b.level > 0);
+        assert.equal(sellDevelopment(game, sellable.id).ok, true);
+      }
       const vacant = game.board.blocks.find((b) => b.ownerSeat === me.seat && b.level === 0);
       if (vacant) buildOnBlock(game, vacant.id, ['residential', 'commercial', 'park', 'civic', 'industrial', 'landmark'][Math.floor(rand() * 6)]);
       const [id] = pool.splice(Math.floor(rand() * pool.length), 1);
       const r = placeRoad(game, id);
       if (r.event?.started) events++;
-      for (const p of game.players) assert.ok(isValidAmount(p.cash), `seed ${seed} seat ${p.seat}`);
+      for (const p of game.players) assert.ok(Number.isSafeInteger(p.cash), `seed ${seed} seat ${p.seat}`);
+      assert.deepEqual(ownershipProblems(game), []);
       for (const e of game.events.active) {
         assert.ok(e.startRound <= game.round && e.endRound >= game.round, 'only live events are active');
       }
@@ -344,6 +353,6 @@ test('full random games with events: valid balances, reconciled ledger, clean ex
       const sum = game.ledger.filter((e) => e.seat === p.seat).reduce((n, e) => n + e.delta, 0);
       assert.equal(p.cash, ECONOMY.STARTING_CASH + sum);
     }
-    assert.ok(game.ledger.every((e) => [TXN.CAPTURE, TXN.TURN_INCOME, TXN.BUILD, TXN.UPGRADE].includes(e.reason)));
+    assert.ok(game.ledger.every((e) => Object.values(TXN).includes(e.reason)));
   }
 });

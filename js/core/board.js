@@ -48,6 +48,9 @@ export function createBoard(rows = BOARD_ROWS, cols = BOARD_COLS) {
         bonuses: [],
         bonusIncome: 0,
         protectedBy: [],
+        // Set by bankruptcy (core/finance.js): ownerless, development kept but inactive.
+        abandoned: false,
+        abandonedBy: null,
       });
     }
   }

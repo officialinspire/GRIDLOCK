@@ -9,6 +9,7 @@ import {
 } from './board.js';
 import {
   calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
+  chargeUpkeep, upkeepFor, isInDistress,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
 import { createEventState, onRoundStart, effectiveIncome, EVENT_POOL } from './events.js';
@@ -21,6 +22,7 @@ export const MOVE_ERRORS = Object.freeze({
   GAME_OVER: 'game-over',
   INVALID: 'invalid-road',
   TAKEN: 'road-taken',
+  IN_DISTRESS: 'in-distress',
 });
 
 export function sanitizeName(name, fallback) {
@@ -58,6 +60,7 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL 
         symbol: preset.symbol,
         hex: preset.hex,
         cash: toAmount(ECONOMY.STARTING_CASH),
+        bankruptcies: 0,
       };
     });
 
@@ -72,6 +75,7 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL 
     log: [],
     ledger: [],
     turnStartIncome: null,
+    turnStartUpkeep: null,
     seed: seed >>> 0,
     rngState: seed >>> 0,
     events: createEventState(),
@@ -101,6 +105,9 @@ export function playerStats(game, player) {
     income,
     normalIncome: normal,
     eventDelta: income - normal,
+    upkeep: upkeepFor(game.board, player.seat),
+    distress: isInDistress(player),
+    bankruptcies: player.bankruptcies,
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
     property,
     netWorth: player.cash + property,
@@ -118,6 +125,7 @@ export function roadsRemaining(game) {
 /** Can the current player build this road right now? Returns an error code or null. */
 export function validateRoad(game, id) {
   if (game.phase !== PHASES.PLAYING) return MOVE_ERRORS.GAME_OVER;
+  if (isInDistress(currentPlayer(game))) return MOVE_ERRORS.IN_DISTRESS;
   if (!isValidRoad(game.board, id)) return MOVE_ERRORS.INVALID;
   if (hasRoad(game.board, id)) return MOVE_ERRORS.TAKEN;
   return null;
@@ -132,6 +140,9 @@ export function beginTurn(game) {
   const player = currentPlayer(game);
   const amount = payTurnIncome(game, player, effectiveIncome(game, player.seat));
   game.turnStartIncome = { seat: player.seat, amount };
+  // Upkeep is charged after income. It is the only thing that can push cash below $0
+  // (financial distress — resolved via core/finance.js before the player can pave).
+  game.turnStartUpkeep = { seat: player.seat, amount: chargeUpkeep(game, player), distress: isInDistress(player) };
   return game.turnStartIncome;
 }
 
@@ -142,7 +153,7 @@ export function beginTurn(game) {
  * Returns { roundEnded, event: { expired, started } | null, turnIncome }.
  */
 export function endTurn(game) {
-  const summary = { roundEnded: false, event: null, turnIncome: null };
+  const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
     game.turnIndex = 0;
@@ -153,6 +164,7 @@ export function endTurn(game) {
     if (summary.event.started) game.log.push({ type: 'event', round: game.round, event: summary.event.started.id });
   }
   summary.turnIncome = beginTurn(game);
+  summary.turnUpkeep = game.turnStartUpkeep;
   return summary;
 }
 
@@ -161,7 +173,7 @@ export function endTurn(game) {
  * - Any block this road encloses is claimed by the builder (0, 1 or 2 blocks).
  * - Claiming at least one block grants another road (same player continues).
  * - Otherwise the turn passes to the next seat.
- * - Once every block is claimed the game ends.
+ * - Once every road is paved (all blocks enclosed) the game ends.
  *
  * - Each claimed block pays ECONOMY.CAPTURE_REWARD to the builder.
  *
@@ -178,7 +190,7 @@ export function placeRoad(game, id) {
 
   const captured = [];
   for (const block of roadBlocks(board, id)) {
-    if (block.ownerSeat == null && isBlockEnclosed(board, block)) {
+    if (block.ownerSeat == null && !block.abandoned && isBlockEnclosed(board, block)) {
       block.ownerSeat = seat;
       captured.push(block.id);
     }
@@ -192,10 +204,12 @@ export function placeRoad(game, id) {
 
   const result = {
     ok: true, road: id, seat, captured, reward,
-    extraTurn: false, roundEnded: false, event: null, turnIncome: null, gameEnded: false,
+    extraTurn: false, roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, gameEnded: false,
   };
 
-  if (board.blocks.every((b) => b.ownerSeat != null)) {
+  // Every road paved = every block enclosed. (Not "every block owned": abandoned
+  // blocks after a bankruptcy may stay ownerless forever.)
+  if (roadsBuilt(game) === totalRoads(board)) {
     game.phase = PHASES.ENDED;
     result.gameEnded = true;
   } else if (captured.length > 0) {

@@ -85,7 +85,7 @@ for (const vp of VIEWPORTS) {
     // How To Play
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 8);
+    assert.equal(await page.locator('.howto-card').count(), 9);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -261,6 +261,97 @@ for (const vp of VIEWPORTS) {
     console.error(`✘ ${vp.name}: ${err.message}`);
     if (errors.length) console.error('  ' + errors.join('\n  '));
     await shot('FAIL').catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Financial distress → recovery, bankruptcy → abandoned blocks → restore/rebuild (desktop, ?debug to set up state).
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  try {
+    await page.goto(`${base}?seed=5&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    const road = (id) => page.locator(`#board [data-road="${id}"]`);
+    const fin = page.locator('#finance-dialog');
+
+    // P2: ten idle lots + one Level-2 home and $0 → upkeep beats income. P3: $-5,000 with little to sell.
+    await page.evaluate(async () => {
+      const { getBlock } = await import('/js/core/board.js');
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const game = window.__GRIDLOCK__.getGame();
+      game.eventPool = [];
+      for (let c = 0; c < 6; c++) getBlock(game.board, 5, c).ownerSeat = 2;
+      for (let c = 0; c < 4; c++) getBlock(game.board, 4, c).ownerSeat = 2;
+      const home = getBlock(game.board, 4, 5); home.ownerSeat = 2; applyDevelopment(home, 'residential', 2);
+      const p3home = getBlock(game.board, 0, 0); p3home.ownerSeat = 3; applyDevelopment(p3home, 'residential', 1);
+      getBlock(game.board, 0, 1).ownerSeat = 3;
+      refreshBonuses(game.board);
+      game.players[1].cash = 0;
+      game.players[2].cash = -5000;
+    });
+
+    await road('h-3-3').click(); // P1 → P2's turn: income, then upkeep → distress
+    assert.ok(await fin.isVisible(), 'distress panel opens');
+    assert.match(await fin.textContent(), /Player 2 is \$\d[\d,]* in debt/);
+    assert.equal(await fin.locator('#declare-bankruptcy').count(), 0, 'can still recover → no bankruptcy button');
+    assert.ok(await page.locator('.player-card[data-seat="2"].is-distress').count(), 'HUD shows debt');
+    await page.screenshot({ path: 'test-results/finance-distress.png' });
+
+    // Try to pave while in debt: refused and the panel comes back.
+    await fin.getByRole('button', { name: 'View board' }).click();
+    assert.equal(await page.isVisible('#action-finance'), true, 'Resolve Debt button');
+    await road('h-3-4').dispatchEvent('click');
+    assert.match(await page.textContent('#toasts'), /Resolve your debt/);
+    assert.ok(await fin.isVisible(), 'panel reopens');
+
+    await fin.locator('[data-sell="r4c5"]').click(); // sell the home (+$1,250)
+    assert.equal(await fin.isVisible(), false, 'recovered → panel closes');
+    assert.match(await page.textContent('#toasts'), /Back in the black/);
+    assert.equal(await page.locator('.player-card[data-seat="2"].is-distress').count(), 0);
+    await road('h-3-4').click(); // P2 can pave again → P3's turn: deep debt
+    assert.ok(await fin.isVisible());
+    await fin.locator('#declare-bankruptcy').click();
+    assert.match(await fin.textContent(), /Player 3 declares bankruptcy/);
+    assert.match(await fin.textContent(), /2 blocks abandoned/);
+    assert.match(await fin.textContent(), /Fresh start: \$2,000/);
+    await page.screenshot({ path: 'test-results/finance-bankruptcy.png' });
+    await fin.getByRole('button', { name: 'Continue' }).click();
+
+    const p3 = page.locator('.player-card[data-seat="3"]');
+    assert.equal(await p3.locator('.stat--cash dd').textContent(), '$2,000');
+    assert.equal(await p3.locator('.player-card__fresh').textContent(), '↺1');
+    assert.equal(await page.locator('#board .block--abandoned').count(), 2);
+    assert.equal(await page.locator('[data-block="r0c0"] .block__building').count(), 1, 'ruin still visible');
+    await page.screenshot({ path: 'test-results/finance-abandoned.png' });
+
+    // P3 carries on; P4 restores the ruined home and rebuilds the empty lot.
+    await road('h-3-5').click(); // P3 → P4
+    const panel = page.locator('#build-dialog');
+    await page.locator('[data-block="r0c0"]').click();
+    assert.match(await panel.textContent(), /Abandoned by Player 3/);
+    await page.screenshot({ path: 'test-results/finance-acquire.png' });
+    await panel.locator('[data-acquire="restore"]').click();
+    assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')), 'P4 owns the restored home');
+    await page.locator('[data-block="r0c1"]').click();
+    assert.equal(await panel.locator('[data-acquire="restore"]').count(), 0, 'empty ruin can only be rebuilt');
+    await panel.locator('[data-acquire="rebuild"]').click();
+    assert.ok(await panel.isVisible(), 'build panel reopens to choose a category');
+    await panel.locator('[data-build="park"]').click();
+    assert.equal(await page.locator('#board .block--abandoned').count(), 0);
+
+    assert.deepEqual(errors, []);
+    console.log('✔ distress, bankruptcy & redevelopment');
+  } catch (err) {
+    failures++;
+    console.error(`✘ finance: ${err.message}`);
+    await page.screenshot({ path: 'test-results/finance-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }

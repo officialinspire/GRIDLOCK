@@ -11,6 +11,8 @@ import { blockValue, bonusIncome, formatCash } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
 import { effectiveBlockIncome, getEventDef } from '../core/events.js';
+import { initFinanceView, openDistressPanel } from './financeView.js';
+import { isInDistress, blockUpkeep } from '../core/economy.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
@@ -41,15 +43,19 @@ function renderInspector(blockId) {
   const row = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
   panel.replaceChildren(...[
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
-    owner && h('p', { class: 'inspector__dev', dataset: { type: block.type } }, describeDevelopment(block)),
+    (owner || block.abandoned) && h('p', { class: 'inspector__dev', dataset: { type: block.type } },
+      describeDevelopment(block), block.abandoned ? ' (inactive)' : ''),
     h('dl', { class: 'inspector__facts' },
       row('District', DISTRICTS[block.district].label),
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
       row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
+      owner && row('Upkeep', `−${formatCash(blockUpkeep(block))}/turn`),
       owner && row('Value', formatCash(blockValue(block))),
     ),
+    block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
+      `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),
     owner && bonusList(block),
     owner && eventLines(game, block),
     owner && !isDeveloped(block) && h('p', { class: 'inspector__note' }, 'Vacant: no income until developed.'),
@@ -65,12 +71,19 @@ function renderPrompt() {
   }
   const p = currentPlayer(game);
   prompt.style.setProperty('--player', p.hex);
+  prompt.classList.toggle('is-distress', isInDistress(p));
+  if (isInDistress(p)) {
+    prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
+    return;
+  }
   prompt.textContent = chain > 0
     ? `${p.name}: bonus road! Pave another.`
     : `${p.name}: pave a road.`;
 }
 
 function renderActions() {
+  const distress = Boolean(game && game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game)));
+  $('#action-finance').hidden = !distress;
   const build = $('#action-build');
   const manageable = game && canManage(game, getSelectedBlock());
   build.disabled = !manageable;
@@ -128,7 +141,19 @@ const REJECT_MESSAGES = {
   [MOVE_ERRORS.TAKEN]: 'That road is already paved.',
   [MOVE_ERRORS.INVALID]: "That's not a road.",
   [MOVE_ERRORS.GAME_OVER]: 'The game is over.',
+  [MOVE_ERRORS.IN_DISTRESS]: 'Resolve your debt before paving.',
 };
+
+/** Opens the distress panel for the current player, after any event card is dismissed. */
+function checkDistress() {
+  if (!game || game.phase !== PHASES.PLAYING || !isInDistress(currentPlayer(game))) return;
+  const eventCard = $('#event-dialog');
+  if (eventCard.open) {
+    eventCard.addEventListener('close', () => openDistressPanel(game), { once: true });
+  } else {
+    openDistressPanel(game);
+  }
+}
 
 function handleRoad(id) {
   if (!game) return;
@@ -138,6 +163,7 @@ function handleRoad(id) {
   if (!result.ok) {
     rejectRoad(id);
     toast(REJECT_MESSAGES[result.error] ?? 'You can’t build there.', { tone: 'warn', duration: 1600 });
+    if (result.error === MOVE_ERRORS.IN_DISTRESS) openDistressPanel(game);
     return;
   }
 
@@ -161,10 +187,14 @@ function handleRoad(id) {
   } else if (result.event?.expired.length) {
     toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
   }
-  if (result.turnIncome?.amount > 0) {
+  const paid = result.turnIncome?.amount ?? 0;
+  const owed = result.turnUpkeep?.amount ?? 0;
+  if (result.turnIncome && (paid > 0 || owed > 0)) {
     const payee = getPlayer(game, result.turnIncome.seat);
-    toast(`${payee.name} collects ${formatCash(result.turnIncome.amount)} income`, { tone: 'success' });
+    const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`].filter(Boolean);
+    toast(`${payee.name}: ${parts.join(', ')}`, { tone: result.turnUpkeep?.distress ? 'warn' : 'success' });
   }
+  checkDistress();
   bus.emit('game:move', result);
 }
 
@@ -178,6 +208,7 @@ function seedFromUrl() {
 function startGame(setup) {
   closeBuildPanel();
   $('#event-dialog').close();
+  $('#finance-dialog').close();
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['buildings', 'civic', 'parks', 'effects', 'markers', 'icons']);
   lastSetup = setup;
@@ -222,6 +253,8 @@ function initDialogs() {
 export function initGameView() {
   initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad });
   initBuildPanel({ onChange: handleDevelopment });
+  initFinanceView({ onChange: () => render() });
+  $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   initDialogs();
   initEventView({ getGame: () => game });

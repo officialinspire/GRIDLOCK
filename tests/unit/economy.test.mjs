@@ -5,7 +5,7 @@ import { ECONOMY } from '../../js/config.js';
 import { getBlock, allRoadIds } from '../../js/core/board.js';
 import { applyDevelopment, TABLE } from '../../js/core/development.js';
 import {
-  credit, debit, toAmount, isValidAmount, canAfford, formatCash, formatDelta,
+  credit, debit, toAmount, isValidAmount, canAfford, formatCash, formatDelta, upkeepFor,
   blockIncome, calculateIncome, propertyValue, netWorth, MONEY_ERRORS, TXN,
 } from '../../js/core/economy.js';
 import {
@@ -45,7 +45,8 @@ test('every player starts with $12,000', () => {
   const game = four();
   assert.deepEqual(game.players.map((p) => p.cash), [12000, 12000, 12000, 12000]);
   assert.deepEqual(playerStats(game, game.players[0]), {
-    cash: 12000, blocks: 0, income: 0, normalIncome: 0, eventDelta: 0, bonus: 0, property: 0, netWorth: 12000,
+    cash: 12000, blocks: 0, income: 0, normalIncome: 0, eventDelta: 0, upkeep: 0, distress: false, bankruptcies: 0,
+    bonus: 0, property: 0, netWorth: 12000,
   });
 });
 
@@ -79,8 +80,14 @@ test('credit/debit never produce NaN or negative balances', () => {
   // A corrupted balance is detected instead of propagating.
   p.cash = NaN;
   assert.throws(() => credit(game, p, 100, 'x'), RangeError);
-  p.cash = -5;
+  p.cash = 1.5;
   assert.throws(() => debit(game, p, 0, 'x'), RangeError);
+  // A negative balance (distress) is valid, but can't buy anything.
+  p.cash = -5;
+  assert.equal(debit(game, p, 1, 'x').ok, false);
+  assert.equal(debit(game, p, 0, 'x').ok, false, 'no spending at all while in debt');
+  assert.equal(p.cash, -5);
+  assert.equal(canAfford(p, 0), false);
   p.cash = 0;
 
   assert.equal(canAfford(p, 0), true);
@@ -176,22 +183,26 @@ test('income is paid at the start of each player\'s own turn, from developed blo
   getBlock(game.board, 5, 4).ownerSeat = 2;
   getBlock(game.board, 5, 3).ownerSeat = 3;
   const houseIncome = ECONOMY.DEVELOPMENT.CATEGORIES.residential.income;
+  const houseUpkeep = upkeepFor(game.board, 2); // tax on both lots + upkeep on the house
+  const lotTax = upkeepFor(game.board, 3); // idle land still pays land tax
+  assert.equal(lotTax, Math.round(ECONOMY.LAND_VALUE.suburbs * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100));
 
   const r1 = placeRoad(game, 'h-0-0'); // P1 → P2's turn begins
   assert.deepEqual(r1.turnIncome, { seat: 2, amount: houseIncome });
-  assert.equal(cash(game, 2), 12000 + houseIncome);
+  assert.deepEqual(r1.turnUpkeep, { seat: 2, amount: houseUpkeep, distress: false });
+  assert.equal(cash(game, 2), 12000 + houseIncome - houseUpkeep);
   assert.equal(cash(game, 1), 12000, 'P1 is not paid when P2 starts');
 
   const r2 = placeRoad(game, 'h-0-1'); // → P3: owns only undeveloped land
   assert.deepEqual(r2.turnIncome, { seat: 3, amount: 0 });
-  assert.equal(cash(game, 3), 12000);
+  assert.equal(cash(game, 3), 12000 - lotTax);
 
   placeRoad(game, 'h-0-2'); // → P4
   const r4 = placeRoad(game, 'h-0-3'); // → P1, round 2
   assert.equal(r4.roundEnded, true);
   assert.equal(game.round, 2);
   placeRoad(game, 'h-0-4'); // → P2 again: paid a second time
-  assert.equal(cash(game, 2), 12000 + 2 * houseIncome);
+  assert.equal(cash(game, 2), 12000 + 2 * (houseIncome - houseUpkeep));
 
   const incomeEntries = game.ledger.filter((e) => e.reason === TXN.TURN_INCOME);
   assert.deepEqual(incomeEntries.map((e) => [e.seat, e.delta]), [[2, houseIncome], [2, houseIncome]]);
@@ -214,9 +225,10 @@ test('bonus roads after a capture do not pay turn income again', () => {
 
   placeRoad(game, 'h-3-0'); // P2 → P3
   placeRoad(game, 'h-3-1'); // P3 → P4
+  const marketUpkeep = upkeepFor(game.board, 1); // market + tax on the captured A1 lot
   const back = placeRoad(game, 'h-3-2'); // P4 → P1's next turn begins
   assert.deepEqual(back.turnIncome, { seat: 1, amount: marketIncome });
-  assert.equal(cash(game, 1), 12500 + marketIncome);
+  assert.equal(cash(game, 1), 12500 + marketIncome - marketUpkeep);
 });
 
 test('full 4-player games keep every balance valid and reconcile with the ledger', () => {

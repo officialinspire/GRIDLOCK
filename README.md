@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.6 city events.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, turn income, the HUD and a results screen.
+> **Status: v0.7 financial failure & recovery.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
 
 ## How it plays
 
@@ -12,7 +12,7 @@ The city is a 6×6 grid of blocks on a 7×7 lattice of intersections, with 84 po
 2. On your turn, tap the gap between two neighbouring intersections to **pave a road**. You can't pave a road twice, and there are no diagonals.
 3. Paving the **last** road around a block **claims** it for you. The block takes your colour, border, seal and flag. One road can close two blocks.
 4. Claiming at least one block gives you **another road**, so captures can chain. A road that closes nothing passes the turn.
-5. The game ends when all 36 blocks are claimed. The most blocks wins, and ties go to net worth.
+5. The game ends when every road is paved. The most blocks wins, and ties go to net worth. (Abandoned blocks can stay ownerless, so the end condition is roads rather than ownership.)
 
 ## Economy
 
@@ -90,6 +90,27 @@ How it stays safe (`core/events.js`):
 
 In the UI, a papercraft event card lists the affected blocks, anything shielded, and the duration. Active events show as pills under the top bar (tap one to reopen its card). Affected blocks get a red, green or blue outline and the event's icon. The details panel lists each event on a block, the HUD income shows ▲/▼ with a tooltip, and the Build panel shows adjusted prices.
 
+### Financial failure & recovery
+
+Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
+
+- **Upkeep:** charged at the start of each turn, **after** income. It's 5% of each owned block's land value (idle land costs money) plus 5% of the development cost invested in it. This is the only way cash can go below $0; voluntary spending never overdraws.
+- **Financial distress:** cash < $0. This is derived from cash, not stored as a flag. While in distress, a player can't pave or buy. The distress panel opens automatically, after any event card is dismissed, and can be reopened with the **Resolve Debt** button.
+- **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
+- **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
+  - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
+  - Roads stay as they are, the debt is written off, and the player stays in the game with **$2,000 Fresh Start** capital.
+- **Abandoned blocks:** any other player can buy one from the Build panel:
+  - **Restore**: land plus 40% of the ruin's invested cost; keeps its type and level.
+  - **Clear & rebuild**: land only; the block starts Vacant.
+  - Roads can never capture an abandoned block.
+- **Loop and orphan safety:**
+  - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.
+  - Former owners can't buy back their own ruins.
+  - Fresh Start capital is paid for the first 2 bankruptcies only.
+  - Bankruptcy always ends distress, so a turn can never deadlock.
+  - `ownershipProblems(game)` checks that every owner exists and every abandoned block is ownerless.
+
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
 
 ## Play locally
@@ -128,6 +149,7 @@ js/
     bonuses.js             Adjacency/district bonuses + civic protection (pure recompute)
     events.js              City event engine: weighted draw, lifecycle, derived modifiers
     rng.js                 Seeded PRNG (mulberry32) stored in game state
+    finance.js             Distress, selling/downgrading, bankruptcy, abandoned-block redevelopment
     settings.js            Persisted settings (localStorage, fails safe)
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
@@ -139,6 +161,7 @@ js/
     buildPanel.js          Build/Upgrade panel for the current player's blocks
     bonusView.js           Shared bonus/protection lines
     eventView.js           Event card, active-event pills, block event lines
+    financeView.js         Distress panel and bankruptcy card
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -148,6 +171,7 @@ tests/
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
+  unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
@@ -180,4 +204,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
