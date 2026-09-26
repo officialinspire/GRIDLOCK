@@ -7,7 +7,7 @@ import { applyDevelopment, buildOnBlock, TABLE } from '../../js/core/development
 import { refreshBonuses } from '../../js/core/bonuses.js';
 import { calculateIncome } from '../../js/core/economy.js';
 import {
-  scorePlayer, rankScores, awardDistinctions, computeResults, DISTINCTIONS,
+  scorePlayer, rankScores, awardDistinctions, computeResults, computeMatchStats, DISTINCTIONS,
 } from '../../js/core/scoring.js';
 import { createGame, placeRoad, beginTurn, currentPlayer, getPlayer, standings, isCityComplete, PHASES } from '../../js/core/game.js';
 import { distressStatus, declareBankruptcy, sellDevelopment } from '../../js/core/finance.js';
@@ -28,7 +28,7 @@ const s = (seat, o = {}) => ({
 
 /* ---------------- City Value ---------------- */
 
-test('City Value = cash + land value + building value', () => {
+test('City Value uses centralized cash, land, and building coefficients', () => {
   const game = calm();
   own(game, 0, 0, 1); // suburbs lot 1,000
   own(game, 2, 2, 1, 'commercial', 2); // downtown 2,000 + invested 1,500 + 2,250
@@ -36,7 +36,8 @@ test('City Value = cash + land value + building value', () => {
   assert.equal(sc.cash, 12000);
   assert.equal(sc.landValue, ECONOMY.LAND_VALUE.suburbs + ECONOMY.LAND_VALUE.downtown);
   assert.equal(sc.buildingValue, TABLE.commercial[2].invested);
-  assert.equal(sc.cityValue, 12000 + 3000 + 3750);
+  assert.deepEqual([sc.scoredCash, sc.scoredLand, sc.scoredBuildings], [12000, 3000, 2813]);
+  assert.equal(sc.cityValue, 12000 + 3000 + 2813);
   assert.deepEqual([sc.blocks, sc.developed, sc.totalLevels], [2, 1, 2]);
   assert.equal(sc.income, calculateIncome(game.board, 1));
 });
@@ -45,7 +46,7 @@ test('negative cash (debt) lowers City Value; abandoned blocks count for nobody'
   const game = calm();
   own(game, 0, 0, 2, 'residential', 1);
   getPlayer(game, 2).cash = -500;
-  assert.equal(scorePlayer(game, getPlayer(game, 2)).cityValue, -500 + 1000 + 1000);
+  assert.equal(scorePlayer(game, getPlayer(game, 2)).cityValue, -500 + 1000 + 750);
   const ruin = own(game, 1, 1, 3, 'park', 1);
   ruin.ownerSeat = null;
   ruin.abandoned = true;
@@ -157,7 +158,7 @@ test('final scoring settles every player to the same economic round boundary', (
   assert.equal(result.gameEnded, true);
   assert.deepEqual(game.finalSettlement.players.map((entry) => entry.seat), [2, 3, 4]);
   assert.ok(game.players.every((player) => player.lastEconomicRound === 2));
-  assert.deepEqual(game.players.map((player) => player.cash), [12200, 12200, 12200, 12200],
+  assert.deepEqual(game.players.map((player) => player.cash), [12170, 12170, 12170, 12170],
     'identical economies finish with identical cash regardless of final mover');
 });
 
@@ -188,6 +189,28 @@ test('the game ends when every block is enclosed; results are frozen at that mom
   assert.deepEqual(game.results.winners, game.results.rows.filter((x) => x.rank === 1).map((x) => x.seat));
 });
 
+test('match stats summarize chains, districts, blocks, events, and bankruptcies', () => {
+  const game = calm();
+  own(game, 0, 0, 2, 'commercial', 2);
+  own(game, 0, 1, 2, 'commercial', 1);
+  own(game, 0, 2, 2, 'commercial', 1);
+  own(game, 5, 5, 1, 'landmark', 3);
+  game.log.push(
+    { type: 'road', seat: 2, captured: ['r0c0'] },
+    { type: 'road', seat: 2, captured: ['r0c1', 'r0c2'] },
+    { type: 'road', seat: 2, captured: [] },
+    { type: 'road', seat: 1, captured: ['r5c5'] },
+  );
+  game.events.history.push({ id: 'heavy-rain' }, { id: 'city-festival' });
+  game.players[0].bankruptcies = 1;
+  const stats = computeMatchStats(game);
+  assert.deepEqual(stats.longestCaptureChain, { seat: 2, count: 3 });
+  assert.deepEqual(stats.biggestDistrict, { seat: 2, type: 'commercial', size: 3 });
+  assert.deepEqual(stats.bestSingleBlock, { seat: 1, label: 'F6', value: 14500 });
+  assert.equal(stats.eventsSurvived, 2);
+  assert.equal(stats.bankruptcies, 1);
+});
+
 test('full random games: 4 ranked rows, consistent totals, deterministic from the seed', () => {
   const play = (seed) => {
     const game = createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), seed });
@@ -212,7 +235,7 @@ test('full random games: 4 ranked rows, consistent totals, deterministic from th
     assert.equal(res.rows.length, 4);
     assert.ok(res.winners.length >= 1);
     for (const row of res.rows) {
-      assert.equal(row.cityValue, row.cash + row.landValue + row.buildingValue);
+      assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings);
       assert.ok(row.developed <= row.blocks);
     }
     const owned = res.rows.reduce((n, row) => n + row.blocks, 0);

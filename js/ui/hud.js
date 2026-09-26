@@ -85,7 +85,12 @@ function showCashDelta(card, delta) {
   card.querySelector('.stat--cash')?.classList.add(`is-${dir}`);
   const chip = h('span', { class: `cash-delta cash-delta--${dir}`, 'aria-hidden': 'true' }, formatDelta(delta));
   (card.querySelector('.stat--cash') ?? card).append(chip);
-  chip.addEventListener('animationend', () => chip.remove(), { once: true });
+
+  // Keep the semantic delta in the DOM for a minimum readable interval in all
+  // motion modes. CSS may animate it away sooner visually, but interrupted or
+  // very fast animations should not erase the feedback before assistive/test
+  // consumers can observe the transaction.
+  setTimeout(() => chip.remove(), reducedMotion() ? 1200 : 1800);
 }
 
 function animateMoney(game) {

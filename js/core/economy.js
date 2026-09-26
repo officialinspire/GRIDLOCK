@@ -25,6 +25,7 @@ export const TXN = Object.freeze({
   DEBT_WRITE_OFF: 'debt-write-off',
   FRESH_START: 'fresh-start',
   ACQUIRE: 'acquire',
+  EVENT_REPAIR: 'event-repair',
 });
 
 const cashFormat = new Intl.NumberFormat('en-US', {

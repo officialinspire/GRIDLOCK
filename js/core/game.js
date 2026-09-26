@@ -9,14 +9,20 @@ import {
 } from './board.js';
 import {
   calculateIncome, propertyValue, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
-  chargeUpkeep, upkeepFor, isInDistress,
+  chargeUpkeep, upkeepFor, isInDistress, charge, TXN,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
-import { createEventState, onRoundStart, effectiveIncome, EVENT_POOL } from './events.js';
+import { createEventState, onRoundStart, effectiveIncome, takeRepairExpenses, EVENT_POOL } from './events.js';
 import { randomSeed } from './rng.js';
 import { computeResults } from './scoring.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
+export const TURN_PHASES = Object.freeze({
+  MANAGE_CITY: 'manage-city',
+  PAVE_ROAD: 'pave-road',
+  CAPTURE_DEVELOP: 'capture-develop',
+  BONUS_ROAD: 'bonus-road',
+});
 
 /** Reasons placeRoad() can reject a move. */
 export const MOVE_ERRORS = Object.freeze({
@@ -24,6 +30,7 @@ export const MOVE_ERRORS = Object.freeze({
   INVALID: 'invalid-road',
   TAKEN: 'road-taken',
   IN_DISTRESS: 'in-distress',
+  WRONG_PHASE: 'wrong-turn-phase',
 });
 
 export function sanitizeName(name, fallback) {
@@ -32,13 +39,16 @@ export function sanitizeName(name, fallback) {
 }
 
 /**
- * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, eventPool?: object[] }} options
+ * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
  *   `seats` lists the joined seats (1–4). Play order is always by seat number.
  *   `seed` makes city events reproducible (random by default).
  *   `eventPool` overrides CITY_EVENTS.POOL (e.g. [] for an event-free game in tests).
  *   Economy values come from ECONOMY in config.js.
  */
-export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL } = {}) {
+export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents } = {}) {
+  if (gameType === 'standard' && seats?.length !== MAX_PLAYERS) {
+    throw new RangeError('Standard Game requires exactly 4 players');
+  }
   if (!Array.isArray(seats) || seats.length < MIN_PLAYERS || seats.length > MAX_PLAYERS) {
     throw new RangeError(`A game needs ${MIN_PLAYERS}–${MAX_PLAYERS} players`);
   }
@@ -83,6 +93,10 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL 
     events: createEventState(),
     results: null,
     eventPool,
+    turnPhase: TURN_PHASES.MANAGE_CITY,
+    pendingCaptures: [],
+    eventProbability,
+    maxActiveEvents,
   };
   beginTurn(game);
   return game;
@@ -129,6 +143,9 @@ export function roadsRemaining(game) {
 export function validateRoad(game, id) {
   if (game.phase !== PHASES.PLAYING) return MOVE_ERRORS.GAME_OVER;
   if (isInDistress(currentPlayer(game))) return MOVE_ERRORS.IN_DISTRESS;
+  if (![TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase)) {
+    return MOVE_ERRORS.WRONG_PHASE;
+  }
   if (!isValidRoad(game.board, id)) return MOVE_ERRORS.INVALID;
   if (hasRoad(game.board, id)) return MOVE_ERRORS.TAKEN;
   return null;
@@ -146,8 +163,30 @@ export function beginTurn(game) {
   // Upkeep is charged after income. It is the only thing that can push cash below $0
   // (financial distress — resolved via core/finance.js before the player can pave).
   game.turnStartUpkeep = { seat: player.seat, amount: chargeUpkeep(game, player), distress: isInDistress(player) };
+  const repairs = takeRepairExpenses(game, player.seat);
+  const repairAmount = repairs.reduce((sum, repair) => sum + repair.amount, 0);
+  charge(game, player, repairAmount, TXN.EVENT_REPAIR, { blocks: repairs.map((repair) => repair.block) });
+  game.turnStartRepair = { seat: player.seat, amount: repairAmount, distress: isInDistress(player) };
   player.lastEconomicRound = game.round;
+  game.turnPhase = TURN_PHASES.MANAGE_CITY;
+  game.pendingCaptures = [];
   return game.turnStartIncome;
+}
+
+/** The deliberate boundary between managing property and committing to a road. */
+export function startPaving(game) {
+  if (game.phase !== PHASES.PLAYING || game.turnPhase !== TURN_PHASES.MANAGE_CITY) return false;
+  if (isInDistress(currentPlayer(game))) return false;
+  game.turnPhase = TURN_PHASES.PAVE_ROAD;
+  return true;
+}
+
+/** Resolve the next captured block after building now or intentionally leaving it vacant. */
+export function resolveCapture(game, blockId = game.pendingCaptures[0]) {
+  if (game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return false;
+  game.pendingCaptures.shift();
+  if (!game.pendingCaptures.length) game.turnPhase = TURN_PHASES.BONUS_ROAD;
+  return true;
 }
 
 /**
@@ -161,8 +200,11 @@ export function settleFinalEconomy(game) {
     if ((player.lastEconomicRound ?? 0) >= game.round) continue;
     const income = payTurnIncome(game, player, effectiveIncome(game, player.seat));
     const upkeep = chargeUpkeep(game, player);
+    const repairs = takeRepairExpenses(game, player.seat);
+    const repair = repairs.reduce((sum, item) => sum + item.amount, 0);
+    charge(game, player, repair, TXN.EVENT_REPAIR, { blocks: repairs.map((item) => item.block) });
     player.lastEconomicRound = game.round;
-    settlements.push({ seat: player.seat, income, upkeep, distress: isInDistress(player) });
+    settlements.push({ seat: player.seat, income, upkeep, repair, distress: isInDistress(player) });
   }
   game.finalSettlement = { round: game.round, players: settlements };
   return game.finalSettlement;
@@ -175,7 +217,7 @@ export function settleFinalEconomy(game) {
  * Returns { roundEnded, event: { expired, started } | null, turnIncome }.
  */
 export function endTurn(game) {
-  const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null };
+  const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
     game.turnIndex = 0;
@@ -187,6 +229,7 @@ export function endTurn(game) {
   }
   summary.turnIncome = beginTurn(game);
   summary.turnUpkeep = game.turnStartUpkeep;
+  summary.turnRepair = game.turnStartRepair;
   return summary;
 }
 
@@ -203,6 +246,16 @@ export function endTurn(game) {
  * { ok:true, road, seat, captured:[blockIds], reward, extraTurn, roundEnded, turnIncome, gameEnded }.
  */
 export function placeRoad(game, id) {
+  // Reject malformed/taken moves without advancing a phase or resolving a
+  // capture choice. This keeps failed input completely side-effect free.
+  if (game.phase !== PHASES.PLAYING) return { ok: false, error: MOVE_ERRORS.GAME_OVER };
+  if (isInDistress(currentPlayer(game))) return { ok: false, error: MOVE_ERRORS.IN_DISTRESS };
+  if (!isValidRoad(game.board, id)) return { ok: false, error: MOVE_ERRORS.INVALID };
+  if (hasRoad(game.board, id)) return { ok: false, error: MOVE_ERRORS.TAKEN };
+  // Programmatic callers from before turn phases existed mean “leave captured
+  // blocks vacant and continue”. The UI always resolves each choice explicitly.
+  while (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length) resolveCapture(game);
+  if (game.turnPhase === TURN_PHASES.MANAGE_CITY) startPaving(game);
   const error = validateRoad(game, id);
   if (error) return { ok: false, error };
 
@@ -226,7 +279,7 @@ export function placeRoad(game, id) {
 
   const result = {
     ok: true, road: id, seat, captured, reward,
-    extraTurn: false, roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, gameEnded: false,
+    extraTurn: false, roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null, gameEnded: false,
   };
 
   // Every road paved = every block enclosed. (Not "every block owned": abandoned
@@ -240,6 +293,8 @@ export function placeRoad(game, id) {
     result.gameEnded = true;
   } else if (captured.length > 0) {
     result.extraTurn = true;
+    game.pendingCaptures = [...captured];
+    game.turnPhase = TURN_PHASES.CAPTURE_DEVELOP;
   } else {
     Object.assign(result, endTurn(game));
   }

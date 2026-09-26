@@ -11,6 +11,14 @@
 }
 @keyframes screen-in { from { opacity: 0; transform: translateY(6px); } }
 
+/* Each menu arrives as a short paper deal; nothing loops after settling. */
+.screen--page:not([hidden]) .page-header { animation: paper-deal 320ms var(--ease-pop) both; }
+.screen--page:not([hidden]) .page-body,
+.screen--page:not([hidden]) .howto-grid { animation: paper-deal 420ms 80ms var(--ease-pop) both; }
+@keyframes paper-deal {
+  from { opacity: 0; transform: translateY(18px) rotate(-1.5deg) scale(.97); }
+}
+
 /* ---------- Title ---------- */
 .screen--title {
   position: relative;
@@ -27,6 +35,31 @@
   width: min(560px, 90vw, 58vh);
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
   animation: logo-drop 600ms var(--ease-pop) both;
+}
+.screen--title:not([hidden]) .city-edition { animation: sign-settle 520ms 180ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card { animation: paper-deal 460ms 280ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card .pin--left { animation: pin-settle 380ms 650ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .menu-card .pin--right { animation: pin-settle-right 380ms 700ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .title-skyline { animation: skyline-settle 900ms 100ms ease-out both; }
+@keyframes sign-settle { from { opacity: 0; transform: translateY(-14px) rotate(4deg); } }
+@keyframes pin-settle { from { opacity: 0; transform: translateY(-18px) rotate(-28deg) scale(1.15); } }
+@keyframes pin-settle-right { from { opacity: 0; transform: translateY(-18px) rotate(26deg) scale(1.15); } }
+@keyframes skyline-settle { from { opacity: 0; transform: translateX(-50%) translateY(18px); } }
+.city-edition {
+  display: grid;
+  place-items: center;
+  width: min(285px, 64vw);
+  margin: clamp(-48px, -5vh, -28px) 0 clamp(-32px, -4vh, -18px);
+  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, .45));
+}
+.city-edition span {
+  padding: 14% 8% 5%;
+  font-family: var(--font-display);
+  font-size: clamp(.9rem, 3.5vw, 1.25rem);
+  letter-spacing: .035em;
+  text-align: center;
+  color: var(--paper-hi);
+  text-shadow: 0 2px 0 var(--ink);
 }
 @keyframes logo-drop { from { transform: translateY(-24px) scale(0.94); opacity: 0; } }
 
@@ -80,6 +113,7 @@
 @media (max-height: 560px) and (orientation: landscape) {
   .screen--title { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; align-items: center; }
   .title-logo { width: min(420px, 44vw); }
+  .city-edition { position: absolute !important; left: 12%; bottom: 8%; width: 220px; }
   .menu-card { gap: 10px; padding: 26px 18px 18px; }
   .menu-card .btn--xl { min-height: 52px; font-size: 1.25rem; }
   .title-skyline { display: none; }
@@ -162,6 +196,9 @@
 
 /* Setup */
 .setup { display: grid; gap: 22px; padding-bottom: 24px; }
+.setup__mode { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 28px; padding: 14px 18px; }
+.setup__mode legend { padding: 0 8px; font-family: var(--font-display); font-size: 1.15rem; }
+.setup__mode label { cursor: pointer; }
 .setup__players {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

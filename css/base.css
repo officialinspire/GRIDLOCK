@@ -95,15 +95,38 @@ img { max-width: 100%; }
   text-align: center;
 }
 
+/*
+ * Cross-browser hardening:
+ * - Giving the board frame both axes avoids small WebKit aspect-ratio rounding
+ *   drift in short landscape layouts.
+ * - Rotated paper cards are flattened on narrow phones so their transformed
+ *   corners cannot grow the document's horizontal scroll area.
+ */
+.board-frame {
+  height: min(100cqw, 100cqh);
+}
+@media (max-width: 540px) {
+  .screen--page { overflow-x: clip; }
+  .howto-card { transform: none !important; max-width: 100%; min-width: 0; }
+}
+
+/*
+ * Reduced motion must remove delayed animations altogether. Merely shortening
+ * durations leaves elements sitting in backwards-filled opacity:0 keyframes
+ * during their original delays, which can blank menus in WebKit and makes
+ * reduced-motion feedback race the browser tests.
+ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 1ms !important;
-    transition-duration: 1ms !important;
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
 html[data-motion='reduced'] *,
 html[data-motion='reduced'] *::before,
 html[data-motion='reduced'] *::after {
-  animation-duration: 1ms !important;
-  transition-duration: 1ms !important;
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }

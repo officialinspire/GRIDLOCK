@@ -6,7 +6,7 @@ const KEY = 'gridlock.settings.v1';
 export function normalizeSettings(raw) {
   const out = { ...DEFAULT_SETTINGS };
   if (!raw || typeof raw !== 'object') return out;
-  for (const key of ['sound', 'confirmTaps', 'reducedMotion', 'showCoords']) {
+  for (const key of ['sound', 'confirmTaps', 'reducedMotion', 'showCoords', 'quickHandoff']) {
     if (typeof raw[key] === 'boolean') out[key] = raw[key];
   }
   return out;

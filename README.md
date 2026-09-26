@@ -1,10 +1,21 @@
 # Grid Lock City
 
-A papercraft tabletop city-building game for **2–4 players on one device**. It plays like Dots & Boxes with roads: pave streets between intersections, enclose city blocks to claim them, develop them into neighbourhoods, weather city events, and finish with the most valuable city.
+A papercraft tabletop city-building game designed for **exactly 4 players on one device**. A Custom Game preserves 2–3 player support. It plays like Dots & Boxes with roads: pave streets between intersections, enclose city blocks to claim them, develop them into neighbourhoods, weather city events, and finish with the most valuable city.
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is.
 
-**V1.0:** complete game loop, economy, development, bonuses, events, debt/bankruptcy, scoring, and a responsive papercraft UI for desktop, Android and iPhone.
+**V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.1 release notes
+
+- Standard play is explicitly four-player, with 2–4 seats retained under Custom Game.
+- Turn phases, queued double captures, bonus-road chains, handoffs, and final-round settlement have regression coverage.
+- Construction records actual paid cost separately from market value; final scoring uses configurable coefficients.
+- Events allow calm rounds, cap overlap, combine modifiers before board presentation, and respect civic shielding.
+- Distress, bankruptcy, and abandoned property now feed a quick contested-redevelopment flow.
+- Active games autosave defensively and restore board, economy, events, phases, bankruptcy state, and seeded RNG.
+- Chromium, WebKit, and Firefox smoke jobs cover desktop, touch, portrait, and landscape layouts in CI.
+- V1.1 retains all original sprite sheets byte-for-byte; GitHub Pages serves the complete game from the repository root.
 
 ---
 
@@ -19,19 +30,21 @@ ES modules don't load from `file://`, so open the game through a local server.
 
 ## How to play
 
-**Setup:** New Game, choose 2–4 seats, and optionally name each mayor. Everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty seats.
+**Setup:** Standard Game seats exactly four mayors. Custom Game allows 2–4 seats. Optionally name each mayor; everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty Custom seats.
 
 **Your turn**
-1. **Turn start:** you collect **income** from your developed blocks, then pay **upkeep** (5% land tax plus 5% of what's invested in buildings).
-2. **Pave one road:** tap the gap between two neighbouring intersections.
-3. **Capture:** if your road completes the **fourth side** of a block, you claim it (+$500), and one road can close two blocks. Capturing earns you **another road** straight away, so captures can chain. A road that closes nothing ends your turn.
-4. **Develop (any time on your turn):** tap one of your blocks to build Residential, Commercial, Park, Civic, Industrial or a Landmark, then upgrade it to Level 3. Vacant blocks earn nothing.
+1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
+2. **PAVE ROAD:** tap one gap between neighbouring intersections. A road that closes nothing passes play to the next mayor's MANAGE CITY phase.
+3. **CAPTURE / DEVELOP:** completing a block claims it (+$500). For each captured block—including both halves of a double capture—choose **Develop Now** or **Leave Vacant**.
+4. **BONUS ROAD:** after all capture choices are resolved, pave another road. Another capture repeats CAPTURE / DEVELOP and preserves normal Dots & Boxes chaining; a quiet bonus road ends the turn.
 
-**Each full round:** a **city event** is drawn, such as storms, fire, festivals, booms or a recession. These change income or building prices for 1–2 rounds. Civic buildings shield nearby blocks from emergencies.
+Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
-**Debt:** if upkeep takes you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** (other players can buy and restore them), the debt is wiped, and you restart with $2,000.
+**Each full round:** there is a 65% chance of a **city event** and otherwise a calm round. At most two events overlap. Civic buildings shield nearby blocks from emergencies and their repair bills.
 
-**End:** when every block is enclosed, any players who have not yet received that round's income/upkeep are settled first. The highest **City Value** (cash + land + actual construction cost invested) then wins. See [Scoring](#scoring).
+**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with $2,000.
+
+**End:** when every block is enclosed, unfinished income, upkeep and repairs are settled first. Highest **City Value** uses all cash and land plus 75% of actual construction investment. See [Scoring](#scoring).
 
 ### Controls
 
@@ -39,19 +52,23 @@ ES modules don't load from `file://`, so open the game through a local server.
 | --- | --- | --- |
 | Pave a road | Click the gap between two intersections (hover previews it in your colour) | **Tap twice**: the first tap highlights the road, the second paves it. This prevents misplaced roads on small screens and can be turned off in Settings. |
 | Inspect / develop a block | Click it: your blocks open the Build panel; others show in the side panel | Tap it: your blocks open the Build panel; others open a details sheet |
-| Keyboard | Tab to any road or block, then Enter/Space | n/a |
+| Keyboard | Tab into the board, use arrow keys between cells, Enter/Space to activate, Escape to cancel an armed road | n/a |
 | Pause, How To Play, quit | ⏸ button (top left) | same |
 
-Settings (saved on the device): sound effects, tap twice to pave, reduce motion (the OS setting is also respected), and show block coordinates.
+Settings (saved on the device): sound effects, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
+
+### Saving a local game
+
+Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely.
 
 ## Scoring
 
 `core/scoring.js` is pure and deterministic.
 
 - **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
-- **City Value** = cash + land value (price of every owned block) + the actual construction cost invested in retained building levels. Event discounts and surcharges change both cash paid and cost basis, so constructing never creates or destroys City Value by itself. Debt lowers it, and abandoned blocks count for nobody.
+- **City Value** uses configurable coefficients: 100% cash + 100% land + 75% of actual construction cost invested in retained levels. Development earns income and bonuses, but no longer converts spending automatically into equal score. Debt lowers value, and abandoned blocks count for nobody.
 - **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
-- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, and any distinctions. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
+- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
 - **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
 
 ## Economy
@@ -64,7 +81,8 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Capture reward | $500 per block claimed (a double capture pays $1,000) |
 | Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
 | Undeveloped blocks | $0 recurring income |
-| City value of property | Land value (suburbs $1,000 · midtown $1,500 · downtown $2,000) plus actual invested construction cost basis |
+| Property shown in HUD | Land value plus actual invested construction cost basis |
+| Final building score | 75% of actual invested construction cost basis |
 | Net worth | Cash plus net property value |
 
 ### Development
@@ -99,7 +117,7 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 | Commercial district | 3+ connected Commercial | +25% each |
 | Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +10% per park |
 | Mixed-use | A connected Residential/Commercial/Park cluster containing all three | +10% each member |
-| Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Hook only: `isProtected(block)` for future events |
+| Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Shields covered blocks from emergencies and their repair bills |
 
 `core/bonuses.js` → `refreshBonuses(board)` recomputes everything from scratch after every capture and every build/upgrade. The results are stored on each block as `bonuses`, `bonusIncome` and `protectedBy`. There's no incremental state, so nothing goes stale. Bonuses are a percentage of the block's **base** (level) income and never compound on each other. Each bonus type applies at most once per block, and connected groups are found with an iterative flood fill that tracks visited blocks, so cycles can't double count. Turn income pays base plus bonuses.
 
@@ -107,13 +125,13 @@ In the UI: the HUD income includes bonuses, with a small ★ and a tooltip givin
 
 ### City events
 
-After every full round (when play wraps back to the first seat), one event is drawn from a weighted pool, **before** that round's turn income is paid. The whole pool lives in `CITY_EVENTS` in `js/config.js`: weight, duration, text, card art, income multipliers per category, cost multipliers, targeting, and whether civic buildings mitigate it.
+After every full round, a configured probability check happens before turn income. A calm round starts no event, and no more than two different events can be active. The pool and pacing controls live in `CITY_EVENTS` in `js/config.js`.
 
 | Event | Kind | Rounds | Effect |
 | --- | --- | --- | --- |
 | Heavy Rain | emergency | 1 | Park income stops |
 | Snowstorm | emergency | 1 | All income −25% |
-| Fire | emergency | 2 | Up to 2 developed blocks (max 1 per player) earn nothing |
+| Fire | emergency | 2 | Up to 2 developed blocks earn nothing and owe $400 repairs next owner turn |
 | Power Outage | emergency | 1 | Commercial + Industrial income −50% |
 | City Festival | boon | 1 | Commercial + Landmark income +50% |
 | Housing Boom | boon | 2 | Residential income +50%, homes cost 25% more |
@@ -122,8 +140,9 @@ After every full round (when play wraps back to the first seat), one event is dr
 | Recession | downturn | 2 | All income −20%, construction 10% cheaper |
 
 How it stays safe (`core/events.js`):
-- **Nothing is written:** events never touch blocks, cash or ownership. `game.events.active` holds `{ id, startRound, endRound, targets }`, and income and costs are derived from that list whenever they're needed. An event expires by being removed from the list, so it can't leave a permanent change behind.
+- **Temporary effects:** events never rewrite blocks or ownership. Income and construction modifiers are derived from the active list; one-time repair bills are queued explicitly and charged once at the owner's next turn.
 - **No duplicates:** re-drawing an active event refreshes its duration instead of adding a second copy. Overlapping different events multiply, clamped to ×0–×2.
+- **Calm pacing:** `ROUND_PROBABILITY` controls whether a round draws anything and `MAX_ACTIVE` caps simultaneous events.
 - **Civic mitigation:** emergencies skip any block inside a civic protection radius (`isProtected`). This is checked live, so building a civic mid-event helps immediately.
 - **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Add `?seed=123` to the URL to replay a game's events. Fire is capped and spread out: at most 2 targets, 1 per player.
 - **Prices and value:** cost events change the actual price paid. That amount becomes the level's invested cost basis and is used by upkeep, refunds, property City Value and final scoring. A separate list-price market value is retained only as optional information.
@@ -134,15 +153,14 @@ In the UI, a papercraft event card lists the affected blocks, anything shielded,
 
 Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 
-- **Upkeep:** charged at the start of each turn, **after** income. It's 5% of each owned block's land value (idle land costs money) plus 5% of the development cost invested in it. This is the only way cash can go below $0; voluntary spending never overdraws.
+- **Upkeep:** charged after income: 6% of owned land value plus 7% of invested construction cost. Idle expansion and aggressive building now carry meaningful risk without making ordinary developed blocks unprofitable.
+- **Emergency repairs:** targeted emergencies can queue a modest configured expense at the affected owner's next turn. Civic protection prevents both the income loss and repair charge.
 - **Financial distress:** cash < $0. This is derived from cash, not stored as a flag. While in distress, a player can't pave or buy. The distress panel opens automatically, after any event card is dismissed, and can be reopened with the **Resolve Debt** button.
 - **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
   - Roads stay as they are, the debt is written off, and the player stays in the game with **$2,000 Fresh Start** capital.
-- **Abandoned blocks:** any other player can buy one from the Build panel:
-  - **Restore**: land plus 40% of the ruin's invested cost; keeps its type and level.
-  - **Clear & rebuild**: land only; the block starts Vacant.
+- **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.
@@ -190,6 +208,8 @@ Notes:
 - **Touch targets:** road slots have enlarged hit areas, and all buttons are at least about 44px tall.
 - **Hover effects only where hover exists** (`@media (hover: none)`), so taps don't leave items looking stuck in a hover state.
 - **Clear states:** the current player's colour appears on the board frame, banner, card and prompt. Roads show an armed/preview state, disabled roads look disabled when the board is locked, and focus rings are visible.
+- **Not colour alone:** every player also has a persistent symbol and distinct road/block pattern, repeated in accessible labels.
+- **Keyboard board:** one board cell is tabbable at a time; arrow keys move spatially, Enter/Space activates, and Escape clears a road preview. Built and otherwise locked roads are inert.
 - **Screen readers:** every road and block has a spoken label, dialogs are native `<dialog>` elements, and the HUD, prompts and toasts announce changes politely.
 - **Safe areas:** iPhone notches and home indicators are respected (`viewport-fit=cover` plus `env(safe-area-inset-*)`).
 
@@ -219,6 +239,7 @@ js/
     scoring.js             City Value, ranking/tie-breakers, distinctions, final results
     finance.js             Distress, selling/downgrading, bankruptcy, abandoned-block redevelopment
     settings.js            Persisted settings (localStorage, fails safe)
+    persistence.js         Versioned active-game save, migration, validation and reset
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
@@ -251,6 +272,7 @@ tests/
   unit/assets.test.mjs     Originals unmodified (SHA-256), every sheet used, generated files exist, ART roles resolve
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
+  unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   smoke.mjs                Playwright smoke test across 5 viewports
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
@@ -304,4 +326,4 @@ engines. A browser job fails on an uncaught JavaScript error, console error,
 asset/request failure, assertion failure, or horizontal page overflow. Failure
 screenshots are uploaded as workflow artifacts.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, and animation/reduced-motion paths. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

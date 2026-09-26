@@ -9,7 +9,7 @@ import {
   isDeveloped, levelStats,
 } from '../../js/core/development.js';
 import { TXN, isValidAmount, calculateIncome, propertyValue, upkeepFor } from '../../js/core/economy.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
+import { createGame, placeRoad, resolveCapture, currentPlayer, getPlayer, playerStats, PHASES, TURN_PHASES } from '../../js/core/game.js';
 
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
 const cash = (game, seat) => getPlayer(game, seat).cash;
@@ -84,6 +84,18 @@ test('a captured block starts Vacant Level 0 with land value and no income', () 
 
 /* ---------------- purchases ---------------- */
 
+test('development is legal during management and for the queued capture, but not during road phases', () => {
+  const game = p1CapturesA1();
+  assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
+  assert.equal(quoteBuild(game, 'r0c0', 'park').ok, true, 'captured block can be developed immediately');
+  assert.equal(buildOnBlock(game, 'r0c0', 'park').ok, true);
+  resolveCapture(game, 'r0c0');
+  assert.equal(game.turnPhase, TURN_PHASES.BONUS_ROAD);
+  assert.equal(quoteUpgrade(game, 'r0c0').error, DEV_ERRORS.WRONG_PHASE);
+  placeRoad(game, 'h-6-5');
+  assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
+});
+
 test('building deducts cash immediately and the block stores type/level/value/income', () => {
   const game = p1CapturesA1();
   const q = quoteBuild(game, 'r0c0', 'commercial');
@@ -101,11 +113,13 @@ test('building deducts cash immediately and the block stores type/level/value/in
   assert.deepEqual(game.ledger.at(-1), {
     seat: 1, delta: -1500, balance: 11000, reason: TXN.BUILD, round: 1, block: 'r0c0', type: 'commercial', level: 1,
   });
-  assert.deepEqual(game.lastDevelopment, { block: 'r0c0', seat: 1, type: 'commercial', level: 1 });
+  assert.deepEqual(game.lastDevelopment, { block: 'r0c0', seat: 1, type: 'commercial', level: 1, fromLevel: 0 });
 
   // HUD stats reflect it.
   assert.deepEqual(playerStats(game, getPlayer(game, 1)), {
-    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0, upkeep: 50 + 75, distress: false, bankruptcies: 0,
+    cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0,
+    upkeep: Math.round(1000 * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100) + Math.round(1500 * ECONOMY.FINANCE.UPKEEP_PERCENT / 100),
+    distress: false, bankruptcies: 0,
     bonus: 0, property: 2500, netWorth: 13500,
   });
 });
@@ -119,6 +133,9 @@ test('upgrades go Level 1 → 2 → 3 with increasing costs, deducted immediatel
   assert.deepEqual({ ok: q2.ok, level: q2.level, cost: q2.cost, income: q2.income, incomeGain: q2.incomeGain },
     { ok: true, level: 2, cost: 1500, income: 600, incomeGain: 300 });
   assert.equal(upgradeBlock(game, 'r0c0').ok, true);
+  assert.deepEqual(game.lastDevelopment, {
+    block: 'r0c0', seat: 1, type: 'residential', level: 2, fromLevel: 1,
+  });
   assert.equal(cash(game, 1), 10000);
   let a1 = getBlockById(game.board, 'r0c0');
   assert.deepEqual([a1.level, a1.income, a1.value], [2, 600, 1000 + 2500]);
@@ -127,6 +144,7 @@ test('upgrades go Level 1 → 2 → 3 with increasing costs, deducted immediatel
   const r3 = upgradeBlock(game, 'r0c0');
   assert.equal(r3.ok, true);
   assert.equal(r3.cost, 2000);
+  assert.equal(game.lastDevelopment.fromLevel, 2, 'rapid upgrades retain the previous visual level');
   assert.equal(cash(game, 1), 8000);
   a1 = getBlockById(game.board, 'r0c0');
   assert.deepEqual([a1.type, a1.level, a1.income, a1.value], ['residential', 3, 900, 1000 + 4500]);
@@ -236,7 +254,8 @@ test('developed income is paid at the start of the owner\'s next turn', () => {
   placeRoad(game, 'h-6-4'); // → P3
   placeRoad(game, 'h-6-3'); // → P4
   const upkeep = upkeepFor(game.board, 1); // land tax + development upkeep
-  assert.equal(upkeep, 50 + Math.round((1750 + 2625) * ECONOMY.FINANCE.UPKEEP_PERCENT / 100));
+  assert.equal(upkeep, Math.round(1000 * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100)
+    + Math.round((1750 + 2625) * ECONOMY.FINANCE.UPKEEP_PERCENT / 100));
   const r = placeRoad(game, 'h-6-2'); // → P1's turn begins
   assert.deepEqual(r.turnIncome, { seat: 1, amount: 1200 });
   assert.deepEqual(r.turnUpkeep, { seat: 1, amount: upkeep, distress: false });

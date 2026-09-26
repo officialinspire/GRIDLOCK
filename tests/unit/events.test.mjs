@@ -9,6 +9,7 @@ import {
   EVENT_POOL, getEventDef, drawEvent, drawableEvents, startEvent, expireEvents, onRoundStart,
   incomeMultiplier, effectiveIncome, effectiveBlockIncome, costMultiplier, eligibleTargets,
   eventFootprint, roundsLeft, blockImpacts, blockEventState,
+  takeRepairExpenses,
 } from '../../js/core/events.js';
 import { calculateIncome, isValidAmount, TXN } from '../../js/core/economy.js';
 import { scorePlayer } from '../../js/core/scoring.js';
@@ -18,7 +19,7 @@ import { getSpriteRect } from '../../js/assets.js';
 
 const seats = (n = 4) => Array.from({ length: n }, (_, i) => ({ seat: i + 1 }));
 const calm = () => createGame({ seats: seats(), seed: 1, eventPool: [] });
-const only = (id, seed = 1) => createGame({ seats: seats(), seed, eventPool: [getEventDef(id)] });
+const only = (id, seed = 1) => createGame({ seats: seats(), seed, eventPool: [getEventDef(id)], eventProbability: 1 });
 
 /** Develops a block for a seat directly and refreshes bonuses. */
 function dev(game, row, col, seat, type, level = 1) {
@@ -138,6 +139,33 @@ test('events last exactly `duration` rounds and then expire', () => {
   const r5 = finishRound(game);
   assert.deepEqual(r5.event.expired.map((e) => e.id), ['housing-boom']);
   assert.equal(game.events.active.length, 0);
+});
+
+test('rounds can be calm and simultaneous events are capped', () => {
+  const calmGame = createGame({ seats: seats(), seed: 1, eventProbability: 0 });
+  const calmRound = finishRound(calmGame);
+  assert.equal(calmRound.event.started, null);
+  assert.equal(calmRound.event.calm, true);
+
+  const capped = createGame({ seats: seats(), seed: 1, eventProbability: 1, maxActiveEvents: 1 });
+  startEvent(capped, 'housing-boom');
+  const round = finishRound(capped);
+  assert.equal(round.event.started, null);
+  assert.equal(capped.events.active.length, 1);
+});
+
+test('targeted emergencies queue modest repair expenses for the owner turn', () => {
+  const game = calm();
+  const block = dev(game, 0, 0, 2, 'commercial');
+  const fire = startEvent(game, 'fire');
+  assert.deepEqual(fire.targets, [block.id]);
+  assert.equal(game.events.repairs[0].amount, getEventDef('fire').repairCost);
+  const before = getPlayer(game, 2).cash;
+  const result = placeRoad(game, 'h-6-5');
+  assert.equal(result.turnRepair.amount, getEventDef('fire').repairCost);
+  assert.equal(getPlayer(game, 2).cash, before + effectiveIncome(game, 2)
+    - result.turnUpkeep.amount - result.turnRepair.amount);
+  assert.deepEqual(takeRepairExpenses(game, 2), [], 'repair is charged once');
 });
 
 test('expireEvents is idempotent and only removes finished events', () => {
@@ -313,9 +341,10 @@ test('cost modifiers change quotes and the amount charged, then revert', () => {
   assert.equal(park.investedCostBasis, base / 2, 'cost basis is what was actually paid');
   assert.equal(park.value, park.price + base / 2, 'scoring value uses cost basis');
   assert.equal(park.marketValue, park.price + base, 'optional market value remains list-priced');
-  assert.equal(getPlayer(game, 1).cash + park.value, worthBefore, 'discount creates no free City Value');
-  assert.equal(scorePlayer(game, getPlayer(game, 1)).cityValue, worthBefore,
-    'final scoring uses actual cost basis');
+  assert.equal(getPlayer(game, 1).cash + park.value, worthBefore, 'accounting value uses actual cost basis');
+  assert.equal(scorePlayer(game, getPlayer(game, 1)).cityValue,
+    worthBefore - Math.round((base / 2) * (1 - ECONOMY.SCORING.INVESTED_BUILDING)),
+    'final scoring applies the configured building coefficient to actual cost');
   assert.deepEqual(game.ledger.at(-1).delta, -base / 2);
 
   game.round = 5;
@@ -378,7 +407,8 @@ test('full random games with events: valid balances, reconciled ledger, clean ex
       }
       assert.equal(new Set(game.events.active.map((e) => e.id)).size, game.events.active.length, 'no duplicate events');
     }
-    assert.equal(events, game.round - 1, 'exactly one event per completed round');
+    assert.ok(events <= game.round - 1, 'calm rounds may have no event');
+    assert.ok(game.events.active.length <= CITY_EVENTS.MAX_ACTIVE);
     assert.equal(game.events.history.length, events);
     for (const p of game.players) {
       const sum = game.ledger.filter((e) => e.seat === p.seat).reduce((n, e) => n + e.delta, 0);

@@ -41,6 +41,19 @@ export const ART = Object.freeze({
     bankrupt: 'effects:demolish',
   }),
 
+  /** Lightweight cutout accents layered only on blocks inside an event footprint. */
+  event: Object.freeze({
+    'heavy-rain': ['effects:rain', 'effects:splash'],
+    snowstorm: ['effects:snow'],
+    fire: ['effects:boom', 'props:hydrant'],
+    'power-outage': ['effects:alert'],
+    'city-festival': ['effects:confetti'],
+    'housing-boom': ['effects:boost'],
+    'beautification-grant': ['effects:sparkle'],
+    'economic-boom': ['effects:star-burst'],
+    recession: ['effects:smoke'],
+  }),
+
   /** Table decoration around the board (desktop only; never on the play grid). */
   tableDecor: Object.freeze([
     { sprite: 'props:tree-oak', spot: 'tl' },
@@ -55,6 +68,7 @@ export const ART = Object.freeze({
     { sprite: 'props:streetlamp', spot: 'l2' },
     { sprite: 'props:van-blue', spot: 'r1' },
     { sprite: 'props:tree-pine', spot: 'r2' },
+    { sprite: 'props:fredericksburg-sign', spot: 'city' },
   ]),
 });
 

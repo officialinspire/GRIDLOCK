@@ -36,15 +36,23 @@
       <h1 id="title-heading" class="visually-hidden">Grid Lock City</h1>
 
       <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
+      <div class="city-edition" data-sprite="title:hanging-sign" data-label="Fredericksburg, Virginia edition">
+        <span>Fredericksburg, Virginia</span>
+      </div>
 
       <nav class="menu-card paper" aria-label="Main menu">
         <span class="pin pin--left" data-sprite="title:pin-red"></span>
         <span class="pin pin--right" data-sprite="title:pin-blue"></span>
 
+        <button class="btn btn--gold btn--xl" id="continue-game" hidden>
+          <span class="btn__icon" data-sprite="icons:play"></span>
+          <span>Continue Game</span>
+        </button>
         <button class="btn btn--gold btn--xl" data-nav="setup" data-autofocus>
           <span class="btn__icon" data-sprite="icons:play"></span>
           <span>New Game</span>
         </button>
+        <button class="btn btn--sm" id="discard-save" hidden>Discard Saved Game</button>
         <button class="btn btn--xl" data-nav="howto">
           <span class="btn__icon" data-sprite="icons:info"></span>
           <span>How To Play</span>
@@ -58,7 +66,7 @@
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Local play</strong>
         <span>2–4 players · one device</span>
-        <span class="title-note__ver">v1.0</span>
+        <span class="title-note__ver">v1.1</span>
       </aside>
 
       <div class="title-skyline" data-sprite="title:skyline"></div>
@@ -83,7 +91,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:road"></span>
           <h3>Pave a Road</h3>
-          <p>On your turn, tap the gap between two neighbouring intersections to pave one road. Players go in seat order: 1 → 2 → 3 → 4.</p>
+          <p><strong>Standard Game is for exactly four players.</strong> Each turn starts at MANAGE CITY; when ready, choose PAVE ROAD and tap a gap. A “Pass to…” card protects hot-seat turns unless Quick Handoff is enabled.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:star"></span>
@@ -93,7 +101,7 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:swap"></span>
           <h3>Keep Going</h3>
-          <p>Claiming a block earns you another road straight away, so you can chain captures. If your road closes nothing, play passes on.</p>
+          <p>After a capture, resolve CAPTURE / DEVELOP for each new block, then take your BONUS ROAD. Captures can chain. A road that closes nothing passes play only after you deliberately entered PAVE ROAD.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:coins"></span>
@@ -104,26 +112,26 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:building"></span>
           <h3>Develop</h3>
-          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). On your turn, tap one of your blocks to build Residential, Commercial, Park, Civic, Industrial or a Landmark, then upgrade it up to <strong>Level 3</strong> for more income.</p>
-          <p>Costs are paid immediately. You can also leave a block vacant.</p>
+          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). Choose <strong>Develop Now</strong> or <strong>Leave Vacant</strong>; double captures are offered one at a time. During a later MANAGE CITY phase, tap your blocks to build or upgrade up to <strong>Level 3</strong>.</p>
+          <p>Costs are paid immediately. Once you choose PAVE ROAD, management ends for that turn unless you capture another block.</p>
           <p><strong>★ Bonuses:</strong> 3+ connected homes or shops form a district, parks boost the homes next to them, and a connected home + shop + park cluster earns a mixed-use bonus.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:clock"></span>
           <h3>City Events</h3>
-          <p>After every full round a city event is drawn: storms, fires, festivals, booms and recessions change income or building prices for a round or two.</p>
+          <p>After a full round there may be a calm round or a city event. At most two overlap; storms, fires, festivals, booms and recessions change income, prices or modest repair costs.</p>
           <p>Emergencies skip blocks inside a <strong>civic building's</strong> protection zone.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:restart"></span>
           <h3>Debt &amp; Bankruptcy</h3>
-          <p>Every turn you pay <strong>upkeep</strong>: a small land tax plus maintenance on your buildings. If it pushes you below $0, sell or downgrade buildings (50% back) before you can play on.</p>
-          <p>If even that can't cover it, declare bankruptcy: your blocks are <strong>abandoned</strong>, the debt is wiped, and you restart with fresh capital. Other mayors can buy and restore abandoned blocks.</p>
+          <p>Every turn you pay <strong>upkeep</strong>: land tax plus building maintenance, and some emergencies add a repair bill. If this pushes you below $0, sell or downgrade buildings before playing.</p>
+          <p>If even that can't cover it, declare bankruptcy. Eligible mayors then submit quick sealed bids to restore or clear each abandoned property; the former owner cannot bid.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When every block is enclosed, every mayor finishes the same economic round. Highest <strong>City Value</strong> wins: cash + land + actual construction cost invested.</p>
+          <p>When every block is enclosed, every mayor finishes the same economic round. Highest <strong>City Value</strong> wins: all cash + all land + 75% of actual construction investment.</p>
           <p>Ties go to more blocks, then more developed blocks, then more cash. Awards like Most Blocks and Greenest City go to standouts too.</p>
         </article>
       </div>
@@ -148,6 +156,10 @@
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
             <input type="checkbox" class="toggle" name="confirmTaps">
+          </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
+            <input type="checkbox" class="toggle" name="quickHandoff">
           </label>
         </fieldset>
 
@@ -177,6 +189,11 @@
       </header>
 
       <form class="page-body setup" id="setup-form" autocomplete="off" novalidate>
+        <fieldset class="paper setup__mode">
+          <legend>Game type</legend>
+          <label><input type="radio" name="gameType" value="standard" checked> <strong>Standard Game</strong> · exactly 4 players</label>
+          <label><input type="radio" name="gameType" value="custom"> <strong>Custom Game</strong> · 2–4 players</label>
+        </fieldset>
         <div class="setup__players" id="setup-players"></div>
 
         <div class="setup__footer paper">
@@ -213,6 +230,14 @@
 
         <div class="board-area">
           <div class="table-decor" data-art-decor="tableDecor" aria-hidden="true"></div>
+          <aside class="district-legend paper" aria-label="City district legend">
+            <strong>Fredericksburg</strong>
+            <span class="district-key district-key--suburbs">Suburbs</span>
+            <span class="district-key district-key--midtown">Midtown</span>
+            <span class="district-key district-key--downtown">Downtown</span>
+          </aside>
+          <div class="chain-meter" id="chain-meter" role="status" aria-live="polite" hidden></div>
+          <div class="economy-summary" id="economy-summary" role="status" aria-live="polite" hidden></div>
           <div class="board-frame paper" id="board-frame">
             <div class="board" id="board" role="group" aria-label="City blocks"></div>
           </div>
@@ -227,14 +252,35 @@
         <button class="btn btn--gold" id="action-results" hidden>
           <span class="btn__icon" data-sprite="icons:trophy"></span><span>Results</span>
         </button>
-        <button class="btn" id="action-build" disabled title="Coming soon">
+        <button class="btn" id="action-build" disabled title="Select one of your blocks to develop it">
           <span class="btn__icon" data-sprite="icons:building"></span><span>Build</span>
+        </button>
+        <button class="btn btn--gold" id="action-pave">
+          <span class="btn__icon" data-sprite="icons:road"></span><span>Pave Road</span>
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
         <button class="btn btn--danger" id="action-finance" hidden>
           <span class="btn__icon" data-sprite="icons:coins"></span><span>Resolve Debt</span>
         </button>
       </footer>
+
+      <dialog class="modal paper capture-choice" id="capture-choice-dialog" aria-labelledby="capture-choice-title">
+        <h3 id="capture-choice-title">Block captured!</h3>
+        <p id="capture-choice-copy"></p>
+        <div class="capture-choice__actions">
+          <button type="button" class="btn btn--gold" data-capture-choice="develop">
+            <span class="btn__icon" data-sprite="icons:building"></span><span>Develop Now</span>
+          </button>
+          <button type="button" class="btn" data-capture-choice="vacant">Leave Vacant</button>
+        </div>
+      </dialog>
+
+      <dialog class="modal paper handoff-card" id="handoff-dialog" aria-labelledby="handoff-title">
+        <p class="handoff-card__eyebrow">Next mayor</p>
+        <h3 id="handoff-title">Pass to Player</h3>
+        <p id="handoff-copy">Hand the device to the next player.</p>
+        <button type="button" class="btn btn--gold" id="handoff-ready">I'm Ready</button>
+      </dialog>
 
       <dialog class="modal paper finance-panel" id="finance-dialog" aria-labelledby="finance-title">
         <div class="finance-panel__body" id="finance-body"></div>
@@ -259,6 +305,9 @@
       </dialog>
 
       <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">
+        <div class="results__confetti" aria-hidden="true">
+          <span data-sprite="effects:confetti"></span><span data-sprite="effects:confetti"></span>
+        </div>
         <header class="results__head">
           <span class="results__trophy" data-sprite="icons:trophy"></span>
           <p class="results__kicker">City complete · final results</p>
@@ -266,6 +315,7 @@
           <p class="results__formula">City Value = cash + land + invested construction cost</p>
         </header>
         <ol class="results__grid" id="results-list"></ol>
+        <dl class="match-stats" id="match-stats" aria-label="Match statistics"></dl>
         <section class="results__awards" aria-labelledby="awards-heading">
           <h4 id="awards-heading" class="results__awards-title">City Distinctions</h4>
           <ul class="awards" id="results-awards"></ul>
@@ -292,9 +342,21 @@
           <button class="btn" data-dialog-action="howto">
             <span class="btn__icon" data-sprite="icons:info"></span><span>How To Play</span>
           </button>
-          <button class="btn btn--danger" data-dialog-action="quit">
-            <span class="btn__icon" data-sprite="icons:home"></span><span>Quit to Title</span>
+          <button class="btn" data-dialog-action="save-quit">
+            <span class="btn__icon" data-sprite="icons:home"></span><span>Save &amp; Quit</span>
           </button>
+          <button class="btn btn--danger" data-dialog-action="abandon">
+            <span class="btn__icon" data-sprite="icons:undo"></span><span>Abandon Game</span>
+          </button>
+        </div>
+      </dialog>
+
+      <dialog class="modal paper" id="abandon-dialog" aria-labelledby="abandon-heading">
+        <h3 id="abandon-heading" class="modal__title">Abandon this game?</h3>
+        <p>This permanently deletes the active save.</p>
+        <div class="modal__actions">
+          <button class="btn" data-abandon-action="cancel">Keep Playing</button>
+          <button class="btn btn--danger" data-abandon-action="confirm">Abandon Game</button>
         </div>
       </dialog>
     </section>

@@ -4,7 +4,8 @@ import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES,
+  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES,
+  startPaving, resolveCapture,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
@@ -24,6 +25,8 @@ import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { play } from './sfx.js';
+import { getSettings } from './settingsView.js';
+import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -35,6 +38,18 @@ let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
 
 export const getGame = () => game;
+
+function refreshSavedGameControls() {
+  const saved = loadActiveGame();
+  $('#continue-game').hidden = !saved;
+  $('#discard-save').hidden = !saved;
+  return saved;
+}
+
+function autosave() {
+  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+  refreshSavedGameControls();
+}
 
 function renderInspector(blockId, panel = $('#inspector')) {
   const block = blockId && game ? getBlockById(game.board, blockId) : null;
@@ -83,9 +98,13 @@ function renderPrompt() {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
     return;
   }
-  prompt.textContent = chain > 0
-    ? `${p.name}: bonus road! Pave another.`
-    : `${p.name}: pave a road.`;
+  const copy = {
+    [TURN_PHASES.MANAGE_CITY]: 'MANAGE CITY · Develop or upgrade, then choose Pave Road.',
+    [TURN_PHASES.PAVE_ROAD]: 'PAVE ROAD · Choose one open road.',
+    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Resolve each newly claimed block.',
+    [TURN_PHASES.BONUS_ROAD]: 'BONUS ROAD · Pave another road.',
+  }[game.turnPhase];
+  prompt.textContent = `${p.name}: ${copy}`;
 }
 
 /** Shows results once the final road's feedback (capture pop, toasts) has played and any dialog is closed. */
@@ -107,6 +126,9 @@ function renderActions() {
   const manageable = game && canManage(game, getSelectedBlock());
   build.disabled = !manageable;
   build.title = manageable ? 'Develop the selected block' : 'Select one of your blocks to develop it';
+  const pave = $('#action-pave');
+  pave.hidden = !(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY);
+  pave.disabled = distress;
 }
 
 function render() {
@@ -120,11 +142,48 @@ function render() {
 
 /** Re-render after a build/upgrade and celebrate any new bonus income. */
 function handleDevelopment({ bonusBefore }) {
-  render();
+  const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
+  if (captured) resolveCapture(game, captured);
+  autosave();
   play('build');
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
+  if (captured) showCaptureChoice();
+  else render();
+}
+
+function showCaptureChoice() {
+  const dialog = $('#capture-choice-dialog');
+  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP) {
+    if (dialog.open) dialog.close();
+    render();
+    return;
+  }
+  const block = getBlockById(game.board, game.pendingCaptures[0]);
+  $('#capture-choice-copy').textContent = `Block ${block.label} is yours. Develop it now, or leave it vacant and continue to your bonus road.`;
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector('[data-capture-choice="develop"]').focus();
+  render();
+}
+
+let handoffReady = null;
+function showHandoff(player, onReady) {
+  if (getSettings().quickHandoff) return onReady();
+  const dialog = $('#handoff-dialog');
+  dialog.style.setProperty('--player', player.hex);
+  $('#handoff-title').textContent = `Pass to ${player.name}`;
+  $('#handoff-copy').textContent = `${player.symbol} · Hand the device to ${player.name}, then continue.`;
+  handoffReady = onReady;
+  if (!dialog.open) dialog.showModal();
+  $('#handoff-ready').focus();
+}
+
+function leaveCapturedBlock(blockId) {
+  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
+  resolveCapture(game, blockId);
+  autosave();
+  showCaptureChoice();
 }
 
 function handleBlockSelect(id) {
@@ -140,7 +199,7 @@ function handleBlockSelect(id) {
 }
 
 function handleRoadArmed() {
-  play('pave');
+  play('tick');
   if (!armHintShown) {
     armHintShown = true;
     toast('Tap the highlighted road again to pave it.', { duration: 2200 });
@@ -152,6 +211,57 @@ function flashFrame() {
   frame.classList.remove('is-capture');
   void frame.offsetWidth;
   frame.classList.add('is-capture');
+}
+
+function chainLabel(count) {
+  if (count >= 5) return `GRID LOCK ×${count}`;
+  if (count === 4) return 'MOMENTUM ×4';
+  if (count === 3) return 'FLOW ×3';
+  if (count === 2) return 'CHAIN ×2';
+  return count === 1 ? 'CAPTURE ×1' : '';
+}
+
+function renderChain() {
+  const meter = $('#chain-meter');
+  meter.hidden = chain < 1;
+  meter.textContent = chainLabel(chain);
+  meter.dataset.chain = Math.min(chain, 5);
+  if (chain) {
+    meter.classList.remove('is-bumped');
+    void meter.offsetWidth;
+    meter.classList.add('is-bumped');
+  }
+}
+
+/** Brief, non-blocking breakdown of the income that was just paid. */
+function showEconomyFeedback(turnIncome, turnUpkeep, turnRepair) {
+  if (!turnIncome) return;
+  const seat = turnIncome.seat;
+  const gross = turnIncome.amount;
+  const upkeep = turnUpkeep?.amount ?? 0;
+  const repair = turnRepair?.amount ?? 0;
+  const net = gross - upkeep - repair;
+  const blocks = game.board.blocks.filter((b) => b.ownerSeat === seat && effectiveBlockIncome(game, b) > 0);
+  for (const block of blocks) {
+    const cell = document.querySelector(`[data-block="${block.id}"]`);
+    if (!cell) continue;
+    const chip = h('span', { class: `block-income block-income--seat-${seat}`, 'aria-hidden': 'true' },
+      `+${formatCash(effectiveBlockIncome(game, block))}`);
+    cell.append(chip);
+    setTimeout(() => chip.remove(), 1250);
+  }
+  const summary = $('#economy-summary');
+  summary.replaceChildren(
+    h('strong', {}, `+${formatCash(gross)}`),
+    h('span', {}, ` Gross Income − ${formatCash(upkeep)} Upkeep${repair ? ` − ${formatCash(repair)} Repairs` : ''} = `),
+    h('strong', {}, `${net < 0 ? '−' : '+'}${formatCash(Math.abs(net))} Net`),
+  );
+  summary.dataset.seat = seat;
+  summary.hidden = false;
+  summary.classList.remove('is-showing');
+  void summary.offsetWidth;
+  summary.classList.add('is-showing');
+  setTimeout(() => { summary.hidden = true; }, 1800);
 }
 
 
@@ -189,7 +299,8 @@ function handleRoad(id) {
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
-  play(n > 0 ? 'capture' : 'pave');
+  renderChain();
+  play(n > 0 ? 'capture' : 'pave', chain || 1);
 
   if (n > 0) {
     flashFrame();
@@ -198,6 +309,9 @@ function handleRoad(id) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
+    $('#board-frame').classList.add('is-city-complete');
+    clearActiveGame();
+    refreshSavedGameControls();
     setTimeout(() => {
       if (game?.results) play('win');
       showResults();
@@ -205,21 +319,34 @@ function handleRoad(id) {
     bus.emit('game:move', result);
     return;
   }
-  if (result.event?.started) {
-    play('event');
-    showEventCard(game, result.event.started, result.event.expired);
-  } else if (result.event?.expired.length) {
-    toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
-  }
-  const paid = result.turnIncome?.amount ?? 0;
-  const owed = result.turnUpkeep?.amount ?? 0;
-  if (result.turnIncome && (paid > 0 || owed > 0)) {
-    const payee = getPlayer(game, result.turnIncome.seat);
-    const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`].filter(Boolean);
-    toast(`${payee.name}: ${parts.join(', ')}`, { tone: result.turnUpkeep?.distress ? 'warn' : 'success' });
-  }
-  checkDistress();
-  bus.emit('game:move', result);
+  autosave();
+  if (n > 0) showCaptureChoice();
+  const finishTransition = () => {
+    if (result.event?.started) {
+      play('event');
+      showEventCard(game, result.event.started, result.event.expired);
+    } else if (result.event?.expired.length) {
+      toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
+    } else if (result.event?.calm) {
+      toast('Calm round · no new city event', { tone: 'success' });
+    }
+    const paid = result.turnIncome?.amount ?? 0;
+    const owed = result.turnUpkeep?.amount ?? 0;
+    const repairs = result.turnRepair?.amount ?? 0;
+    if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
+      showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
+      const payee = getPlayer(game, result.turnIncome.seat);
+      const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
+        repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
+      toast(`${payee.name}: ${parts.join(', ')}`, {
+        tone: result.turnUpkeep?.distress || result.turnRepair?.distress ? 'warn' : 'success',
+      });
+    }
+    checkDistress();
+    bus.emit('game:move', result);
+  };
+  if (result.turnIncome && result.turnIncome.seat !== mover.seat) showHandoff(currentPlayer(game), finishTransition);
+  else finishTransition();
 }
 
 /** Optional ?seed=123 in the URL makes city events reproducible (handy for bug reports). */
@@ -238,22 +365,56 @@ function startGame(setup) {
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
+  clearActiveGame();
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
+  $('#board-frame').classList.remove('is-city-complete');
   chain = 0;
+  renderChain();
   clearSelection();
   render();
   resetTo('game');
+  autosave();
   toast(`${currentPlayer(game).name} goes first`);
 }
 
-function quitToTitle() {
+function leaveForTitle() {
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
   clearSelection();
   game = null;
   resetTo('title');
+  refreshSavedGameControls();
+}
+
+function saveAndQuit() {
+  autosave();
+  leaveForTitle();
+}
+
+function abandonGame() {
+  clearActiveGame();
+  leaveForTitle();
+}
+
+function continueGame(saved = loadActiveGame()) {
+  if (!saved) return refreshSavedGameControls();
+  closeBuildPanel();
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+  clearToasts();
+  disarm();
+  clearSelection();
+  game = saved.game;
+  lastSetup = saved.setup;
+  chain = 0;
+  renderChain();
+  preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
+  render();
+  resetTo('game');
+  if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length) showCaptureChoice();
+  checkDistress();
+  toast('Game restored', { tone: 'success' });
 }
 
 function initDialogs() {
@@ -266,7 +427,8 @@ function initDialogs() {
     if (!action) return;
     pause.close();
     if (action === 'howto') showScreen('howto');
-    if (action === 'quit') quitToTitle();
+    if (action === 'save-quit') saveAndQuit();
+    if (action === 'abandon') $('#abandon-dialog').showModal();
   });
 
   const results = $('#results-dialog');
@@ -275,7 +437,14 @@ function initDialogs() {
     if (!action) return;
     results.close();
     if (action === 'rematch') startGame(lastSetup);
-    if (action === 'title') quitToTitle();
+    if (action === 'title') leaveForTitle();
+  });
+  const abandon = $('#abandon-dialog');
+  abandon.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-abandon-action]')?.dataset.abandonAction;
+    if (!action) return;
+    abandon.close();
+    if (action === 'confirm') abandonGame();
   });
 }
 
@@ -285,13 +454,44 @@ export function initGameView() {
   info.addEventListener('click', (e) => {
     if (e.target === info || e.target.closest('[data-info-close]')) info.close();
   });
-  initBuildPanel({ onChange: handleDevelopment });
-  initFinanceView({ onChange: () => render() });
+  initBuildPanel({ onChange: handleDevelopment, onLeave: ({ blockId }) => leaveCapturedBlock(blockId) });
+  initFinanceView({ onChange: () => { autosave(); render(); } });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
+  $('#action-pave').addEventListener('click', () => {
+    if (startPaving(game)) {
+      clearSelection();
+      disarm();
+      render();
+      autosave();
+    }
+  });
+  $('#capture-choice-dialog').addEventListener('cancel', (e) => e.preventDefault());
+  $('#capture-choice-dialog').addEventListener('click', (e) => {
+    const action = e.target.closest('[data-capture-choice]')?.dataset.captureChoice;
+    if (!action || !game?.pendingCaptures.length) return;
+    const blockId = game.pendingCaptures[0];
+    $('#capture-choice-dialog').close();
+    if (action === 'develop') openBuildPanel(game, blockId);
+    if (action === 'vacant') leaveCapturedBlock(blockId);
+  });
+  $('#handoff-dialog').addEventListener('cancel', (e) => e.preventDefault());
+  $('#handoff-ready').addEventListener('click', () => {
+    $('#handoff-dialog').close();
+    const ready = handoffReady;
+    handoffReady = null;
+    ready?.();
+  });
   initDialogs();
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });
   bus.on('game:start', startGame);
+  $('#continue-game').addEventListener('click', () => continueGame());
+  $('#discard-save').addEventListener('click', () => {
+    clearActiveGame();
+    refreshSavedGameControls();
+  });
+  bus.on('screen:shown', ({ name }) => { if (name === 'title') refreshSavedGameControls(); });
+  refreshSavedGameControls();
   renderInspector(null);
 }

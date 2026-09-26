@@ -24,7 +24,7 @@ export const getEventDef = (id) => BY_ID.get(id) ?? null;
 export const EVENT_POOL = POOL;
 
 export function createEventState() {
-  return { active: [], history: [], nextUid: 1 };
+  return { active: [], history: [], repairs: [], nextUid: 1 };
 }
 
 const clamp = (m) => Math.min(CITY_EVENTS.MAX_MULTIPLIER, Math.max(CITY_EVENTS.MIN_MULTIPLIER, m));
@@ -89,6 +89,14 @@ export function startEvent(game, defOrId) {
   };
   state.active.push(instance);
   state.history.push({ ...instance });
+  if (def.repairCost) {
+    for (const id of instance.targets) {
+      const block = getBlockById(game.board, id);
+      if (block?.ownerSeat != null && !(def.mitigation === 'civic' && isProtected(block))) {
+        state.repairs.push({ uid: instance.uid, eventId: def.id, block: id, seat: block.ownerSeat, amount: def.repairCost });
+      }
+    }
+  }
   return instance;
 }
 
@@ -103,9 +111,18 @@ export function expireEvents(game) {
 /** Called once at the start of every round after the first. Returns { expired, started }. */
 export function onRoundStart(game, pool = POOL) {
   const expired = expireEvents(game);
-  const def = drawEvent(game, pool);
+  const probability = game.eventProbability ?? CITY_EVENTS.ROUND_PROBABILITY;
+  const atCapacity = game.events.active.length >= (game.maxActiveEvents ?? CITY_EVENTS.MAX_ACTIVE);
+  const def = !atCapacity && nextRandom(game) < probability ? drawEvent(game, pool) : null;
   const started = def ? startEvent(game, def) : null;
-  return { expired, started };
+  return { expired, started, calm: !started };
+}
+
+/** Consume repair expenses due to a player at their next turn start. */
+export function takeRepairExpenses(game, seat) {
+  const due = game.events.repairs.filter((repair) => repair.seat === seat);
+  game.events.repairs = game.events.repairs.filter((repair) => repair.seat !== seat);
+  return due;
 }
 
 export const roundsLeft = (game, instance) => instance.endRound - game.round + 1;

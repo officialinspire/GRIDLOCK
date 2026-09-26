@@ -10,7 +10,7 @@ import { VACANT, CATEGORY_ORDER, getCategory } from './buildings.js';
 import { debit, canAfford, TXN, isValidAmount } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
 import { adjustedCost } from './events.js';
-import { currentPlayer, PHASES } from './game.js';
+import { currentPlayer, PHASES, TURN_PHASES } from './game.js';
 
 const DEV = ECONOMY.DEVELOPMENT;
 export const MAX_LEVEL = DEV.MAX_LEVEL;
@@ -24,6 +24,7 @@ export const DEV_ERRORS = Object.freeze({
   NOT_DEVELOPED: 'not-developed',
   MAX_LEVEL: 'max-level',
   INSUFFICIENT_FUNDS: 'insufficient-funds',
+  WRONG_PHASE: 'wrong-turn-phase',
 });
 
 /* ---------------- derived tables ---------------- */
@@ -99,6 +100,10 @@ function baseCheck(game, block) {
   if (!block) return DEV_ERRORS.NO_BLOCK;
   // Only the owner may develop, and only on their own turn (hot-seat play).
   if (block.ownerSeat == null || block.ownerSeat !== currentPlayer(game).seat) return DEV_ERRORS.NOT_OWNER;
+  const managing = game.turnPhase === TURN_PHASES.MANAGE_CITY;
+  const resolvingCapture = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP
+    && game.pendingCaptures[0] === block.id;
+  if (!managing && !resolvingCapture) return DEV_ERRORS.WRONG_PHASE;
   return null;
 }
 
@@ -147,6 +152,7 @@ export function quoteUpgrade(game, blockId) {
 
 function commit(game, block, quote, reason) {
   const player = currentPlayer(game);
+  const fromLevel = block.level;
   const paid = debit(game, player, quote.cost, reason, { block: block.id, type: quote.type, level: quote.level });
   // quote already checked affordability; this guards against state changing in between.
   if (!paid.ok) return { ok: false, error: DEV_ERRORS.INSUFFICIENT_FUNDS };
@@ -154,7 +160,7 @@ function commit(game, block, quote, reason) {
     constructionCosts: [...(block.constructionCosts ?? []), quote.actualCost],
   });
   refreshBonuses(game.board); // development changed
-  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level };
+  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, fromLevel };
   game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });
   return { ok: true, block: block.id, type: block.type, level: block.level, cost: quote.cost, income: block.income, value: block.value };
 }

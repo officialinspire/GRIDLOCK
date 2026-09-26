@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { SHEETS, getSpriteRect, parseSpriteRef, sheetSlug, GENERATED_DIR } from '../../js/assets.js';
 import { ART, allArtRefs, progressionProps } from '../../js/art.js';
 import { CATEGORY_ORDER, levelArt } from '../../js/core/buildings.js';
+import { CITY_EVENTS } from '../../js/config.js';
 import { SHEET_FILES, UI_CUTS, slug } from '../../tools/build-assets.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -76,6 +77,11 @@ test('every semantic art role resolves to a real sprite', () => {
     assert.ok(getSpriteRect(sheet, name), `ART → ${ref}`);
   }
   for (const seat of [1, 2, 3, 4]) assert.match(ART.owner.flag(seat), /^markers:flag-(red|blue|yellow|green)$/);
+});
+
+test('every city event has a lightweight board treatment', () => {
+  assert.deepEqual(Object.keys(ART.event).sort(), CITY_EVENTS.POOL.map((event) => event.id).sort());
+  for (const event of CITY_EVENTS.POOL) assert.ok(ART.event[event.id].length > 0, event.id);
 });
 
 test('visual progression adds props with level; buildings exist for every level', () => {
