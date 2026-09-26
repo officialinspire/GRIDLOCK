@@ -580,33 +580,149 @@ html[data-coords='on'] .block__coord { display: block; }
 }
 
 /* ---------- Results ---------- */
-.results { width: min(440px, calc(100vw - 32px)); text-align: center; }
-.results__trophy { width: 72px; margin: -8px auto 4px; display: block; }
-.results__list { display: grid; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
-.results__row {
+.results {
+  width: min(980px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 18px 18px 16px;
+  overflow-y: auto;
+  text-align: center;
+}
+.results__head { display: grid; justify-items: center; gap: 2px; margin-bottom: 12px; }
+.results__trophy { width: 64px; }
+.results__kicker { font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+.results__title { font-size: clamp(1.5rem, 4vw, 2.2rem); }
+.results__formula { font-size: 0.85rem; color: var(--ink-soft); }
+
+.results__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.result-card {
   --seat: var(--steel);
   display: grid;
-  grid-template-columns: 30px 30px 1fr auto;
-  grid-template-areas: 'rank token name score' 'rank token name worth';
+  align-content: start;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  text-align: left;
+  background: var(--paper-hi);
+  border: 3px solid var(--ink);
+  border-top: 10px solid var(--seat);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 0 rgba(29, 24, 18, 0.5);
+}
+.result-card--red { --seat: var(--p-red); }
+.result-card--blue { --seat: var(--p-blue); }
+.result-card--yellow { --seat: var(--p-yellow); }
+.result-card--green { --seat: var(--p-green); }
+.result-card.is-winner {
+  background: linear-gradient(180deg, #fff4cf, #fdeab0);
+  box-shadow: 0 0 0 3px var(--gold), 0 6px 0 rgba(29, 24, 18, 0.5), 0 10px 18px rgba(0, 0, 0, 0.3);
+}
+.result-card__head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.result-card__rank {
+  padding: 0 7px;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--paper-hi);
+  background: var(--ink);
+  border-radius: 6px;
+}
+.is-winner .result-card__rank { background: var(--gold-deep); }
+.result-card__token { width: 30px; }
+.result-card__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-card__crown { width: 34px; }
+.result-card__value { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.result-card__value span { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+.result-card__city-value { font-family: var(--font-display); font-weight: 400; font-size: 1.6rem; }
+.result-card__breakdown { font-size: 0.72rem; color: var(--ink-soft); }
+.result-card__stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 0.88rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+}
+.result-card__stats dt { color: var(--ink-soft); }
+.result-card__stats dd { margin: 0; font-weight: 900; text-align: right; font-variant-numeric: tabular-nums; }
+.result-card__stats dd.is-negative { color: var(--red-deep); }
+.result-card__best { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 800; }
+.result-card__best small { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+.result-card__best-art { width: 40px; }
+.result-card__ribbons { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.result-card__ribbons li {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px 1px 3px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  background: #fdf0c4;
+  border: 1.5px solid var(--gold-deep);
+  border-radius: 999px;
+}
+.ribbon-icon { width: 14px; }
+
+.results__awards { margin-bottom: 14px; }
+.results__awards-title { margin: 0 0 8px; font-family: var(--font-display); font-weight: 400; font-size: 1.2rem; }
+.awards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.award {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-areas: 'icon title' 'icon who' 'icon detail';
   align-items: center;
   column-gap: 8px;
-  padding: 6px 12px 6px 8px;
+  padding: 6px 10px 6px 6px;
   text-align: left;
-  background: rgba(255, 255, 255, 0.45);
-  border: 2px solid var(--paper-edge);
-  border-left: 8px solid var(--seat);
-  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, #2a62b8, var(--blue));
+  color: var(--paper-hi);
+  border: 2px solid var(--ink);
+  border-radius: 6px 6px 6px 18px;
+  box-shadow: 0 3px 0 rgba(29, 24, 18, 0.5);
 }
-.results__row--red { --seat: var(--p-red); }
-.results__row--blue { --seat: var(--p-blue); }
-.results__row--yellow { --seat: var(--p-yellow); }
-.results__row--green { --seat: var(--p-green); }
-.results__row.is-winner { background: #fdf0c4; border-color: var(--gold); border-left-color: var(--seat); }
-.results__rank { grid-area: rank; font-family: var(--font-display); font-size: 1.2rem; }
-.results__token { grid-area: token; width: 30px; }
-.results__name { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
-.results__score { grid-area: score; font-family: var(--font-display); font-size: 1.1rem; text-align: right; }
-.results__worth { grid-area: worth; font-size: 0.8rem; color: var(--ink-soft); text-align: right; }
+.award__icon { grid-area: icon; width: 32px; background-color: var(--paper-hi); border-radius: 50%; padding: 2px; }
+.award__title { grid-area: title; font-family: var(--font-display); font-weight: 400; font-size: 1rem; text-shadow: 0 1px 0 var(--ink); }
+.award__who { grid-area: who; font-weight: 900; font-size: 0.82rem; }
+.award__detail { grid-area: detail; font-size: 0.75rem; opacity: 0.9; }
+.award--none { display: block; background: var(--paper); color: var(--ink-soft); }
+
+.results__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.results__actions .btn { flex: 1 1 180px; max-width: 260px; }
+
+@media (max-width: 560px) {
+  .results { padding: 12px; }
+  .results__grid { grid-template-columns: 1fr; gap: 8px; }
+  .result-card { gap: 4px; padding: 8px 10px; }
+  .result-card__breakdown { display: none; }
+  .awards { grid-template-columns: 1fr 1fr; }
+  .results__actions .btn { flex-basis: 100%; max-width: none; }
+}
+@media (max-height: 560px) and (orientation: landscape) {
+  .results__trophy { display: none; }
+  .results__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .result-card__breakdown, .result-card__best { display: none; }
+}
 
 /* ---------- Money feedback ---------- */
 .player-card { position: relative; }

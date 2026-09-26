@@ -4,7 +4,7 @@ import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, standings, MOVE_ERRORS, PHASES,
+  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
@@ -20,6 +20,7 @@ import {
   renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock,
 } from './boardView.js';
 import { renderHud } from './hud.js';
+import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast } from './toast.js';
 
@@ -66,7 +67,7 @@ function renderInspector(blockId) {
 function renderPrompt() {
   const prompt = $('#turn-prompt');
   if (game.phase === PHASES.ENDED) {
-    prompt.textContent = 'Every block is claimed.';
+    prompt.textContent = 'The city is complete.';
     prompt.style.removeProperty('--player');
     return;
   }
@@ -82,7 +83,19 @@ function renderPrompt() {
     : `${p.name}: pave a road.`;
 }
 
+/** Shows results once the final road's feedback (capture pop, toasts) has played and any dialog is closed. */
+function showResults() {
+  if (!game?.results) return;
+  const blocking = [...document.querySelectorAll('dialog[open]')].filter((d) => d.id !== 'results-dialog');
+  if (blocking.length) {
+    blocking[0].addEventListener('close', showResults, { once: true });
+    return;
+  }
+  openResults(game);
+}
+
 function renderActions() {
+  $('#action-results').hidden = !(game && game.phase === PHASES.ENDED);
   const distress = Boolean(game && game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game)));
   $('#action-finance').hidden = !distress;
   const build = $('#action-build');
@@ -121,22 +134,6 @@ function flashFrame() {
   frame.classList.add('is-capture');
 }
 
-function showResults() {
-  const list = $('#results-list');
-  list.replaceChildren(...standings(game).map((row) =>
-    h('li', { class: `results__row results__row--${row.player.color}${row.rank === 1 ? ' is-winner' : ''}` },
-      h('span', { class: 'results__rank' }, `#${row.rank}`),
-      createSprite(ART.owner.chip(row.player.seat), { className: 'results__token' }),
-      h('span', { class: 'results__name' }, row.player.name),
-      h('span', { class: 'results__score' }, `${row.blocks} block${row.blocks === 1 ? '' : 's'}`),
-      h('span', { class: 'results__worth' }, formatCash(row.worth)),
-    )));
-  const winners = standings(game).filter((r) => r.rank === 1);
-  $('#results-heading').textContent = winners.length > 1
-    ? 'A tie for Mayor!'
-    : `${winners[0].player.name} runs the city!`;
-  $('#results-dialog').showModal();
-}
 
 const REJECT_MESSAGES = {
   [MOVE_ERRORS.TAKEN]: 'That road is already paved.',
@@ -258,6 +255,7 @@ export function initGameView() {
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   initDialogs();
+  $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });
   bus.on('game:start', startGame);
   renderInspector(null);

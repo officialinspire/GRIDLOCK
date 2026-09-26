@@ -228,7 +228,7 @@ test('a full random game always claims all 36 blocks and conserves roads', () =>
   }
 });
 
-test('standings rank by blocks, then net worth, sharing tied ranks', () => {
+test('standings rank by City Value (land counts), sharing exact ties', () => {
   const game = four();
   getBlock(game.board, 0, 0).ownerSeat = 3;
   getBlock(game.board, 0, 1).ownerSeat = 3;

@@ -158,8 +158,12 @@ export function renderHud(game) {
 
   const banner = $('#turn-banner');
   if (game.phase === PHASES.ENDED) {
-    const [top] = standings(game);
-    banner.textContent = `${top.player.name} wins!`;
+    const rows = standings(game);
+    const top = rows[0];
+    const winners = rows.filter((r) => r.rank === 1);
+    banner.textContent = winners.length > 1
+      ? `Tie: ${winners.map((r) => r.player.name).join(' & ')}`
+      : `${top.player.name} wins!`;
     banner.style.setProperty('--player', top.player.hex);
     banner.dataset.color = top.player.color;
   } else {

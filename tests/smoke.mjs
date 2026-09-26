@@ -237,9 +237,30 @@ for (const vp of VIEWPORTS) {
     await page.waitForSelector('#results-dialog[open]');
     assert.equal(await page.locator('#board .block--owned').count(), 36, 'all blocks claimed');
     assert.equal(await page.textContent('#hud-roads'), '84/84');
-    assert.equal(await page.locator('#results-list li').count(), 4);
-    assert.match(await banner(), /wins!/);
+    const cards = page.locator('#results-list .result-card');
+    assert.equal(await cards.count(), 4, 'all four players on the results screen');
+    for (let i = 0; i < 4; i++) {
+      const text = await cards.nth(i).textContent();
+      for (const label of ['City Value', 'Cash', 'Blocks owned', 'Developed', 'Income', 'Highest development']) {
+        assert.ok(text.includes(label), `result card shows ${label}`);
+      }
+    }
+    const values = await cards.locator('.result-card__city-value').allTextContents();
+    const nums = values.map((v) => Number(v.replace(/[^0-9-]/g, '')));
+    assert.deepEqual([...nums].sort((x, y) => y - x), nums, 'cards ordered by City Value');
+    const winnerCards = page.locator('#results-list .result-card.is-winner');
+    assert.ok(await winnerCards.count() >= 1);
+    assert.equal(Number((await winnerCards.first().locator('.result-card__city-value').textContent()).replace(/[^0-9-]/g, '')), nums[0]);
+    assert.ok(await page.locator('#results-awards .award').count() >= 1, 'distinctions awarded');
+    assert.match(await page.textContent('#results-awards'), /Most Blocks/);
+    assert.match(await banner(), /wins!|Tie:/);
     await shot('10-results');
+
+    // View Board, then reopen the results from the action bar.
+    await page.getByRole('button', { name: 'View Board' }).click();
+    assert.equal(await page.isVisible('#results-dialog'), false);
+    await page.click('#action-results');
+    assert.ok(await page.isVisible('#results-dialog'), 'results reopen');
 
     // Rematch starts a clean board.
     await page.getByRole('button', { name: 'Play Again' }).click();
@@ -456,6 +477,55 @@ for (const vp of VIEWPORTS) {
     failures++;
     console.error(`✘ district bonus: ${err.message}`);
     await page.screenshot({ path: 'test-results/bonus-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Game completion with a deterministic 4-way tie, then Main Menu (desktop, ?debug to stage the board).
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  try {
+    await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    // Every road but the last is paved; the block it would close is abandoned, so the final
+    // road captures nothing and all four mayors finish with identical cities.
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlock } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 0; });
+      const b = getBlock(g.board, 5, 5);
+      b.abandoned = true;
+      b.abandonedBy = 4;
+      return ids.at(-1);
+    });
+    await page.locator(`[data-road="${last}"]`).click();
+    const dialog = page.locator('#results-dialog');
+    await dialog.waitFor({ state: 'visible' });
+    assert.match(await page.textContent('#results-heading'), /^Tie! All mayors share the city$/);
+    assert.equal(await page.locator('.result-card.is-winner').count(), 4);
+    assert.deepEqual(await page.locator('.result-card__rank').allTextContents(), ['1st', '1st', '1st', '1st']);
+    assert.deepEqual(await page.locator('.result-card').evaluateAll((els) => els.map((e) => e.dataset.seat)), ['1', '2', '3', '4'], 'ties listed in seat order');
+    assert.match(await page.textContent('.results__formula'), /ties broken by blocks owned/);
+    assert.match(await page.textContent('#results-awards'), /No distinctions this time/, 'nothing to award in a total tie');
+    assert.match(await page.textContent('#turn-banner'), /^Tie:/);
+    await page.screenshot({ path: 'test-results/results-tie.png' });
+
+    await dialog.getByRole('button', { name: 'Main Menu' }).click();
+    assert.ok(await page.isVisible('[data-screen="title"]'), 'Main Menu returns to the title screen');
+    assert.deepEqual(errors, []);
+    console.log('✔ game completion: tie + main menu');
+  } catch (err) {
+    failures++;
+    console.error(`✘ completion: ${err.message}`);
+    await page.screenshot({ path: 'test-results/completion-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }

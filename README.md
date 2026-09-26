@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
 
-> **Status: v0.8 papercraft art pass.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
+> **Status: v0.9 scoring & results.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
 
 ## How it plays
 
@@ -12,7 +12,16 @@ The city is a 6×6 grid of blocks on a 7×7 lattice of intersections, with 84 po
 2. On your turn, tap the gap between two neighbouring intersections to **pave a road**. You can't pave a road twice, and there are no diagonals.
 3. Paving the **last** road around a block **claims** it for you. The block takes your colour, border, seal and flag. One road can close two blocks.
 4. Claiming at least one block gives you **another road**, so captures can chain. A road that closes nothing passes the turn.
-5. The game ends when every road is paved. The most blocks wins, and ties go to net worth. (Abandoned blocks can stay ownerless, so the end condition is roads rather than ownership.)
+5. The game ends when every block is enclosed (every road paved) and the final road's captures and reward have resolved. The highest **City Value** wins (see Scoring). Abandoned blocks can stay ownerless, so the end condition is enclosure rather than ownership.
+
+## Scoring
+
+`core/scoring.js` is pure and deterministic.
+
+- **City Value** = cash + land value (price of every owned block) + building value (development invested in them). Debt lowers it, and abandoned blocks count for nobody.
+- **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
+- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, and any distinctions. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
+- **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
 
 ## Economy
 
@@ -149,6 +158,7 @@ js/
     bonuses.js             Adjacency/district bonuses + civic protection (pure recompute)
     events.js              City event engine: weighted draw, lifecycle, derived modifiers
     rng.js                 Seeded PRNG (mulberry32) stored in game state
+    scoring.js             City Value, ranking/tie-breakers, distinctions, final results
     finance.js             Distress, selling/downgrading, bankruptcy, abandoned-block redevelopment
     settings.js            Persisted settings (localStorage, fails safe)
     bus.js                 Pub/sub between core and UI
@@ -162,6 +172,7 @@ js/
     bonusView.js           Shared bonus/protection lines
     eventView.js           Event card, active-event pills, block event lines
     financeView.js         Distress panel and bankruptcy card
+    resultsView.js         Final results screen
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -175,6 +186,7 @@ tests/
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
+  unit/scoring.test.mjs    City Value maths, highest development, ranking/tie-breakers, shared ranks, distinctions, frozen results, seeded full games
   unit/assets.test.mjs     Originals unmodified (SHA-256), every sheet used, generated files exist, ART roles resolve
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
@@ -220,4 +232,4 @@ npm test             # unit tests (node:test)
 npm run test:smoke   # browser smoke test; screenshots → test-results/
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

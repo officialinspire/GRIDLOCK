@@ -8,12 +8,13 @@ import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
 } from './board.js';
 import {
-  calculateIncome, propertyValue, netWorth, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
+  calculateIncome, propertyValue, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
   chargeUpkeep, upkeepFor, isInDistress,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
 import { createEventState, onRoundStart, effectiveIncome, EVENT_POOL } from './events.js';
 import { randomSeed } from './rng.js';
+import { computeResults } from './scoring.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 
@@ -79,6 +80,7 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL 
     seed: seed >>> 0,
     rngState: seed >>> 0,
     events: createEventState(),
+    results: null,
     eventPool,
   };
   beginTurn(game);
@@ -209,8 +211,11 @@ export function placeRoad(game, id) {
 
   // Every road paved = every block enclosed. (Not "every block owned": abandoned
   // blocks after a bankruptcy may stay ownerless forever.)
-  if (roadsBuilt(game) === totalRoads(board)) {
+  if (isCityComplete(game)) {
+    // The final road's captures and reward have resolved above; freeze the results now so
+    // nothing viewed afterwards (e.g. "View Board") can change the final score.
     game.phase = PHASES.ENDED;
+    game.results = computeResults(game);
     result.gameEnded = true;
   } else if (captured.length > 0) {
     result.extraTurn = true;
@@ -221,19 +226,16 @@ export function placeRoad(game, id) {
 }
 
 /**
- * Players ordered by blocks claimed (the Dots & Boxes score), then by net
- * worth. Tied players share a rank.
+ * Current standings (see core/scoring.js): ranked by City Value, then blocks,
+ * developed blocks and cash; exact ties share a rank. Rows are the scoring rows
+ * plus `player` (the player object) and `worth` (= City Value) for convenience.
  */
 export function standings(game) {
-  const rows = game.players.map((p) => ({
-    player: p,
-    blocks: blocksOwnedBy(game.board, p.seat).length,
-    worth: netWorth(game, p),
-  }));
-  rows.sort((a, b) => b.blocks - a.blocks || b.worth - a.worth);
-  rows.forEach((row, i) => {
-    const prev = rows[i - 1];
-    row.rank = prev && prev.blocks === row.blocks && prev.worth === row.worth ? prev.rank : i + 1;
-  });
-  return rows;
+  const results = game.results ?? computeResults(game);
+  return results.rows.map((row) => ({ ...row, player: getPlayer(game, row.seat), worth: row.cityValue }));
+}
+
+/** True when every city block is enclosed (all roads paved) — the standard end. */
+export function isCityComplete(game) {
+  return roadsBuilt(game) === totalRoads(game.board);
 }
