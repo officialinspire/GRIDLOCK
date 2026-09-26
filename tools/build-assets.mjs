@@ -144,9 +144,13 @@ async function main() {
   for (const [name, [sx, sy, sw, sh]] of Object.entries(UI_CUTS)) {
     const png = await page.evaluate(async ({ src, sx, sy, sw, sh }) => {
       const img = new Image(); img.src = src; await img.decode();
-      const c = document.getElementById('c'); c.width = sw; c.height = sh;
-      const x = c.getContext('2d'); x.clearRect(0, 0, sw, sh);
-      x.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      // Frames are 9-sliced at ~14–18px borders; half resolution is still 2× sharp.
+      const k = 0.5;
+      const w = Math.round(sw * k); const hh = Math.round(sh * k);
+      const c = document.getElementById('c'); c.width = w; c.height = hh;
+      const x = c.getContext('2d'); x.clearRect(0, 0, w, hh);
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(img, sx, sy, sw, sh, 0, 0, w, hh);
       return c.toDataURL('image/png');
     }, { src: uiSrc, sx, sy, sw, sh });
     await writeFile(join(OUT, 'ui', `${name}.png`), b64(png));

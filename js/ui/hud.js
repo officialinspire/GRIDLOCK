@@ -7,7 +7,11 @@ import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { ART } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
-import { formatCash, formatDelta } from '../core/economy.js';
+import { formatCash, formatCashShort, formatDelta } from '../core/economy.js';
+
+/** Short phones show four HUD cards in one row; money is abbreviated there (matches css/mobile.css). */
+const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-height: 700px)';
+const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
 import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
 
@@ -38,7 +42,7 @@ function incomeStat(stats) {
   if (stats.upkeep > 0) notes.push(`upkeep −${formatCash(stats.upkeep)} is charged after it`);
   if (stats.bonus > 0) notes.push(`includes ${formatCash(stats.bonus)} adjacency bonus`);
   if (stats.eventDelta) notes.push(`${formatDelta(stats.eventDelta)} from city events (normally ${formatCash(stats.normalIncome)})`);
-  const el = stat('income', 'Income', `+${formatCash(stats.income)}`, 'icons:clock', notes.join('; '));
+  const el = stat('income', 'Income', `+${money(stats.income)}`, 'icons:clock', notes.join('; '));
   el.dataset.normal = stats.normalIncome;
   const dd = el.querySelector('dd');
   if (stats.bonus > 0) {
@@ -58,7 +62,7 @@ function tweenCash(seat, el, from, to) {
   cancelAnimationFrame(tweens.get(seat));
   tweens.delete(seat);
   if (from === to || reducedMotion()) {
-    el.textContent = formatCash(to);
+    el.textContent = money(to);
     shownCash.set(seat, to);
     return;
   }
@@ -68,7 +72,7 @@ function tweenCash(seat, el, from, to) {
     const eased = 1 - (1 - k) ** 3;
     const value = Math.round(from + (to - from) * eased);
     shownCash.set(seat, value);
-    el.textContent = formatCash(value);
+    el.textContent = money(value);
     if (k < 1) tweens.set(seat, requestAnimationFrame(step));
     else tweens.delete(seat);
   };
@@ -102,7 +106,7 @@ function animateMoney(game) {
     if (!dd) continue;
     if (prevTarget === undefined) {
       shownCash.set(seat, cash);
-      dd.textContent = formatCash(cash);
+      dd.textContent = money(cash);
       continue;
     }
     // The chip shows the real change; the counter continues from what's on screen.
@@ -116,7 +120,7 @@ function playerCard(game, seat) {
   const player = getPlayer(game, seat);
 
   if (!player) {
-    return h('article', { class: `player-card paper player-card--${preset.color} is-empty`, 'aria-label': `Seat ${seat} empty` },
+    return h('article', { class: `player-card paper player-card--${preset.color} is-empty`, 'aria-label': `Seat ${seat} empty`, dataset: { seat } },
       h('header', { class: 'player-card__head' },
         createSprite(ART.owner.ring(seat), { className: 'player-card__token' }),
         h('span', { class: 'player-card__name' }, `Seat ${seat}`),
@@ -141,7 +145,7 @@ function playerCard(game, seat) {
       stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
     ),
     h('dl', { class: 'player-card__stats' },
-      stat('cash', 'Cash', formatCash(shownCash.get(seat) ?? stats.cash), 'icons:coins'),
+      stat('cash', 'Cash', money(shownCash.get(seat) ?? stats.cash), 'icons:coins', formatCash(stats.cash)),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
       incomeStat(stats),
       stat('property', 'Property', formatCash(stats.property), 'icons:building', 'Net property value (land + buildings)'),
@@ -169,6 +173,7 @@ export function renderHud(game) {
   } else {
     const p = currentPlayer(game);
     banner.textContent = `${p.name}'s turn`;
+    banner.title = banner.textContent;
     banner.style.setProperty('--player', p.hex);
     banner.dataset.color = p.color;
   }

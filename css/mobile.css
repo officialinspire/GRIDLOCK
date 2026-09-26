@@ -1,0 +1,179 @@
+/*
+ * Touch & compact-layout hardening (loaded last).
+ *  - Board interaction never zooms, selects text, opens callouts or scrolls the page.
+ *  - Portrait/compact layout: the whole game fits one screen; no page scrolling.
+ *  - Hover effects only on devices that really hover.
+ * The compact breakpoint must match COMPACT_LAYOUT in js/ui/gameView.js.
+ */
+
+/* ---------- Touch hardening ---------- */
+html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch zoom still works) */
+.screen--game { overscroll-behavior: none; }
+.board, .board * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.board { touch-action: manipulation; }
+
+/* Armed road (touch): first tap previews in the current player's colour. */
+.road.is-armed { z-index: 7; }
+.road.is-armed .road__surface {
+  opacity: 1;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--turn) 70%, transparent);
+  box-shadow: 0 0 0 2px var(--ink), 0 0 12px var(--turn);
+  animation: armed-pulse 900ms ease-in-out infinite;
+}
+@keyframes armed-pulse { 50% { opacity: 0.55; } }
+
+/* Keyboard focus on board pieces is always obvious. */
+.road:focus-visible .road__surface { opacity: 1; box-shadow: 0 0 0 3px var(--gold); background: color-mix(in srgb, var(--turn) 45%, transparent); }
+.block:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+/* Hover only where hover exists (avoids "stuck" hover after a tap). */
+@media (hover: none) {
+  .btn:hover:not(:disabled) { transform: none; filter: none; }
+  .block:hover { filter: none; }
+  .board:not(.is-locked) .road:not(.is-built):not(.is-armed):hover .road__surface { background-color: transparent; opacity: 0.7; }
+}
+
+/* ---------- Compact (portrait) game layout ---------- */
+@media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
+  .screen--game {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    gap: 6px;
+  }
+  .game-topbar { flex-wrap: nowrap; gap: 6px; }
+  .game-topbar .round-badge { flex: 0 0 auto; }
+  .turn-banner { order: 0; flex: 1 1 auto; flex-basis: auto; }
+
+  .event-strip { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0; }
+  .event-strip::-webkit-scrollbar { display: none; }
+  .event-pill { flex: none; }
+
+  /* HUD: one row of four cards in seat order; board takes all remaining space. */
+  .game-layout {
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: none;
+    gap: 6px;
+  }
+  .hud { display: contents; }
+  .player-card { grid-row: 1; }
+  .player-card[data-seat='1'] { grid-column: 1; }
+  .player-card[data-seat='2'] { grid-column: 2; }
+  .player-card[data-seat='3'] { grid-column: 3; }
+  .player-card[data-seat='4'] { grid-column: 4; }
+  .board-area { grid-row: 2; grid-column: 1 / -1; container-type: size; }
+  .board-frame { width: min(100cqw, 100cqh); }
+  .inspector { display: none; }
+  .table-decor { display: none !important; }
+
+  .action-bar { position: static; flex-wrap: wrap; gap: 6px; padding: 6px 8px 8px; }
+  .action-bar .btn { flex: 1 1 0; min-width: 0; }
+  .turn-prompt { flex-basis: 100%; }
+}
+
+/* ---------- Phone HUD ---------- */
+@media (orientation: portrait) and (max-width: 700px), (max-width: 600px) {
+  /* Plain thin paper cards: the plaque frame costs too much width on phones. */
+  .player-card, .player-card:not(.is-empty) {
+    padding: 4px 6px 4px 10px;
+    gap: 2px;
+    border: 2px solid var(--ink);
+    border-image: none;
+    border-radius: 8px;
+    background: var(--paper-hi);
+    box-shadow: 0 2px 0 rgba(29, 24, 18, 0.5);
+  }
+  .player-card:not(.is-empty)::before { top: 3px; bottom: 3px; left: 3px; width: 4px; box-shadow: none; }
+  .player-card.is-active, .player-card.is-active:not(.is-empty) { transform: none; box-shadow: 0 0 0 3px var(--seat), 0 2px 0 3px var(--ink); }
+  .player-card__head { gap: 4px; }
+  .player-card__token { width: 20px; }
+  .player-card__name { font-size: 0.9rem; }
+  .player-card__turn { font-size: 0.62rem; padding: 0 5px; }
+  .player-card__fresh { display: none; }
+  .player-card__debt { font-size: 0.62rem; padding: 0 5px; }
+  .player-card__stats { grid-template-columns: auto auto auto; justify-content: space-between; gap: 0 6px; }
+  .stat { grid-template-columns: 14px auto; gap: 3px; padding: 0; background: none; }
+  .stat__icon { width: 14px; }
+  .stat dt { display: none; }
+  .stat dd { font-size: 0.82rem; white-space: nowrap; }
+  .stat--property { display: none; }
+  .stat__bonus, .stat__event { font-size: 0.7em; }
+  .player-card__empty { font-size: 0.75rem; }
+  .cash-delta { top: -12px; font-size: 0.75rem; padding: 0 5px; }
+  .round-badge { font-size: 0.9rem; padding: 3px 8px 3px 4px; gap: 4px; }
+  .round-badge__icon { width: 22px; }
+  .turn-banner { font-size: 0.95rem; padding: 5px 8px; }
+  .turn-prompt { font-size: 0.92rem; padding: 4px 8px; }
+  .action-bar .btn { min-height: 42px; font-size: 0.95rem; }
+
+  /* Tall-enough phones: 2×2 HUD (seats 1 2 / 3 4) — full names and amounts fit. */
+  .game-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto auto minmax(0, 1fr); }
+  .player-card[data-seat='1'] { grid-area: 1 / 1; }
+  .player-card[data-seat='2'] { grid-area: 1 / 2; }
+  .player-card[data-seat='3'] { grid-area: 2 / 1; }
+  .player-card[data-seat='4'] { grid-area: 2 / 2; }
+  .board-area { grid-area: 3 / 1 / 4 / -1; }
+}
+
+/* Short phones (e.g. iPhone SE): one row of four, abbreviated money (see hud.js). */
+@media (orientation: portrait) and (max-width: 700px) and (max-height: 700px) {
+  .game-layout { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr); }
+  .player-card[data-seat='1'] { grid-area: 1 / 1; }
+  .player-card[data-seat='2'] { grid-area: 1 / 2; }
+  .player-card[data-seat='3'] { grid-area: 1 / 3; }
+  .player-card[data-seat='4'] { grid-area: 1 / 4; }
+  .board-area { grid-area: 2 / 1 / 3 / -1; }
+  .player-card, .player-card:not(.is-empty) { padding: 3px 3px 3px 8px; }
+  .player-card__token, .player-card__turn { display: none; }
+  .player-card__name { font-size: 0.72rem; }
+  .player-card__stats { grid-template-columns: 1fr 1fr; }
+  .stat--cash { grid-column: 1 / -1; }
+  .stat dd { font-size: 0.72rem; }
+  .stat__icon { width: 11px; }
+  .stat { grid-template-columns: 11px auto; }
+}
+
+/* Narrow phones: drop the roads counter from the badge so the turn banner fits. */
+@media (max-width: 440px) {
+  .round-badge__roads { display: none; }
+}
+
+/* ---------- Block details bottom sheet (compact layouts) ---------- */
+.info-sheet {
+  width: min(460px, calc(100vw - 16px));
+  max-height: 70dvh;
+  margin: auto auto max(8px, env(safe-area-inset-bottom));
+  padding: 18px 16px 14px;
+  overflow-y: auto;
+  transform: none;
+}
+.info-sheet[open] { animation: sheet-up 220ms ease-out; }
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
+.info-sheet::backdrop { background: rgba(15, 11, 8, 0.45); }
+.info-sheet__close { position: absolute; top: 8px; right: 8px; }
+.info-sheet .inspector__title { padding-right: 48px; }
+.info-sheet .inspector__facts dd { text-align: right; }
+
+@media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
+  .board-area { place-items: start center; }
+}
+
+/* The game screen never scrolls the page (its own entrance slide included). */
+body[data-active-screen='game'] { overflow: hidden; height: 100dvh; }
+
+/* Toasts sit over the board, not the HUD, on compact layouts. */
+@media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
+  .toast-stack { top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom)) + 96px); }
+}
+@media (max-width: 400px) {
+  .turn-banner { font-size: 0.85rem; letter-spacing: -0.01em; }
+}

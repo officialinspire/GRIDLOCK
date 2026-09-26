@@ -37,6 +37,16 @@ export function formatCash(amount) {
   return cashFormat.format(Number.isFinite(amount) ? amount : 0);
 }
 
+/** Short money for tight HUDs: $950, $12.5k, $1.2M. */
+export function formatCashShort(amount) {
+  const n = Number.isFinite(amount) ? amount : 0;
+  const sign = n < 0 ? '−' : '';
+  const a = Math.abs(n);
+  if (a < 1000) return `${sign}$${a}`;
+  if (a < 1e6) return `${sign}$${(a / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${sign}$${(a / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
 /** Signed format for deltas: "+$500" / "−$1,000". */
 export function formatDelta(amount) {
   return `${amount < 0 ? '−' : '+'}${formatCash(Math.abs(amount))}`;

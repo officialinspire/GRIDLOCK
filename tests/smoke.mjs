@@ -58,6 +58,12 @@ for (const vp of VIEWPORTS) {
   });
   // Google Fonts are optional; block them so tests are hermetic.
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -94,6 +100,7 @@ for (const vp of VIEWPORTS) {
     // Settings (persist across reload)
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.locator('label.setting-row', { hasText: 'Show block coordinates' }).click();
+    assert.equal(await page.locator('input[name="music"]').count(), 0, 'placeholder music toggle removed');
     await noHorizontalScroll(page, 'settings');
     await shot('3-settings');
     await page.reload({ waitUntil: 'networkidle' });
@@ -227,6 +234,11 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#inspector'), /Residential · Level 2 · Rowhouses/);
     assert.equal(await panel.isVisible(), false, 'non-owners get the inspector, not the build panel');
     assert.equal(await page.isDisabled('#action-build'), true);
+    // Compact layouts show the same details in a bottom sheet instead.
+    if (await page.isVisible('#info-dialog')) {
+      assert.match(await page.textContent('#info-dialog'), /Residential · Level 2 · Rowhouses/);
+      await page.click('[data-info-close]');
+    }
 
     // Pave every remaining road; the game must end with all 36 blocks claimed.
     const remaining = await page.$$eval('#board .road:not(.is-built)', (els) => els.map((el) => el.dataset.road));
@@ -291,6 +303,12 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -382,6 +400,12 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -429,6 +453,12 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -486,6 +516,12 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -537,6 +573,12 @@ for (const vp of VIEWPORTS) {
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, reducedMotion: 'reduce',
   });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -582,10 +624,77 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Touch: tap-twice-to-pave (default on for coarse pointers), no page scroll, info sheet, reset on rematch.
+{
+  const context = await browser.newContext({
+    viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    const road = (id) => page.locator(`#board [data-road="${id}"]`);
+    await page.waitForTimeout(400); // let the screen entrance animation finish
+    const size = await page.evaluate(() => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth, innerWidth]);
+    assert.ok(size[0] <= size[1] && size[2] <= size[3], `game fits the screen without scrolling ${size}`);
+    assert.equal(await page.locator('.player-card').count(), 4);
+    const cardsFit = await page.$$eval('.player-card', (els) => els.every((e) => e.scrollWidth <= e.clientWidth + 1));
+    assert.ok(cardsFit, 'HUD cards do not overflow');
+
+    await road('h-3-3').tap();
+    assert.ok(await road('h-3-3').evaluate((e) => e.classList.contains('is-armed')), 'first tap arms');
+    assert.equal(await page.textContent('#hud-round'), '1');
+    assert.match(await page.textContent('#turn-banner'), /Player 1/, 'turn not passed on first tap');
+    await road('h-4-4').tap(); // re-arms another road instead
+    assert.equal(await page.locator('.road.is-armed').count(), 1);
+    await road('h-4-4').tap(); // second tap paves
+    assert.ok(await road('h-4-4').evaluate((e) => e.classList.contains('is-built')), 'second tap paves');
+    assert.match(await page.textContent('#turn-banner'), /Player 2/);
+    assert.equal(await road('h-3-3').evaluate((e) => e.classList.contains('is-built')), false);
+
+    // Tapping an unowned block opens the details sheet (inspector is hidden on phones).
+    await page.locator('[data-block="r2c2"]').tap();
+    assert.ok(await page.isVisible('#info-dialog'), 'info sheet');
+    assert.match(await page.textContent('#info-dialog'), /Block C3/);
+    await page.locator('[data-info-close]').tap();
+    assert.equal(await page.isVisible('#info-dialog'), false);
+
+    // Restart resets everything: pause → quit → new game.
+    await page.click('#game-menu-btn');
+    await page.getByRole('button', { name: 'Quit to Title' }).click();
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    assert.equal(await page.locator('#board .road.is-built').count(), 0, 'fresh board');
+    assert.equal(await page.locator('.road.is-armed').count(), 0);
+    assert.equal(await page.textContent('#hud-round'), '1');
+    assert.match(await page.textContent('#turn-banner'), /Player 1/);
+    assert.equal(await page.locator('dialog[open]').count(), 0);
+    await page.screenshot({ path: 'test-results/touch-phone-se.png' });
+    assert.deepEqual(errors, []);
+    console.log('✔ touch: two-tap paving, fit, info sheet, reset');
+  } catch (err) {
+    failures++;
+    console.error(`✘ touch: ${err.message}`);
+    await page.screenshot({ path: 'test-results/touch-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 // Money animation (runs with motion enabled, desktop only).
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false }));
+    }
+  });
   const page = await context.newPage();
   try {
     await page.goto(base, { waitUntil: 'networkidle' });

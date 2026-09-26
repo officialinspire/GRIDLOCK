@@ -1,18 +1,48 @@
 # Grid Lock City
 
-A papercraft tabletop city-building game for 2–4 local players, built with plain HTML, CSS and JavaScript (ES modules). There's no build step, so it runs as-is on GitHub Pages.
+A papercraft tabletop city-building game for **2–4 players on one device**. It plays like Dots & Boxes with roads: pave streets between intersections, enclose city blocks to claim them, develop them into neighbourhoods, weather city events, and finish with the most valuable city.
 
-> **Status: v0.9 scoring & results.** 4-player Dots & Boxes with roads is playable end to end: menus, settings, 4-seat local setup, the 6×6 city, captures and chains, cash, capture rewards, block development (6 categories × 3 levels), adjacency/district bonuses, city events, upkeep, distress/bankruptcy/redevelopment, turn income, the HUD and a results screen.
+It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is.
 
-## How it plays
+**V1.0:** complete game loop, economy, development, bonuses, events, debt/bankruptcy, scoring, and a responsive papercraft UI for desktop, Android and iPhone.
 
-The city is a 6×6 grid of blocks on a 7×7 lattice of intersections, with 84 possible roads.
+---
 
-1. Players take turns in seat order: P1 → P2 → P3 → P4, skipping empty seats.
-2. On your turn, tap the gap between two neighbouring intersections to **pave a road**. You can't pave a road twice, and there are no diagonals.
-3. Paving the **last** road around a block **claims** it for you. The block takes your colour, border, seal and flag. One road can close two blocks.
-4. Claiming at least one block gives you **another road**, so captures can chain. A road that closes nothing passes the turn.
-5. The game ends when every block is enclosed (every road paved) and the final road's captures and reward have resolved. The highest **City Value** wins (see Scoring). Abandoned blocks can stay ownerless, so the end condition is enclosure rather than ownership.
+## Quick start
+
+```bash
+npm start                  # zero-dependency static server → http://127.0.0.1:8080/
+# or: python3 -m http.server 8080
+```
+
+ES modules don't load from `file://`, so open the game through a local server.
+
+## How to play
+
+**Setup:** New Game, choose 2–4 seats, and optionally name each mayor. Everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty seats.
+
+**Your turn**
+1. **Turn start:** you collect **income** from your developed blocks, then pay **upkeep** (5% land tax plus 5% of what's invested in buildings).
+2. **Pave one road:** tap the gap between two neighbouring intersections.
+3. **Capture:** if your road completes the **fourth side** of a block, you claim it (+$500), and one road can close two blocks. Capturing earns you **another road** straight away, so captures can chain. A road that closes nothing ends your turn.
+4. **Develop (any time on your turn):** tap one of your blocks to build Residential, Commercial, Park, Civic, Industrial or a Landmark, then upgrade it to Level 3. Vacant blocks earn nothing.
+
+**Each full round:** a **city event** is drawn, such as storms, fire, festivals, booms or a recession. These change income or building prices for 1–2 rounds. Civic buildings shield nearby blocks from emergencies.
+
+**Debt:** if upkeep takes you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** (other players can buy and restore them), the debt is wiped, and you restart with $2,000.
+
+**End:** when every block is enclosed, the highest **City Value** (cash + land + buildings) wins. See [Scoring](#scoring).
+
+### Controls
+
+| | Desktop | Touch (Android / iPhone) |
+| --- | --- | --- |
+| Pave a road | Click the gap between two intersections (hover previews it in your colour) | **Tap twice**: the first tap highlights the road, the second paves it. This prevents misplaced roads on small screens and can be turned off in Settings. |
+| Inspect / develop a block | Click it: your blocks open the Build panel; others show in the side panel | Tap it: your blocks open the Build panel; others open a details sheet |
+| Keyboard | Tab to any road or block, then Enter/Space | n/a |
+| Pause, How To Play, quit | ⏸ button (top left) | same |
+
+Settings (saved on the device): sound effects, tap twice to pave, reduce motion (the OS setting is also respected), and show block coordinates.
 
 ## Scoring
 
@@ -122,18 +152,39 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
 
-## Play locally
-
-ES modules don't load over `file://`, so serve the folder:
-
-```bash
-npm start            # zero-dependency server → http://127.0.0.1:8080/
-# or: python3 -m http.server 8080
-```
-
 ## Deploy to GitHub Pages
 
-Settings → Pages → *Deploy from a branch* → `main` / root. `.nojekyll` is included so every file is served untouched.
+The repo root **is** the site: `index.html`, `css/`, `js/`, `assets/generated/` and the original PNG sheets. There's nothing to build.
+
+1. Push this branch to GitHub and merge it into `main` (or deploy from any branch).
+2. In the repository, go to **Settings → Pages**.
+3. Under **Build and deployment**, choose **Source: Deploy from a branch**, **Branch: `main`**, **Folder: `/ (root)`**, then **Save**.
+4. After a minute or so the game is live at `https://<user>.github.io/<repo>/`.
+
+Notes:
+- `.nojekyll` is included so GitHub serves every file unchanged. The file names with spaces work because all URLs are encoded.
+- All paths are relative, so the game works from a repository subpath.
+- `assets/generated/` is committed because Pages doesn't run build steps. If you change the art or crops, run `npm run build:assets` and commit the output.
+- The only external request is Google Fonts; the game falls back to system fonts if it's blocked or offline.
+
+## Performance
+
+- Sprite sheets are served as **WebP**: the whole set is about 4 MB against 23 MB of PNGs, with the PNG as fallback.
+- The title screen loads only about **1.4 MB**; its three sheets are preloaded in `<head>`.
+- Board art starts downloading on the New Game setup screen, while players type names.
+- The 9-sliced UI frames are small (about 170 KB for all of them).
+- The board re-renders only on game actions; no animation loops run while idle.
+- Animations use transforms, opacity and filters only, and turn off with reduced motion.
+
+## Mobile & accessibility
+
+- **One screen, no page scrolling in-game:** on phones the four HUD cards sit in a 2×2 grid (or one row on short screens, with abbreviated money), and the board fills the rest.
+- **No accidental zoom or selection:** `touch-action: manipulation` stops double-tap zoom while pinch zoom still works, and board text can't be selected or long-pressed.
+- **Touch targets:** road slots have enlarged hit areas, and all buttons are at least about 44px tall.
+- **Hover effects only where hover exists** (`@media (hover: none)`), so taps don't leave items looking stuck in a hover state.
+- **Clear states:** the current player's colour appears on the board frame, banner, card and prompt. Roads show an armed/preview state, disabled roads look disabled when the board is locked, and focus rings are visible.
+- **Screen readers:** every road and block has a spoken label, dialogs are native `<dialog>` elements, and the HUD, prompts and toasts announce changes politely.
+- **Safe areas:** iPhone notches and home indicators are respected (`viewport-fit=cover` plus `env(safe-area-inset-*)`).
 
 ## Project layout
 
@@ -173,11 +224,13 @@ js/
     eventView.js           Event card, active-event pills, block event lines
     financeView.js         Distress panel and bankruptcy card
     resultsView.js         Final results screen
+    sfx.js                 Tiny synthesised sound effects (Web Audio, no files)
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
 js/art.js                  Semantic art roles (what views ask for)
 css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon, table decor
+css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
 assets/generated/          Build output (committed so GitHub Pages serves it)
 tests/
@@ -186,6 +239,7 @@ tests/
   unit/economy.test.mjs    Constants, money safety, rewards, 4-player turn-income flow, ledger reconciliation
   unit/development.test.mjs  Level tables, purchases, upgrades, insufficient funds, owner-only, invalid input
   unit/bonuses.test.mjs    Districts, parks, mixed use, loops/full board, no compounding, protection, fuzzed invariants
+  unit/invariants.test.mjs 45 fuzzed games (2–4 players, events on): every rule re-checked after every step
   unit/scoring.test.mjs    City Value maths, highest development, ranking/tie-breakers, shared ranks, distinctions, frozen results, seeded full games
   unit/assets.test.mjs     Originals unmodified (SHA-256), every sheet used, generated files exist, ART roles resolve
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz

@@ -1,6 +1,6 @@
 /** New Game screen: four local seats, 2–4 must join. */
 import { $, h } from './dom.js';
-import { createSprite } from '../assets.js';
+import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
 import { formatCash } from '../core/economy.js';
@@ -62,6 +62,11 @@ export function initSetupView() {
     bus.emit('game:start', { seats, settings: getSettings() });
   });
   bus.on('settings:changed', () => refresh(form));
-  bus.on('screen:shown', ({ name }) => name === 'setup' && refresh(form));
+  bus.on('screen:shown', ({ name }) => {
+    if (name !== 'setup') return;
+    refresh(form);
+    // Warm the board art while players type their names.
+    preloadSheets(['roads', 'markers', 'parks', 'buildings', 'civic', 'effects']);
+  });
   refresh(form);
 }

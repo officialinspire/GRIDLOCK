@@ -16,7 +16,7 @@ export const PLAYER_PRESETS = Object.freeze([
 
 export const DEFAULT_SETTINGS = Object.freeze({
   sound: true,
-  music: true,
+  confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
   reducedMotion: false,
   showCoords: false,
 });

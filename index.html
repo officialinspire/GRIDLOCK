@@ -11,12 +11,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 
+  <!-- Title-screen art starts downloading immediately (WebP; ~1 MB total). -->
+  <link rel="preload" as="image" type="image/webp" href="assets/generated/title-menu-decor.webp">
+  <link rel="preload" as="image" type="image/webp" href="assets/generated/ui-icons.webp">
+  <link rel="preload" as="image" type="image/webp" href="assets/generated/props-decor.webp">
+  <link rel="modulepreload" href="js/main.js">
+
   <link rel="stylesheet" href="css/tokens.css">
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/screens.css">
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/art.css">
+  <link rel="stylesheet" href="css/mobile.css">
 
   <script type="module" src="js/main.js"></script>
 </head>
@@ -51,7 +58,7 @@
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Local play</strong>
         <span>2–4 players · one device</span>
-        <span class="title-note__ver">v0.8 papercraft</span>
+        <span class="title-note__ver">v1.0</span>
       </aside>
 
       <div class="title-skyline" data-sprite="title:skyline"></div>
@@ -133,14 +140,14 @@
 
       <form class="page-body paper settings-panel" id="settings-form" autocomplete="off">
         <fieldset>
-          <legend>Audio</legend>
+          <legend>Sound &amp; controls</legend>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:sound"></span>Sound effects</span>
             <input type="checkbox" class="toggle" name="sound">
           </label>
           <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>Music</span>
-            <input type="checkbox" class="toggle" name="music">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
+            <input type="checkbox" class="toggle" name="confirmTaps">
           </label>
         </fieldset>
 
@@ -217,9 +224,6 @@
       </div>
 
       <footer class="action-bar paper">
-        <button class="btn" id="action-buy" disabled title="Coming soon">
-          <span class="btn__icon" data-sprite="icons:coins"></span><span>Buy Block</span>
-        </button>
         <button class="btn btn--gold" id="action-results" hidden>
           <span class="btn__icon" data-sprite="icons:trophy"></span><span>Results</span>
         </button>
@@ -241,6 +245,13 @@
         <button type="button" class="btn btn--gold event-card__continue" id="event-continue">
           <span class="btn__icon" data-sprite="icons:play"></span><span>Continue</span>
         </button>
+      </dialog>
+
+      <dialog class="modal info-sheet sticky-note" id="info-dialog" aria-label="Block details">
+        <button type="button" class="info-sheet__close btn btn--icon btn--sm" data-info-close aria-label="Close">
+          <span class="btn__icon" data-sprite="icons:back"></span>
+        </button>
+        <div class="info-sheet__body" id="info-body"></div>
       </dialog>
 
       <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">

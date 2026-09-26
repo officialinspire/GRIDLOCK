@@ -2,6 +2,7 @@
 import { $ } from './dom.js';
 import { loadSettings, saveSettings, normalizeSettings } from '../core/settings.js';
 import { bus } from '../core/bus.js';
+import { setSoundEnabled } from './sfx.js';
 
 let settings = loadSettings();
 
@@ -13,20 +14,21 @@ export function applySettingsToDocument(s = settings) {
   const root = document.documentElement;
   root.dataset.motion = s.reducedMotion ? 'reduced' : 'full';
   root.dataset.coords = s.showCoords ? 'on' : 'off';
+  setSoundEnabled(s.sound);
 }
 
 function readForm(form) {
   const data = new FormData(form);
   return normalizeSettings({
     sound: data.has('sound'),
-    music: data.has('music'),
+    confirmTaps: data.has('confirmTaps'),
     reducedMotion: data.has('reducedMotion'),
     showCoords: data.has('showCoords'),
   });
 }
 
 function writeForm(form, s) {
-  for (const key of ['sound', 'music', 'reducedMotion', 'showCoords']) form.elements[key].checked = s[key];
+  for (const key of ['sound', 'confirmTaps', 'reducedMotion', 'showCoords']) form.elements[key].checked = s[key];
 }
 
 export function initSettingsView() {

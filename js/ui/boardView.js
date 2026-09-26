@@ -16,13 +16,18 @@ import { isDeveloped, MAX_LEVEL } from '../core/development.js';
 import { blockEventState } from './eventView.js';
 import { getPlayer, currentPlayer, PHASES } from '../core/game.js';
 import { isInDistress } from '../core/economy.js';
+import { getSettings } from './settingsView.js';
 
 let selectedId = null;
 // One-shot effects play only on the render right after the move/build that caused them.
 let seenMove = null;
 let seenDevelopment = null;
 let fx = { move: false, development: false };
-let handlers = { onBlockSelect() {}, onRoadSelect() {} };
+let handlers = { onBlockSelect() {}, onRoadSelect() {}, onRoadArmed() {} };
+// Touch screens: the first tap "arms" a road (preview), a second tap on it paves.
+let armedId = null;
+const coarsePointer = () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false;
+export const needsConfirmTap = () => coarsePointer() && getSettings().confirmTaps;
 
 const colorOf = (seat) => (seat ? PLAYER_PRESETS[seat - 1].color : null);
 
@@ -52,6 +57,7 @@ function roadCell(game, dir, r, c) {
   if (built) cls.push('is-built', `road--${colorOf(builder)}`);
   if (last) cls.push('is-last');
   if (last && fx.move) cls.push('is-new');
+  if (id === armedId && !built) cls.push('is-armed');
 
   const who = built ? getPlayer(game, builder)?.name : null;
   return h('button', {
@@ -142,6 +148,7 @@ export function renderBoard(game) {
     : focused?.dataset.block ? `[data-block="${focused.dataset.block}"]` : null;
 
   fx = { move: game.lastMove !== seenMove, development: game.lastDevelopment !== seenDevelopment };
+  if (fx.move) armedId = null;
   seenMove = game.lastMove;
   seenDevelopment = game.lastDevelopment;
 
@@ -194,6 +201,12 @@ export function getSelectedBlock() {
 
 export function clearSelection() {
   selectedId = null;
+  disarm();
+}
+
+export function disarm() {
+  armedId = null;
+  document.querySelectorAll('#board .road.is-armed').forEach((el) => el.classList.remove('is-armed'));
 }
 
 export function initBoardView(opts) {
@@ -201,9 +214,20 @@ export function initBoardView(opts) {
   $('#board').addEventListener('click', (e) => {
     const road = e.target.closest('.road');
     if (road) {
-      handlers.onRoadSelect(road.dataset.road);
+      const id = road.dataset.road;
+      const pavable = !road.classList.contains('is-built') && !$('#board').classList.contains('is-locked');
+      if (pavable && needsConfirmTap() && armedId !== id) {
+        disarm();
+        armedId = id;
+        road.classList.add('is-armed');
+        handlers.onRoadArmed(id);
+        return;
+      }
+      disarm();
+      handlers.onRoadSelect(id);
       return;
     }
+    disarm();
     const block = e.target.closest('.block');
     if (!block) return;
     selectBlock(block.dataset.block);

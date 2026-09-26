@@ -12,3 +12,7 @@ export function toast(message, { tone = 'info', duration = 2600 } = {}) {
     setTimeout(() => el.remove(), 300);
   }, duration);
 }
+
+export function clearToasts() {
+  $('#toasts')?.replaceChildren();
+}

@@ -17,12 +17,18 @@ import { isInDistress, blockUpkeep } from '../core/economy.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
-  renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock,
+  renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock, disarm,
 } from './boardView.js';
 import { renderHud } from './hud.js';
 import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
-import { toast } from './toast.js';
+import { toast, clearToasts } from './toast.js';
+import { play } from './sfx.js';
+
+/** Must match the portrait/compact breakpoint in css/mobile.css. */
+export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
+const isCompact = () => globalThis.matchMedia?.(COMPACT_LAYOUT).matches ?? false;
+let armHintShown = false;
 
 let game = null;
 let lastSetup = null;
@@ -30,8 +36,7 @@ let chain = 0; // blocks claimed by the current player during this turn
 
 export const getGame = () => game;
 
-function renderInspector(blockId) {
-  const panel = $('#inspector');
+function renderInspector(blockId, panel = $('#inspector')) {
   const block = blockId && game ? getBlockById(game.board, blockId) : null;
   if (!block) {
     panel.replaceChildren(
@@ -116,6 +121,7 @@ function render() {
 /** Re-render after a build/upgrade and celebrate any new bonus income. */
 function handleDevelopment({ bonusBefore }) {
   render();
+  play('build');
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
@@ -124,7 +130,21 @@ function handleDevelopment({ bonusBefore }) {
 function handleBlockSelect(id) {
   renderInspector(id);
   renderActions();
-  if (id && game) openBuildPanel(game, id);
+  if (!id || !game) return;
+  if (openBuildPanel(game, id)) return;
+  // Compact (portrait) layouts hide the side inspector: show the same details in a bottom sheet.
+  if (isCompact()) {
+    renderInspector(id, $('#info-body'));
+    $('#info-dialog').showModal();
+  }
+}
+
+function handleRoadArmed() {
+  play('pave');
+  if (!armHintShown) {
+    armHintShown = true;
+    toast('Tap the highlighted road again to pave it.', { duration: 2200 });
+  }
 }
 
 function flashFrame() {
@@ -160,6 +180,7 @@ function handleRoad(id) {
 
   if (!result.ok) {
     rejectRoad(id);
+    play('error');
     toast(REJECT_MESSAGES[result.error] ?? 'You can’t build there.', { tone: 'warn', duration: 1600 });
     if (result.error === MOVE_ERRORS.IN_DISTRESS) openDistressPanel(game);
     return;
@@ -168,6 +189,7 @@ function handleRoad(id) {
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
+  play(n > 0 ? 'capture' : 'pave');
 
   if (n > 0) {
     flashFrame();
@@ -176,11 +198,15 @@ function handleRoad(id) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
-    setTimeout(showResults, n > 0 ? 700 : 0);
+    setTimeout(() => {
+      if (game?.results) play('win');
+      showResults();
+    }, n > 0 ? 700 : 0);
     bus.emit('game:move', result);
     return;
   }
   if (result.event?.started) {
+    play('event');
     showEventCard(game, result.event.started, result.event.expired);
   } else if (result.event?.expired.length) {
     toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
@@ -204,9 +230,11 @@ function seedFromUrl() {
 }
 
 function startGame(setup) {
+  // Reset every piece of per-game UI state before the new game object exists.
   closeBuildPanel();
-  $('#event-dialog').close();
-  $('#finance-dialog').close();
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  clearToasts();
+  disarm();
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
@@ -219,6 +247,15 @@ function startGame(setup) {
   toast(`${currentPlayer(game).name} goes first`);
 }
 
+function quitToTitle() {
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  clearToasts();
+  disarm();
+  clearSelection();
+  game = null;
+  resetTo('title');
+}
+
 function initDialogs() {
   const pause = $('#pause-dialog');
   $('#game-menu-btn').addEventListener('click', () => pause.showModal());
@@ -229,10 +266,7 @@ function initDialogs() {
     if (!action) return;
     pause.close();
     if (action === 'howto') showScreen('howto');
-    if (action === 'quit') {
-      game = null;
-      resetTo('title');
-    }
+    if (action === 'quit') quitToTitle();
   });
 
   const results = $('#results-dialog');
@@ -241,15 +275,16 @@ function initDialogs() {
     if (!action) return;
     results.close();
     if (action === 'rematch') startGame(lastSetup);
-    if (action === 'title') {
-      game = null;
-      resetTo('title');
-    }
+    if (action === 'title') quitToTitle();
   });
 }
 
 export function initGameView() {
-  initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad });
+  initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad, onRoadArmed: handleRoadArmed });
+  const info = $('#info-dialog');
+  info.addEventListener('click', (e) => {
+    if (e.target === info || e.target.closest('[data-info-close]')) info.close();
+  });
   initBuildPanel({ onChange: handleDevelopment });
   initFinanceView({ onChange: () => render() });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
