@@ -117,6 +117,7 @@ for (const vp of VIEWPORTS) {
     // Title
     await page.waitForSelector('html.is-ready');
     assert.ok(await page.isVisible('[data-screen="title"]'), 'title visible');
+    assert.match(await page.textContent('.city-edition'), /Fredericksburg, Virginia/);
     for (const label of ['New Game', 'How To Play', 'Settings']) {
       assert.ok(await page.getByRole('button', { name: label }).isVisible(), `${label} button`);
     }
@@ -173,6 +174,10 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.locator('#board .block').count(), 36, '6x6 blocks');
     assert.equal(await page.locator('#board .road').count(), 84, 'road slots');
     assert.equal(await page.locator('#board .node').count(), 49, 'intersections');
+    assert.equal(await page.locator('.block--suburbs').count(), 20, 'suburbs paper ring');
+    assert.equal(await page.locator('.block--midtown').count(), 12, 'midtown paper ring');
+    assert.equal(await page.locator('.block--downtown').count(), 4, 'downtown paper core');
+    assert.match(await page.textContent('.district-legend'), /Fredericksburg.*Suburbs.*Midtown.*Downtown/s);
     assert.equal(await page.locator('.player-card').count(), 4, 'four HUD cards');
     assert.equal(await page.locator('.player-card.is-active').count(), 1);
     assert.match(await banner(), /Ada's turn/);
@@ -473,6 +478,9 @@ for (const vp of VIEWPORTS) {
     assert.match(await card.locator('.event-card__blocks').textContent(), /A1\s*Player 4/);
     await page.screenshot({ path: 'test-results/event-fire-card.png' });
     await page.click('#event-continue');
+    assert.equal(await page.locator('[data-block="r0c0"] .block__event-vfx--fire').count(), 2,
+      'fire and emergency cutouts follow the struck block');
+    assert.ok(await page.locator('[data-block="r0c0"].has-event-fire').count(), 'fire footprint class applied');
 
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('is-event-hurt')), 'A1 marked');
     assert.equal(await page.locator('#event-strip .event-pill').textContent(), 'Fire2r');

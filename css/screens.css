@@ -28,6 +28,22 @@
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
   animation: logo-drop 600ms var(--ease-pop) both;
 }
+.city-edition {
+  display: grid;
+  place-items: center;
+  width: min(285px, 64vw);
+  margin: clamp(-48px, -5vh, -28px) 0 clamp(-32px, -4vh, -18px);
+  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, .45));
+}
+.city-edition span {
+  padding: 14% 8% 5%;
+  font-family: var(--font-display);
+  font-size: clamp(.9rem, 3.5vw, 1.25rem);
+  letter-spacing: .035em;
+  text-align: center;
+  color: var(--paper-hi);
+  text-shadow: 0 2px 0 var(--ink);
+}
 @keyframes logo-drop { from { transform: translateY(-24px) scale(0.94); opacity: 0; } }
 
 .menu-card {
@@ -80,6 +96,7 @@
 @media (max-height: 560px) and (orientation: landscape) {
   .screen--title { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr; align-items: center; }
   .title-logo { width: min(420px, 44vw); }
+  .city-edition { position: absolute !important; left: 12%; bottom: 8%; width: 220px; }
   .menu-card { gap: 10px; padding: 26px 18px 18px; }
   .menu-card .btn--xl { min-height: 52px; font-size: 1.25rem; }
   .title-skyline { display: none; }

@@ -225,8 +225,7 @@ export const SHEETS = {
   }),
 
   // props_decor.png has a baked-in checkerboard (no alpha channel); we render the
-  // keyed-out copy from tools/build-assets.mjs. (The billboard names a real town,
-  // so it is intentionally not mapped.)
+  // keyed-out copy from tools/build-assets.mjs.
   props: sheet('props_decor.png', 1448, 1086, {
     'tree-oak': [20, 20, 200, 216],
     'tree-tall': [240, 36, 112, 200],
@@ -245,6 +244,7 @@ export const SHEETS = {
     hydrant: [768, 324, 104, 136],
     fence: [900, 336, 248, 116],
     'brick-wall': [1160, 312, 264, 144],
+    'fredericksburg-sign': [24, 484, 420, 228],
     'bus-stop': [480, 492, 92, 236],
     'power-pole': [612, 476, 244, 240],
     'water-tower': [832, 464, 192, 236],

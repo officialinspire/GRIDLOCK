@@ -165,6 +165,9 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
 
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
   .board-area { place-items: start center; }
+  .district-legend { right: 2px; bottom: 2px; padding: 3px 5px; gap: 2px 5px; }
+  .district-legend strong { display: none; }
+  .block__event-vfx { width: 48%; opacity: .72; }
 }
 
 /* The game screen never scrolls the page (its own entrance slide included). */

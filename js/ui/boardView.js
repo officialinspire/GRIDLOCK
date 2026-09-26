@@ -14,6 +14,7 @@ import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/boar
 import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
 import { isDeveloped, MAX_LEVEL } from '../core/development.js';
 import { blockEventState } from './eventView.js';
+import { blockImpacts } from '../core/events.js';
 import { getPlayer, currentPlayer, PHASES, TURN_PHASES } from '../core/game.js';
 import { isInDistress } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
@@ -120,6 +121,12 @@ function blockCell(game, block) {
   if (justBuilt) cls.push('is-just-built');
   if (justBuilt && game.lastDevelopment.fromLevel > 0) cls.push('is-upgraded');
   const ev = blockEventState(game, block);
+  const eventVfx = blockImpacts(game, block)
+    .filter((impact) => !impact.mitigated)
+    .flatMap((impact) => (ART.event[impact.def.id] ?? []).map((sprite, index) => ({
+      sprite, id: impact.def.id, index,
+    })));
+  for (const id of new Set(eventVfx.map((item) => item.id))) cls.push(`has-event-${id}`);
   if (ev.state) cls.push(`is-event-${ev.state}`);
 
   return h('button', {
@@ -134,6 +141,7 @@ function blockCell(game, block) {
   },
     // Layered paper cut-outs, back to front: lot → owner tint/frame → street props → building → markers.
     createSprite(ruin ? ART.lot.abandoned : color ? ART.lot.owned : ART.lot.unclaimed, { className: 'block__lot' }),
+    h('span', { class: 'block__district-paper', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
     color && createSprite(ART.owner.frame(block.ownerSeat), { className: 'block__frame' }),
     ...(developed ? progressionProps(block.type, block.level) : []).map((ref, i) =>
@@ -143,6 +151,9 @@ function blockCell(game, block) {
     color && !art && createSprite(ART.owner.seal(block.ownerSeat), { className: 'block__seal' }),
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
+    ...eventVfx.map(({ sprite, id, index }) => createSprite(sprite, {
+      className: `block__event-vfx block__event-vfx--${id} block__event-vfx--${index + 1}`,
+    })),
     color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
     justBuilt && h('span', { class: 'block__foundation', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__owner-mark', 'aria-hidden': 'true' }, PLAYER_PRESETS[block.ownerSeat - 1].mark),

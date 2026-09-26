@@ -82,6 +82,26 @@
 .board-area { grid-area: board; }
 .inspector { grid-area: insp; align-self: start; }
 
+.district-legend {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 21;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 3px 8px;
+  padding: 5px 8px;
+  pointer-events: none;
+  font-size: clamp(7px, 1.2cqw, 11px);
+  line-height: 1.1;
+  transform: rotate(-1deg);
+}
+.district-legend strong { grid-column: 1 / -1; font-family: var(--font-display); letter-spacing: .04em; }
+.district-key::before { content: ''; display: inline-block; width: .75em; height: .75em; margin-right: 3px; border: 1px solid var(--ink); vertical-align: -.05em; }
+.district-key--suburbs::before { background: #b7c995; }
+.district-key--midtown::before { background: #c8b582; }
+.district-key--downtown::before { background: #b78f72; }
+
 .hud {
   display: flex;
   flex-direction: column;
@@ -335,6 +355,30 @@
 .block__owner-mark { position: absolute; z-index: 9; left: 5%; bottom: 4%; width: 18%; aspect-ratio: 1; display: grid; place-items: center; color: var(--ink); background: var(--paper-hi); border: 1px solid var(--ink); border-radius: 50%; font-size: clamp(7px, 1vw, 13px); line-height: 1; pointer-events: none; }
 
 .block > .sprite, .block > .block__tint { position: absolute; }
+.block__district-paper {
+  position: absolute;
+  z-index: 0;
+  inset: 7%;
+  border: 1px solid rgba(29, 24, 18, .28);
+  border-radius: 9%;
+  pointer-events: none;
+  opacity: .52;
+}
+.block--suburbs .block__district-paper {
+  background: repeating-linear-gradient(45deg, rgba(74, 112, 47, .18) 0 2px, transparent 2px 8px);
+  border-style: dashed;
+}
+.block--midtown .block__district-paper {
+  background: repeating-linear-gradient(90deg, rgba(132, 98, 42, .16) 0 2px, transparent 2px 7px);
+  border-width: 2px;
+}
+.block--downtown .block__district-paper {
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(116, 65, 47, .2) 47% 53%, transparent 54%),
+    linear-gradient(transparent 46%, rgba(116, 65, 47, .2) 47% 53%, transparent 54%);
+  background-size: 10px 10px;
+  border: 2px double rgba(80, 42, 31, .55);
+}
 /*
  * Cardstock depth: each lot is a paper cut-out lifted off the kraft board. The
  * stacked drop-shadows read as sheets of card; developed blocks get more
@@ -1185,6 +1229,32 @@ html[data-coords='on'] .block__coord { display: block; }
 .block.is-event-boost::before { box-shadow: inset 0 0 0 3px var(--green), inset 0 0 18px rgba(58, 138, 58, 0.5); }
 .block.is-event-shielded::before { box-shadow: inset 0 0 0 3px var(--blue); }
 .block.is-event-hurt .block__building { filter: grayscale(0.6) brightness(0.85) drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35)); }
+
+/* Event cutouts sit inside affected blocks only; civic-shielded blocks receive the shield above instead. */
+.block__event-vfx { position: absolute; z-index: 7; width: 58%; left: 21%; top: 18%; opacity: .82; filter: drop-shadow(0 2px 1px rgba(29, 24, 18, .35)); pointer-events: none; }
+.block__event-vfx--2 { width: 42%; left: 46%; top: 49%; }
+.block__event-vfx--heavy-rain { animation: paper-rain 1.1s ease-in-out infinite alternate; }
+.block__event-vfx--heavy-rain.block__event-vfx--2 { animation: puddle-pulse 1.5s ease-in-out infinite; }
+.block__event-vfx--snowstorm { animation: snow-drift 2.4s ease-in-out infinite alternate; }
+.block__event-vfx--fire { width: 48%; left: 35%; top: 25%; animation: flame-flicker .8s ease-in-out infinite alternate; }
+.block__event-vfx--fire.block__event-vfx--2 { width: 22%; left: 5%; top: 57%; animation: emergency-bob 1.2s ease-in-out infinite alternate; }
+.block.has-event-power-outage .block__building,
+.block.has-event-power-outage .block__lot { filter: grayscale(.75) brightness(.55) drop-shadow(0 3px 2px rgba(0, 0, 0, .35)); }
+.block__event-vfx--power-outage { width: 30%; left: 62%; top: 8%; animation: outage-blink 1.8s steps(2, end) infinite; }
+.block__event-vfx--city-festival { animation: confetti-drift 2s ease-in-out infinite alternate; }
+.block__event-vfx--housing-boom,
+.block__event-vfx--beautification-grant,
+.block__event-vfx--economic-boom { width: 42%; left: 48%; top: 8%; animation: boon-glint 1.8s ease-in-out infinite alternate; }
+.block__event-vfx--recession { width: 70%; left: 15%; top: 10%; opacity: .58; animation: smoke-drift 2.6s ease-in-out infinite alternate; }
+@keyframes paper-rain { to { transform: translate(-2px, 5px) rotate(2deg); } }
+@keyframes puddle-pulse { 50% { transform: scale(1.08); opacity: .62; } }
+@keyframes snow-drift { to { transform: translate(5px, 7px) rotate(7deg); } }
+@keyframes flame-flicker { to { transform: translateY(-3px) scale(.94, 1.06) rotate(2deg); } }
+@keyframes emergency-bob { to { transform: translateY(-3px) rotate(-3deg); } }
+@keyframes outage-blink { 50% { opacity: .35; } }
+@keyframes confetti-drift { to { transform: translate(3px, 6px) rotate(5deg); } }
+@keyframes boon-glint { to { transform: scale(1.08) rotate(4deg); opacity: 1; } }
+@keyframes smoke-drift { to { transform: translate(6px, -3px) scale(1.05); opacity: .4; } }
 
 /* Inspector lines */
 .event-line {
