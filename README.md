@@ -161,6 +161,12 @@ The repo root **is** the site: `index.html`, `css/`, `js/`, `assets/generated/` 
 3. Under **Build and deployment**, choose **Source: Deploy from a branch**, **Branch: `main`**, **Folder: `/ (root)`**, then **Save**.
 4. After a minute or so the game is live at `https://<user>.github.io/<repo>/`.
 
+Before merging a release, wait for the **CI / Unit tests and Pages checks** job and
+all three **CI / Browser smoke** jobs to pass. The Pages check confirms that
+`index.html` and `.nojekyll` are at the repository root, that every local URL in
+the entry page is relative (so `/GRIDLOCK/` works), and that each referenced file
+is committed. No Pages build command or output directory is required.
+
 Notes:
 - `.nojekyll` is included so GitHub serves every file unchanged. The file names with spaces work because all URLs are encoded.
 - All paths are relative, so the game works from a repository subpath.
@@ -282,8 +288,19 @@ Open `dev/sprites.html` through the local server to see every crop.
 ## Tests
 
 ```bash
-npm test             # unit tests (node:test)
-npm run test:smoke   # browser smoke test; screenshots → test-results/
+npm ci                         # install the locked development dependencies
+npm test                       # unit tests + original-art and Pages checks
+npx playwright install         # first-time local browser installation
+npm run test:smoke:chromium    # browser smoke; screenshots → test-results/
+npm run test:smoke:webkit
+npm run test:smoke:firefox
 ```
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It fails on any console error, failed request or horizontal overflow. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+`npm run test:smoke` defaults to Chromium; set `BROWSER=chromium`, `webkit`, or
+`firefox` to select an engine. GitHub Actions runs unit tests on every push and
+pull request, then runs the complete smoke suite independently in all three
+engines. A browser job fails on an uncaught JavaScript error, console error,
+asset/request failure, assertion failure, or horizontal page overflow. Failure
+screenshots are uploaded as workflow artifacts.
+
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → rotation → a rejected duplicate road → a capture with a bonus road and its $500 reward → Leave Vacant, build and upgrade through the panel → paving every road to the results screen → rematch → pause → quit. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie ending with Main Menu, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), a distress → recovery → bankruptcy → restore/rebuild scenario (using `?debug` to set up state), a seeded Fire event scenario, a district-bonus scenario played through the UI and a check with animations on that the HUD money counter runs. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
