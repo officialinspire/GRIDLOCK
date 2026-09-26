@@ -86,22 +86,11 @@ function showCashDelta(card, delta) {
   const chip = h('span', { class: `cash-delta cash-delta--${dir}`, 'aria-hidden': 'true' }, formatDelta(delta));
   (card.querySelector('.stat--cash') ?? card).append(chip);
 
-  // With reduced motion the CSS animation is intentionally disabled. Keep the
-  // numeric delta visible long enough to be useful, then remove it without
-  // motion. In normal mode animationend remains the primary cleanup path, with
-  // a fallback so interrupted animations never leave stale chips behind.
-  if (reducedMotion()) {
-    setTimeout(() => chip.remove(), 1200);
-  } else {
-    let removed = false;
-    const remove = () => {
-      if (removed) return;
-      removed = true;
-      chip.remove();
-    };
-    chip.addEventListener('animationend', remove, { once: true });
-    setTimeout(remove, 2200);
-  }
+  // Keep the semantic delta in the DOM for a minimum readable interval in all
+  // motion modes. CSS may animate it away sooner visually, but interrupted or
+  // very fast animations should not erase the feedback before assistive/test
+  // consumers can observe the transaction.
+  setTimeout(() => chip.remove(), reducedMotion() ? 1200 : 1800);
 }
 
 function animateMoney(game) {

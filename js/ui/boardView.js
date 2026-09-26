@@ -20,20 +20,16 @@ import { isInDistress } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
 
 let selectedId = null;
-// One-shot effects play only on the render right after the move/build that caused them.
 let seenMove = null;
 let seenDevelopment = null;
 let fx = { move: false, development: false };
 let handlers = { onBlockSelect() {}, onRoadSelect() {}, onRoadArmed() {} };
-// Touch screens: the first tap "arms" a road (preview), a second tap on it paves.
 let armedId = null;
 let rovingKey = null;
 const coarsePointer = () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false;
 export const needsConfirmTap = () => coarsePointer() && getSettings().confirmTaps;
 
 const colorOf = (seat) => (seat ? PLAYER_PRESETS[seat - 1].color : null);
-
-/** Intersections are labelled like blocks but on the (n+1)² lattice: A1…G7. */
 const nodeLabel = (r, c) => blockLabel(r, c);
 
 function roadLabel(dir, r, c) {
@@ -43,7 +39,6 @@ function roadLabel(dir, r, c) {
 }
 
 function nodeCell(board, r, c) {
-  // An intersection looks paved once any road touching it is built.
   const touching = [roadId('h', r, c - 1), roadId('h', r, c), roadId('v', r - 1, c), roadId('v', r, c)];
   const paved = touching.some((id) => hasRoad(board, id));
   return h('span', { class: `node${paved ? ' is-paved' : ''}`, 'aria-hidden': 'true' },
@@ -63,10 +58,6 @@ function roadCell(game, dir, r, c) {
 
   const who = built ? getPlayer(game, builder)?.name : null;
   const owner = built ? PLAYER_PRESETS[builder - 1] : null;
-  // MANAGE_CITY intentionally leaves open roads interactive: selecting one is
-  // equivalent to choosing “Pave Road” and the core commits the phase before
-  // placing it. This keeps the explicit phase button while preserving the
-  // direct tabletop gesture. Capture/develop and ended games remain locked.
   const phaseAllowsRoad = [TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
   const disabled = built || game.phase !== PHASES.PLAYING || !phaseAllowsRoad;
   const distress = game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game));
@@ -81,8 +72,6 @@ function roadCell(game, dir, r, c) {
       ? `${roadLabel(dir, r, c)}, paved${who ? ` by ${who}` : ''}${owner ? `, ${owner.symbol}` : ''}`
       : `Pave ${roadLabel(dir, r, c)}`,
     disabled,
-    // Distress is an explanatory lock rather than a native-disabled control:
-    // selecting an open road lets the controller reopen Resolve Debt feedback.
     'aria-disabled': disabled || distress ? 'true' : null,
   }, h('span', { class: 'road__surface', 'aria-hidden': 'true' },
     built && createSprite(ART.road[dir], { className: 'road__tile' }),
@@ -101,7 +90,6 @@ function blockDescription(game, block) {
   ].filter(Boolean).join(', ');
 }
 
-/** Category icon + level pips, e.g. [🏠 ●●○]. */
 function levelBadge(block) {
   const cat = getCategory(block.type);
   const pips = Array.from({ length: MAX_LEVEL }, (_, i) =>
@@ -132,9 +120,7 @@ function blockCell(game, block) {
   const ev = blockEventState(game, block);
   const eventVfx = blockImpacts(game, block)
     .filter((impact) => !impact.mitigated)
-    .flatMap((impact) => (ART.event[impact.def.id] ?? []).map((sprite, index) => ({
-      sprite, id: impact.def.id, index,
-    })));
+    .flatMap((impact) => (ART.event[impact.def.id] ?? []).map((sprite, index) => ({ sprite, id: impact.def.id, index })));
   for (const id of new Set(eventVfx.map((item) => item.id))) cls.push(`has-event-${id}`);
   if (ev.state) cls.push(`is-event-${ev.state}`);
 
@@ -148,7 +134,6 @@ function blockCell(game, block) {
     'aria-label': blockDescription(game, block),
     'aria-pressed': selected ? 'true' : 'false',
   },
-    // Layered paper cut-outs, back to front: lot → owner tint/frame → street props → building → markers.
     createSprite(ruin ? ART.lot.abandoned : color ? ART.lot.owned : ART.lot.unclaimed, { className: 'block__lot' }),
     h('span', { class: 'block__district-paper', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
@@ -176,8 +161,6 @@ export function renderBoard(game) {
   const { board } = game;
   const el = $('#board');
   const frame = $('#board-frame');
-
-  // Keep keyboard focus on the same cell across re-renders.
   const focused = el.contains(document.activeElement) ? document.activeElement : null;
   const focusKey = focused?.dataset.road ? `[data-road="${focused.dataset.road}"]`
     : focused?.dataset.block ? `[data-block="${focused.dataset.block}"]` : null;
@@ -189,7 +172,6 @@ export function renderBoard(game) {
 
   el.style.setProperty('--rows', board.rows);
   el.style.setProperty('--cols', board.cols);
-
   const playing = game.phase === PHASES.PLAYING;
   const turnColor = playing ? currentPlayer(game).color : null;
   frame.dataset.turn = turnColor ?? 'none';
@@ -207,9 +189,12 @@ export function renderBoard(game) {
     }
   }
   el.replaceChildren(...cells);
+
   const focusedMatch = focusKey ? el.querySelector(focusKey) : null;
   const focusTarget = focusedMatch?.matches('.block, .road:not(:disabled)') ? focusedMatch : null;
-  const candidates = [...el.querySelectorAll('.block, .road:not(:disabled)')];
+  // Blocks are the default keyboard entry point because arrow navigation among
+  // blocks is more predictable than dropping users into the dense road lattice.
+  const candidates = [...el.querySelectorAll('.block'), ...el.querySelectorAll('.road:not(:disabled)')];
   const remembered = rovingKey ? el.querySelector(rovingKey) : null;
   const rememberedCandidate = remembered?.matches('.block, .road:not(:disabled)') ? remembered : null;
   const roving = focusTarget ?? rememberedCandidate ?? candidates[0] ?? null;
@@ -222,12 +207,11 @@ export function renderBoard(game) {
   if (focusTarget) focusTarget.focus({ preventScroll: true });
 }
 
-/** Brief "nope" wiggle on a road that can't be built. */
 export function rejectRoad(id) {
   const btn = document.querySelector(`#board [data-road="${id}"]`);
   if (!btn) return;
   btn.classList.remove('is-rejected');
-  void btn.offsetWidth; // restart the animation
+  void btn.offsetWidth;
   btn.classList.add('is-rejected');
 }
 
@@ -241,9 +225,7 @@ export function selectBlock(id) {
   handlers.onBlockSelect(id);
 }
 
-export function getSelectedBlock() {
-  return selectedId;
-}
+export function getSelectedBlock() { return selectedId; }
 
 export function clearSelection() {
   selectedId = null;
@@ -281,6 +263,7 @@ export function initBoardView(opts) {
     rovingKey = `[data-block="${block.dataset.block}"]`;
     selectBlock(block.dataset.block);
   });
+
   $('#board').addEventListener('keydown', (e) => {
     const cell = e.target.closest('.road, .block');
     if (!cell) return;
@@ -298,12 +281,18 @@ export function initBoardView(opts) {
     const delta = directions[e.key];
     if (!delta) return;
     e.preventDefault();
+
     let row = Number(cell.dataset.gridRow);
     let col = Number(cell.dataset.gridCol);
     let next = null;
+    const selector = cell.classList.contains('block') ? '.block' : '.road:not(:disabled)';
+    // Stay within the same semantic cell type. This makes arrow keys behave
+    // like a city/block grid or a road grid instead of unexpectedly switching
+    // between a block and the road that happens to sit beside it.
     for (let i = 0; i < 13 && !next; i++) {
-      row += delta[0]; col += delta[1];
-      next = document.querySelector(`#board .road:not(:disabled)[data-grid-row="${row}"][data-grid-col="${col}"], #board .block[data-grid-row="${row}"][data-grid-col="${col}"]`);
+      row += delta[0];
+      col += delta[1];
+      next = document.querySelector(`#board ${selector}[data-grid-row="${row}"][data-grid-col="${col}"]`);
     }
     if (!next) return;
     cell.tabIndex = -1;
