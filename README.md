@@ -57,6 +57,18 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 Settings (saved on the device): sound on/off, master/effects/ambience volume, city ambience, tap twice to pave, haptics (touch devices with vibration), **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
 
+### Statistics & achievements
+
+**Statistics** (title menu) keeps a career record for this device, from **completed matches only**:
+
+- **Career:** matches completed, blocks captured, longest capture chain (and who), buildings developed (builds + upgrades), highest City Value (and who), bankruptcies, events survived, and favourite development category.
+- **Mayors:** games played, games won and best City Value for each mayor name used on this device (hot-seat friendly).
+- **12 achievements**, shown as papercraft rosettes (earned ones in colour with who and when, locked ones in grey): Ribbon Cutting, Mayor of the Year, Chain Reaction, Land Baron, Skyline, Master Builder, Big City, Comeback Kid, Storm Chaser, Purist, Photo Finish and Veteran Mayor. New ones also appear on the results screen. When several mayors qualify in the same match, the credit goes to a winner first, then seat order.
+
+A match counts only if it was genuinely played to the end: all 84 roads paved through play (move log), every balance reconciling with the money ledger, and every owned or developed block traceable to a logged capture, build or purchase. Games finished by debug/test staging fail these checks and are never recorded, even with `?debug`. Each match counts once.
+
+The record is stored separately from the active-game save (`gridlock.career.v1`), versioned. Unreadable, corrupt or unknown-version data loads as a fresh record without errors; the Statistics screen says so, and the raw data is copied to `gridlock.career.corrupt` rather than lost.
+
 ### First-game tutorial
 
 A player's first **New Game** shows short tips as each rule comes up, on taped sticky notes next to the control they explain: **Manage City**, **Pave Road**, **completing a block** (when one has three roads), **Develop Now / Leave Vacant**, the **bonus road**, **income & upkeep**, **city events**, and **winning/scoring** (at the halfway point or on the results screen).
@@ -306,6 +318,7 @@ js/
     persistence.js         Versioned active-game save, migration, validation and reset
     tutorial.js            First-game tips: steps, when each applies, saved progress (skip/done)
     modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
+    career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
@@ -322,6 +335,7 @@ js/
     haptics.js             Optional vibration patterns (touch devices with the Vibration API only)
     touchGuard.js          Ignores tap-through taps on freshly opened/closed dialogs (touch only)
     tutorial.js            First-game coach marks (sticky notes) + Replay Tutorial
+    careerView.js          Statistics & Achievements screen; records finished matches
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -349,6 +363,7 @@ tests/
   unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions
   unit/modes.test.mjs      Presets: Standard replays V1.1 goldens exactly, Classic never has events, Urban Chaos
                            has one every round (≤3 at once), determinism, 2–4 players, save/restore, old saves
+  unit/career.test.mjs     Genuine-match check (staged games rejected), totals, mayors, achievements, dedupe, storage, corruption
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
@@ -411,4 +426,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

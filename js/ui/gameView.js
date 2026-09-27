@@ -27,6 +27,7 @@ import { toast, clearToasts } from './toast.js';
 import { audio, play } from './audio.js';
 import { buzz } from './haptics.js';
 import { modeName } from '../core/modes.js';
+import { recordFinishedMatch } from './careerView.js';
 import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
@@ -329,6 +330,8 @@ function handleRoad(id) {
   }
   if (result.gameEnded) {
     $('#board-frame').classList.add('is-city-complete');
+    // Career stats/achievements: counted only if this match was genuinely played to the end.
+    recordFinishedMatch(game);
     clearActiveGame();
     refreshSavedGameControls();
     setTimeout(() => {

@@ -12,6 +12,7 @@ import { audio, initAudio } from './ui/audio.js';
 import { initHaptics } from './ui/haptics.js';
 import { initTouchGuard } from './ui/touchGuard.js';
 import { tutorialState } from './ui/tutorial.js';
+import { initCareerView } from './ui/careerView.js';
 import { loadSettings } from './core/settings.js';
 import { bus } from './core/bus.js';
 
@@ -44,6 +45,7 @@ function boot() {
   initSettingsView();
   hydrateSprites(document);
   initSetupView();
+  initCareerView();
   initGameView();
   bindNavigation(document);
   showScreen('title');

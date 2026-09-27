@@ -1200,6 +1200,103 @@ const recordVibration = () => {
   }
 }
 
+// Career statistics & achievements: staged games never count; a real completed match does, and persists.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const career = () => page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.career.v1')));
+  const newGame = async (mode, players) => {
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.check(`[name="gameType"][value="${players === 4 ? 'standard' : 'custom'}"]`);
+    for (let s = players + 1; s <= 4; s++) await page.locator(`label[for="seat-${s}-join"]`).click();
+    await page.locator('.rule-option', { hasText: mode }).click();
+    await page.click('#setup-start');
+  };
+  try {
+    await page.goto(`${base}?seed=21&debug`, { waitUntil: 'networkidle' });
+
+    // 1. Debug staging that ends a game records nothing and awards nothing.
+    await newGame('Standard', 4);
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) b.abandoned = b.ownerSeat == null ? (b.abandonedBy = 1, true) : b.abandoned;
+      return ids.at(-1);
+    });
+    await page.click(`#board [data-road="${last}"]`);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.isVisible('#results-unlocked'), false, 'no achievements for a staged game');
+    assert.equal(await career(), null, 'nothing recorded');
+    await page.click('#results-dialog [data-results-action="title"]');
+    await page.getByRole('button', { name: 'Statistics' }).click();
+    assert.equal(await page.isVisible('#career-empty'), true, 'empty career');
+    assert.equal(await page.textContent('#career-badge-count'), '0 / 12');
+    await page.locator('[data-screen="stats"] [data-nav="back"]').click();
+
+    // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
+    await newGame('Classic', 2);
+    await page.evaluate(() => {
+      for (let i = 0; i < 400; i++) {
+        const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
+        if (vacant) { vacant.click(); continue; }
+        const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
+        if (!road) break;
+        road.click();
+      }
+    });
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.locator('#results-unlocked').waitFor({ state: 'visible' });
+    const unlocked = await page.locator('#results-badges .badge__name').allTextContents();
+    for (const name of ['Ribbon Cutting', 'Mayor of the Year', 'Purist']) assert.ok(unlocked.includes(name), `${name} unlocked (${unlocked})`);
+    await page.screenshot({ path: 'test-results/career-results.png' });
+    const saved = await career();
+    assert.equal(saved.version, 1);
+    assert.equal(saved.totals.matches, 1);
+    assert.equal(saved.totals.eventsSurvived, 0, 'Classic: no events');
+    assert.equal(Object.keys(saved.mayors).length, 2);
+    assert.ok(saved.totals.blocksCaptured > 0 && saved.totals.blocksCaptured <= 36);
+    assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null, 'separate from the active-game save');
+
+    // 3. The Statistics screen shows it, and it survives a reload.
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Statistics' }).click();
+    assert.equal(await page.isVisible('#career-empty'), false);
+    assert.match(await page.textContent('#career-stats'), /Matches completed\s*1/);
+    assert.equal(await page.locator('#career-mayors tbody tr').count(), 2);
+    assert.equal(await page.locator('#career-badges .badge').count(), 12);
+    assert.ok(await page.locator('#career-badges .badge.is-earned').count() >= 3);
+    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 12$/);
+    await noHorizontalScroll(page, 'statistics');
+    await page.screenshot({ path: 'test-results/career-stats.png', fullPage: true });
+
+    // 4. Corrupt data fails safely: a fresh record, a notice, and the old data kept aside.
+    await page.evaluate(() => localStorage.setItem('gridlock.career.v1', '{"version":1,"totals":"broken"'));
+    await page.locator('[data-screen="stats"] [data-nav="back"]').click();
+    await page.getByRole('button', { name: 'Statistics' }).click();
+    assert.equal(await page.isVisible('#career-empty'), true);
+    assert.match(await page.textContent('#career-note'), /could not be read/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.career.corrupt')), '{"version":1,"totals":"broken"');
+    assert.deepEqual(errors, []);
+    console.log('✔ career: staged games ignored; real match recorded + badges; persists; corrupt data safe');
+  } catch (err) {
+    failures++;
+    console.error(`✘ career: ${err.message}`);
+    await page.screenshot({ path: 'test-results/career-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {
