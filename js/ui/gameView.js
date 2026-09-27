@@ -51,6 +51,11 @@ function autosave() {
   refreshSavedGameControls();
 }
 
+/** Saves the game in progress right now (e.g. before an app update reloads the page). */
+export function saveGameNow() {
+  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+}
+
 function renderInspector(blockId, panel = $('#inspector')) {
   const block = blockId && game ? getBlockById(game.board, blockId) : null;
   if (!block) {

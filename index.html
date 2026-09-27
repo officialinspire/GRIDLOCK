@@ -7,9 +7,20 @@
   <meta name="description" content="Grid Lock City — a papercraft tabletop city-building game for 2–4 local players.">
   <title>Grid Lock City</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Installable, offline-first PWA (sw.js is registered from js/pwa.js). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Grid Lock">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="application-name" content="Grid Lock City">
+
+  <!-- Self-hosted fonts: identical look online and offline. -->
+  <link rel="preload" as="font" type="font/woff2" href="assets/fonts/lilita-one-latin.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="assets/fonts/nunito-latin.woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css">
 
   <!-- Title-screen art starts downloading immediately (WebP; ~1 MB total). -->
   <link rel="preload" as="image" type="image/webp" href="assets/generated/title-menu-decor.webp">
@@ -363,6 +374,11 @@
   </main>
 
   <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
+  <div class="update-banner paper" id="update-banner" role="status" aria-live="polite" hidden>
+    <span class="update-banner__text">A new version of Grid Lock City is ready.</span>
+    <button type="button" class="btn btn--sm btn--gold" id="update-reload">Reload</button>
+    <button type="button" class="btn btn--sm" id="update-later">Later</button>
+  </div>
 
   <noscript>
     <p class="noscript paper">Grid Lock City needs JavaScript enabled to play.</p>

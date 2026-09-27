@@ -6,7 +6,8 @@ import { formatCash } from './core/economy.js';
 import { bindNavigation, showScreen } from './ui/router.js';
 import { initSettingsView } from './ui/settingsView.js';
 import { initSetupView } from './ui/setupView.js';
-import { initGameView, getGame } from './ui/gameView.js';
+import { initGameView, getGame, saveGameNow } from './ui/gameView.js';
+import { initPwa } from './pwa.js';
 
 /** Fills `[data-econ="KEY"]` text from ECONOMY so copy never drifts from the constants. */
 function fillEconomyCopy(root = document) {
@@ -40,6 +41,7 @@ function boot() {
   // ?debug exposes the live game for automated tests and bug reproduction (never on by default).
   if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame };
   document.documentElement.classList.add('is-ready');
+  initPwa({ beforeReload: saveGameNow });
 }
 
 if (document.readyState === 'loading') {

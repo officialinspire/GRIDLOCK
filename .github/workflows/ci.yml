@@ -38,6 +38,10 @@ jobs:
       - run: npm run test:smoke
         env:
           BROWSER: ${{ matrix.browser }}
+      - name: Offline / PWA checks
+        run: npm run test:pwa
+        env:
+          BROWSER: ${{ matrix.browser }}
       - name: Upload failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4

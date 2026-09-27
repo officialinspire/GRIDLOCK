@@ -2,7 +2,7 @@
 
 A papercraft tabletop city-building game designed for **exactly 4 players on one device**. A Custom Game preserves 2–3 player support. It plays like Dots & Boxes with roads: pave streets between intersections, enclose city blocks to claim them, develop them into neighbourhoods, weather city events, and finish with the most valuable city.
 
-It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is.
+It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
 
@@ -60,6 +60,28 @@ Settings (saved on the device): sound effects, tap twice to pave, **Quick Handof
 ### Saving a local game
 
 Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely.
+
+## Install & play offline
+
+Grid Lock City is a Progressive Web App. After one online visit, the whole game (page, styles, scripts, every sprite sheet as WebP, UI frames, fonts and icons: about 5.7 MB) is stored on the device, and it starts and plays fully offline, including autosave and Continue Game.
+
+- **Install:** Chrome/Edge (desktop or Android): use the **Install** icon in the address bar or *Add to Home screen*. iPhone/iPad Safari: **Share → Add to Home Screen**. It opens full-window with the game's own icon.
+- **Updates are never forced mid-game.** When a new version is published, it downloads in the background and a *"A new version of Grid Lock City is ready"* prompt appears. **Reload** saves the game in progress and switches to the new version; **Later** keeps playing (the prompt returns next launch). Until then the current version keeps running, unchanged.
+- **Saved games are safe:** the service worker only manages its own `gridlock-*` caches and never touches local storage, so autosaves and settings carry across updates.
+- Works at a domain root or a GitHub Pages project subpath (`/<repo>/`): the manifest, service worker scope and every cached URL are relative.
+- Fonts (Lilita One, Nunito; SIL Open Font License, see `assets/fonts/`) are self-hosted, so the game looks the same offline and makes no third-party requests.
+- To reset a device completely: browser settings → site data for the game's address → clear. (This also deletes that device's saved game.)
+
+**How it works** (`sw.js`, `js/pwa.js`, `manifest.webmanifest`):
+
+| Request | Strategy |
+| --- | --- |
+| The game (`./`, `index.html`, any `?query`) | Cached app shell |
+| Every runtime file (HTML, CSS, JS modules, WebP sheets, UI frames, fonts, icons, manifest) | Precached at install, served cache-first |
+| Anything else in scope (e.g. the original PNG sheets, only used by browsers without WebP) | Network-first, with an offline copy once fetched |
+| Other origins / other paths | Not intercepted |
+
+The precache is named after a **content hash** of all its files (`gridlock-precache-<hash>`). `tools/build-pwa.mjs` regenerates the file list and hash inside `sw.js`; any change to a game file therefore yields a new cache, installed atomically (a failed download leaves the old version running) and fetched past the HTTP cache. Old `gridlock-*` caches are deleted only when the new version takes over.
 
 ## Scoring
 
@@ -175,10 +197,11 @@ Money safety: every balance change goes through `credit()`/`debit()` in `core/ec
 
 The repo root **is** the site: `index.html`, `css/`, `js/`, `assets/generated/` and the original PNG sheets. There's nothing to build.
 
-1. Push this branch to GitHub and merge it into `main` (or deploy from any branch).
-2. In the repository, go to **Settings → Pages**.
-3. Under **Build and deployment**, choose **Source: Deploy from a branch**, **Branch: `main`**, **Folder: `/ (root)`**, then **Save**.
-4. After a minute or so the game is live at `https://<user>.github.io/<repo>/`.
+1. If you changed any file the game loads, run `npm run build:pwa` and commit the updated `sw.js` (CI fails if it is stale). Players then get the new version through the update prompt.
+2. Push this branch to GitHub and merge it into `main` (or deploy from any branch).
+3. In the repository, go to **Settings → Pages**.
+4. Under **Build and deployment**, choose **Source: Deploy from a branch**, **Branch: `main`**, **Folder: `/ (root)`**, then **Save**.
+5. After a minute or so the game is live at `https://<user>.github.io/<repo>/`.
 
 Before merging a release, wait for the **CI / Unit tests and Pages checks** job and
 all three **CI / Browser smoke** jobs to pass. The Pages check confirms that
@@ -190,7 +213,7 @@ Notes:
 - `.nojekyll` is included so GitHub serves every file unchanged. The file names with spaces work because all URLs are encoded.
 - All paths are relative, so the game works from a repository subpath.
 - `assets/generated/` is committed because Pages doesn't run build steps. If you change the art or crops, run `npm run build:assets` and commit the output.
-- The only external request is Google Fonts; the game falls back to system fonts if it's blocked or offline.
+- The game makes no external requests: fonts are self-hosted, and after the first visit everything is served from the offline cache.
 
 ## Performance
 
@@ -198,6 +221,7 @@ Notes:
 - The title screen loads only about **1.4 MB**; its three sheets are preloaded in `<head>`.
 - Board art starts downloading on the New Game setup screen, while players type names.
 - The 9-sliced UI frames are small (about 170 KB for all of them).
+- The offline precache is about **5.7 MB** (69 files) and downloads in the background after the first page load; the 23 MB of original PNGs are never installed.
 - The board re-renders only on game actions; no animation loops run while idle.
 - Animations use transforms, opacity and filters only, and turn off with reduced motion.
 
@@ -217,7 +241,10 @@ Notes:
 
 ```
 index.html                 All screens (title, how-to, settings, setup, game)
+manifest.webmanifest       PWA install metadata (relative start_url/scope, icons)
+sw.js                      Service worker: versioned precache, offline play, safe updates
 css/
+  fonts.css                Self-hosted Lilita One + Nunito (@font-face)
   tokens.css               Colours, type, shadows (sampled from the art)
   base.css                 Reset, tabletop backdrop, sprite primitive
   components.css           Paper panels, buttons, toggles, ribbon, modal, toasts
@@ -225,6 +252,7 @@ css/
   game.css                 Board grid, HUD cards, inspector, action bar
 js/
   main.js                  Bootstrap
+  pwa.js                   Service worker registration + "update ready" prompt
   config.js                Board size, player seats/colours, default settings
   assets.js                Sprite-sheet manifest + responsive sprite helpers
   core/                    Game rules, pure logic with no DOM (unit-tested in Node)
@@ -260,7 +288,10 @@ js/art.js                  Semantic art roles (what views ask for)
 css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon, table decor
 css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
+tools/build-pwa.mjs        Refreshes sw.js precache + version; --icons renders assets/icons/
 assets/generated/          Build output (committed so GitHub Pages serves it)
+assets/icons/              App icons (192, 512, maskable 512, Apple touch 180) from the title logo
+assets/fonts/              Self-hosted WOFF2 fonts + their OFL licences
 tests/
   unit/core.test.mjs       Node unit tests for core modules
   unit/dots-and-boxes.test.mjs  Road geometry, rotation, edge/corner/double/chain captures, full games
@@ -273,7 +304,9 @@ tests/
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
+  unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
   smoke.mjs                Playwright smoke test across 5 viewports
+  pwa.mjs                  Offline/PWA browser check under a /GRIDLOCK/ subpath
   serve.mjs                Static server used by `npm start` and the smoke test
 *.png                      Original papercraft sprite sheets (unmodified)
 ```
@@ -317,6 +350,9 @@ npx playwright install         # first-time local browser installation
 npm run test:smoke:chromium    # browser smoke; screenshots → test-results/
 npm run test:smoke:webkit
 npm run test:smoke:firefox
+npm run test:pwa               # offline/PWA check (BROWSER=chromium|webkit|firefox)
+npm run build:pwa              # after changing game files: refresh sw.js (CI checks it)
+npm run build:icons            # re-render app icons from the logo sprite (needs Playwright)
 ```
 
 `npm run test:smoke` defaults to Chromium; set `BROWSER=chromium`, `webkit`, or
@@ -325,5 +361,7 @@ pull request, then runs the complete smoke suite independently in all three
 engines. A browser job fails on an uncaught JavaScript error, console error,
 asset/request failure, assertion failure, or horizontal page overflow. Failure
 screenshots are uploaded as workflow artifacts.
+
+**Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
 The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, and animation/reduced-motion paths. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
