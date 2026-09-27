@@ -59,7 +59,7 @@ test('Replay Same City keeps the seed, rules, seats and names', () => {
   const setup = replaySetup(game, { gameType: 'custom', settings: { sound: true } });
   assert.deepEqual(setup, {
     settings: { sound: true }, gameType: 'custom', mode: 'classic', seed: 77,
-    seats: [{ seat: 2, name: 'Ada' }, { seat: 4, name: 'Bo' }],
+    seats: [{ seat: 2, name: 'Ada', controller: 'human', difficulty: null }, { seat: 4, name: 'Bo', controller: 'human', difficulty: null }],
   });
   const again = createGame(setup);
   assert.deepEqual(again, createGame(setup), 'a replay setup always deals the same starting city');

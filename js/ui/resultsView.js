@@ -9,6 +9,7 @@ import { formatCash } from '../core/economy.js';
 import { TIEBREAKERS } from '../core/scoring.js';
 import { modeName } from '../core/modes.js';
 import { challengeUrl, formatSeed } from '../core/challenge.js';
+import { controllerLabel } from '../core/seats.js';
 import { toast } from './toast.js';
 
 const ordinal = (n) => ({ 1: '1st', 2: '2nd', 3: '3rd' }[n] ?? `${n}th`);
@@ -17,18 +18,19 @@ function stat(label, value, cls = '') {
   return [h('dt', {}, label), h('dd', { class: cls }, value)];
 }
 
-function playerCard(row, awardsBySeat, isWinner, index) {
+function playerCard(row, awardsBySeat, isWinner, index, cpu) {
   const hi = row.highest;
   return h('li', {
     class: `result-card result-card--${row.color}${isWinner ? ' is-winner' : ''}`,
     dataset: { seat: row.seat, rank: row.rank, cityValue: row.cityValue },
     style: { animationDelay: `${160 + index * 120}ms` },
-    'aria-label': `${ordinal(row.rank)}: ${row.name}, City Value ${formatCash(row.cityValue)}`,
+    'aria-label': `${ordinal(row.rank)}: ${row.name}${cpu ? ` (${cpu})` : ''}, City Value ${formatCash(row.cityValue)}`,
   },
     h('div', { class: 'result-card__head' },
       h('span', { class: 'result-card__rank' }, ordinal(row.rank)),
       createSprite(ART.owner.chip(row.seat), { className: 'result-card__token' }),
       h('span', { class: 'result-card__name' }, row.name),
+      cpu && h('span', { class: 'result-card__cpu', title: cpu }, cpu),
       isWinner && createSprite('icons:crown', { className: 'result-card__crown', label: 'Winner' }),
     ),
     h('p', { class: 'result-card__value' },
@@ -70,7 +72,8 @@ export function renderResults(game) {
     awardsBySeat.get(seat).push(a);
   }
 
-  $('#results-list').replaceChildren(...res.rows.map((row, index) => playerCard(row, awardsBySeat, winners.has(row.seat), index)));
+  $('#results-list').replaceChildren(...res.rows.map((row, index) => playerCard(row, awardsBySeat, winners.has(row.seat), index,
+    controllerLabel(game.players.find((p) => p.seat === row.seat)))));
   $('#results-awards').replaceChildren(...(res.distinctions.length
     ? res.distinctions.map((a) => h('li', { class: 'award', dataset: { award: a.id } },
       createSprite(a.icon, { className: 'award__icon' }),

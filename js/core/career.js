@@ -7,11 +7,13 @@
  *   ?debug hook fail these checks and are never recorded.
  * - Stored separately from the active-game save, versioned. Corrupt or unknown data
  *   loads as a fresh career (never throws); the raw data is kept aside, not lost.
- * - Hot-seat play: table-wide totals, plus per-mayor records keyed by name.
+ * - Hot-seat play: table-wide totals, plus per-mayor records keyed by name. Only human
+ *   seats count: CPU mayors never add to the totals, records or achievements.
  */
 import { ECONOMY, GAME_MODES } from '../config.js';
 import { CATEGORY_ORDER } from './buildings.js';
 import { allRoadIds, totalRoads } from './board.js';
+import { isCpu } from './seats.js';
 
 export const CAREER_KEY = 'gridlock.career.v1';
 export const CAREER_BACKUP_KEY = 'gridlock.career.corrupt';
@@ -182,6 +184,7 @@ export function summarizeMatch(game) {
     return {
       seat: row.seat,
       name: row.name,
+      cpu: isCpu(game.players.find((p) => p.seat === row.seat)),
       won: winners.has(row.seat),
       cityValue: row.cityValue,
       blocks: row.blocks,
@@ -219,7 +222,9 @@ export function recordMatch(career, game, now = Date.now()) {
   const t = next.totals;
   t.matches += 1;
   t.eventsSurvived += match.eventsSurvived;
-  for (const p of match.players) {
+  // The career belongs to the people at the table: CPU seats' play, records and badges don't count.
+  const people = match.players.filter((p) => !p.cpu);
+  for (const p of people) {
     t.blocksCaptured += p.captured;
     t.developments += p.developments;
     t.bankruptcies += p.bankruptcies;
@@ -242,7 +247,7 @@ export function recordMatch(career, game, now = Date.now()) {
   for (const a of ACHIEVEMENTS) {
     if (next.achievements[a.id]) continue;
     // Winners first, then seat order, so the credit is deterministic.
-    const earner = [...match.players].sort((x, y) => Number(y.won) - Number(x.won) || x.seat - y.seat)
+    const earner = [...people].sort((x, y) => Number(y.won) - Number(x.won) || x.seat - y.seat)
       .find((p) => a.test(p, match, next));
     if (earner) {
       next.achievements[a.id] = { by: earner.name.slice(0, 40), at: now };

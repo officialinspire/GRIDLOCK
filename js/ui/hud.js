@@ -14,6 +14,7 @@ const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-heigh
 const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
 import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
+import { controllerLabel } from '../core/seats.js';
 
 const LAYOUT = { left: [1, 4], right: [2, 3] };
 const TWEEN_MS = 700;
@@ -136,15 +137,17 @@ function playerCard(game, seat) {
 
   const stats = playerStats(game, player);
   const active = game.phase === PHASES.PLAYING && currentPlayer(game).seat === seat;
+  const cpu = controllerLabel(player);
   return h('article', {
     class: `player-card paper player-card--${preset.color}${active ? ' is-active' : ''}${stats.distress ? ' is-distress' : ''}`,
-    'aria-label': `${player.name}${active ? ', current turn' : ''}${stats.distress ? ', in debt' : ''}`,
+    'aria-label': `${player.name}${cpu ? ` (${cpu})` : ''}${active ? ', current turn' : ''}${stats.distress ? ', in debt' : ''}`,
     'aria-current': active ? 'true' : null,
     dataset: { seat },
   },
     h('header', { class: 'player-card__head' },
       createSprite(ART.owner.chip(seat), { className: 'player-card__token' }),
       h('span', { class: 'player-card__name' }, player.name),
+      cpu && h('span', { class: 'player-card__cpu', title: cpu }, 'CPU'),
       stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
       stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),

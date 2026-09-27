@@ -1,4 +1,8 @@
-/** New Game screen: players (Standard = four, Custom = 2–4), a rule preset (GAME_MODES) and an optional city seed. */
+/**
+ * New Game screen: seats (Standard = four, Custom = 2–4), who plays each seat (a table preset:
+ * Solo, Local Friends or Mixed; CPU seats have a difficulty), a rule preset (GAME_MODES) and an
+ * optional city seed.
+ */
 import { $, h } from './dom.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
@@ -8,6 +12,10 @@ import { getSettings } from './settingsView.js';
 import { bus } from '../core/bus.js';
 import { randomSeed } from '../core/rng.js';
 import { parseSeed, formatSeed } from '../core/challenge.js';
+import {
+  SEAT_PRESETS, DEFAULT_SEAT_PRESET, DIFFICULTIES, DIFFICULTY_LABELS, DEFAULT_DIFFICULTY, SEAT_ERRORS,
+  applySeatPreset, defaultNames, validateSeats, isCpu,
+} from '../core/seats.js';
 
 function seatCard(preset) {
   const inputId = `seat-${preset.seat}-name`;
@@ -24,12 +32,34 @@ function seatCard(preset) {
       class: 'text-input', id: inputId, name: 'name', type: 'text',
       maxlength: MAX_NAME_LENGTH, placeholder: preset.name, spellcheck: 'false',
     }),
+    h('div', { class: 'seat-card__controller', role: 'radiogroup', 'aria-label': `Seat ${preset.seat} is played by` },
+      ['human', 'cpu'].map((value) => h('label', { class: 'controller-option' },
+        h('input', { type: 'radio', name: `controller-${preset.seat}`, value, checked: value === 'human' }),
+        h('span', {}, value === 'human' ? 'Human' : 'CPU')))),
+    h('label', { class: 'seat-card__difficulty', hidden: true },
+      h('span', {}, 'Difficulty'),
+      h('select', { class: 'select', name: 'difficulty' },
+        DIFFICULTIES.map((d) => h('option', { value: d, selected: d === DEFAULT_DIFFICULTY }, DIFFICULTY_LABELS[d])))),
     h('label', { class: 'seat-card__join', for: joinId },
       h('span', {}, 'Playing'),
       h('input', { type: 'checkbox', class: 'toggle', id: joinId, name: 'join', checked: true }),
     ),
   );
 }
+
+/** One radio card per table preset (Solo / Local Friends / Mixed). */
+function tableOption(preset) {
+  return h('label', { class: 'table-option', dataset: { seatPreset: preset.id } },
+    h('input', { type: 'radio', name: 'seatPreset', value: preset.id, checked: preset.id === DEFAULT_SEAT_PRESET }),
+    h('span', { class: 'table-option__text' },
+      h('strong', { class: 'table-option__name' }, preset.name),
+      h('span', { class: 'table-option__blurb' }, preset.blurb)));
+}
+
+const controllerOfCard = (card) => {
+  const controller = card.querySelector(`[name="controller-${card.dataset.seat}"]:checked`)?.value ?? 'human';
+  return { controller, difficulty: controller === 'cpu' ? card.querySelector('[name="difficulty"]').value : null };
+};
 
 /** One radio card per rule preset: name and its one-line description, straight from config. */
 function ruleOption(mode) {
@@ -43,7 +73,42 @@ function ruleOption(mode) {
 function joinedSeats(form) {
   return [...form.querySelectorAll('.seat-card')]
     .filter((card) => card.querySelector('[name="join"]').checked)
-    .map((card) => ({ seat: Number(card.dataset.seat), name: card.querySelector('[name="name"]').value }));
+    .map((card) => ({ seat: Number(card.dataset.seat), name: card.querySelector('[name="name"]').value, ...controllerOfCard(card) }));
+}
+
+/**
+ * Applies the table preset to the joined seats' controls. Solo and Local Friends set every
+ * controller (only CPU difficulty stays editable); Mixed leaves each seat to the players.
+ */
+function syncControllers(form) {
+  const preset = form.elements.seatPreset.value;
+  const cards = [...form.querySelectorAll('.seat-card')];
+  const joined = cards.filter((card) => card.querySelector('[name="join"]').checked);
+  const wanted = new Map(applySeatPreset(preset, joined.map((card) => ({ seat: Number(card.dataset.seat), ...controllerOfCard(card) })))
+    .map((s) => [s.seat, s]));
+  for (const card of cards) {
+    const seat = Number(card.dataset.seat);
+    const want = wanted.get(seat);
+    const radios = card.querySelectorAll(`[name="controller-${seat}"]`);
+    if (want && preset !== 'mixed') for (const r of radios) r.checked = r.value === want.controller;
+    for (const r of radios) r.disabled = !want || preset !== 'mixed';
+    const { controller } = controllerOfCard(card);
+    const difficulty = card.querySelector('.seat-card__difficulty');
+    difficulty.hidden = controller !== 'cpu';
+    difficulty.querySelector('select').disabled = !want;
+    card.classList.toggle('is-cpu', controller === 'cpu');
+  }
+  // Placeholders show the name a blank box will get ("Mayor Bot 1" for CPU seats).
+  const names = defaultNames(joinedSeats(form));
+  for (const card of cards) {
+    card.querySelector('[name="name"]').placeholder = names.get(Number(card.dataset.seat)) ?? PLAYER_PRESETS[card.dataset.seat - 1].name;
+  }
+}
+
+/** "4 players" for an all-human table (as before); "4 players (1 human, 3 CPU)" otherwise. */
+function playersText(seats) {
+  const cpus = seats.filter(isCpu).length;
+  return `${seats.length} players${cpus ? ` (${seats.length - cpus} human, ${cpus} CPU)` : ''}`;
 }
 
 /** undefined = random city, a number = that city, null = the box holds something that isn't a seed. */
@@ -58,22 +123,25 @@ function refresh(form) {
     if (standard) join.checked = true;
     join.disabled = standard;
   });
-  const seats = joinedSeats(form);
   form.querySelectorAll('.seat-card').forEach((card) => {
     const on = card.querySelector('[name="join"]').checked;
     card.classList.toggle('is-out', !on);
     card.querySelector('[name="name"]').disabled = !on;
   });
-  const seatsOk = standard ? seats.length === PLAYER_PRESETS.length : seats.length >= MIN_PLAYERS;
+  syncControllers(form);
+  const seats = joinedSeats(form);
+  const seatError = validateSeats({ gameType: standard ? 'standard' : 'custom', seats });
+  const seatsOk = !seatError;
   const seed = seedValue(form);
   $('#setup-seed-box').classList.toggle('is-invalid', seed === null);
   $('#setup-seed-hint').textContent = seed === null ? SEED_ERROR : SEED_HINT;
   form.elements.seed.setAttribute('aria-invalid', String(seed === null));
   $('#setup-start').disabled = !seatsOk || seed === null;
   const mode = GAME_MODES[form.elements.mode.value] ?? GAME_MODES[DEFAULT_MODE];
-  $('#setup-summary').textContent = !seatsOk ? `At least ${MIN_PLAYERS} players must join.`
+  $('#setup-summary').textContent = !seatsOk
+    ? (seatError === SEAT_ERRORS.NO_HUMAN ? seatError : `At least ${MIN_PLAYERS} players must join.`)
     : seed === null ? SEED_ERROR
-    : `${standard ? 'Standard Game' : 'Custom Game'} · ${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city · ${mode.name} rules${seed === undefined ? '' : ` · seed ${formatSeed(seed)}`}`;
+    : `${standard ? 'Standard Game' : 'Custom Game'} · ${playersText(seats)} · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city · ${mode.name} rules${seed === undefined ? '' : ` · seed ${formatSeed(seed)}`}`;
 }
 
 const SEED_HINT = 'Leave blank for a surprise city. The same seed, rules and seats roll the same city events for the same moves.';
@@ -107,6 +175,7 @@ export function initSetupView() {
   const form = $('#setup-form');
   const list = $('#setup-players');
   list.replaceChildren(...PLAYER_PRESETS.map(seatCard));
+  $('#setup-table').append(...Object.values(SEAT_PRESETS).map(tableOption));
   $('#setup-rules').append(...Object.values(GAME_MODES).map(ruleOption));
 
   form.addEventListener('change', () => refresh(form));
@@ -124,7 +193,7 @@ export function initSetupView() {
     e.preventDefault();
     const seats = joinedSeats(form);
     const standard = form.elements.gameType.value === 'standard';
-    if ((standard && seats.length !== PLAYER_PRESETS.length) || (!standard && seats.length < MIN_PLAYERS)) return;
+    if (validateSeats({ gameType: standard ? 'standard' : 'custom', seats })) return;
     const seed = seedValue(form);
     if (seed === null) return;
     bus.emit('game:start', {

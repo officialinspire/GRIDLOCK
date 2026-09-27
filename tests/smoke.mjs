@@ -1651,6 +1651,110 @@ const recordVibration = () => {
   }
 }
 
+// Seat controllers: Solo / Local Friends / Mixed presets, CPU difficulty, validation, and the
+// table surviving autosave + Continue, results, Play Again and Replay Same City.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const table = () => page.evaluate(() => window.__GRIDLOCK__.getGame().players.map((p) => [p.seat, p.name, p.controller, p.difficulty]));
+  const card = (seat) => page.locator(`.seat-card[data-seat="${seat}"]`);
+  const controller = (seat, value) => card(seat).locator(`[name="controller-${seat}"][value="${value}"]`);
+  const finishCity = async () => {
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('./js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await page.click(`#board [data-road="${last}"]`);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+  };
+  const SOLO = [[1, 'Player 1', 'human', null], [2, 'Mayor Bot 1', 'cpu', 'normal'], [3, 'Mayor Bot 2', 'cpu', 'hard'], [4, 'Mayor Bot 3', 'cpu', 'normal']];
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    // Local Friends by default: every seat human and locked, exactly the old setup.
+    assert.equal(await page.isChecked('[name="seatPreset"][value="friends"]'), true);
+    assert.deepEqual(await page.locator('.table-option__name').allTextContents(), ['Solo', 'Local Friends', 'Mixed']);
+    for (const seat of [1, 2, 3, 4]) {
+      assert.equal(await controller(seat, 'human').isChecked(), true);
+      assert.equal(await controller(seat, 'cpu').isDisabled(), true);
+      assert.equal(await card(seat).locator('.seat-card__difficulty').isVisible(), false);
+    }
+    assert.match(await page.textContent('#setup-summary'), /^Standard Game · 4 players · \$12,000 each/);
+
+    // Solo: seat 1 human, seats 2–4 CPU with difficulty pickers and bot names.
+    await page.locator('.table-option', { hasText: 'Solo' }).click();
+    assert.deepEqual(await Promise.all([1, 2, 3, 4].map((seat) => controller(seat, 'cpu').isChecked())), [false, true, true, true]);
+    assert.deepEqual(await Promise.all([1, 2, 3, 4].map((seat) => card(seat).locator('[name="name"]').getAttribute('placeholder'))),
+      ['Player 1', 'Mayor Bot 1', 'Mayor Bot 2', 'Mayor Bot 3']);
+    assert.equal(await card(1).locator('.seat-card__difficulty').isVisible(), false);
+    await card(3).locator('[name="difficulty"]').selectOption('hard');
+    assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players \(1 human, 3 CPU\)/);
+
+    // Mixed: per-seat choice; an all-CPU table can't start.
+    await page.locator('.table-option', { hasText: 'Mixed' }).click();
+    assert.equal(await controller(1, 'cpu').isDisabled(), false);
+    await controller(1, 'cpu').check();
+    assert.equal(await page.isDisabled('#setup-start'), true, 'no human seat');
+    assert.match(await page.textContent('#setup-summary'), /At least one seat must be Human/);
+    await controller(1, 'human').check();
+    // Custom with a CPU seat left out: 3 seats, still valid.
+    await page.check('[name="gameType"][value="custom"]');
+    await page.locator('label[for="seat-4-join"]').click();
+    assert.match(await page.textContent('#setup-summary'), /Custom Game · 3 players \(1 human, 2 CPU\)/);
+    await page.locator('label[for="seat-4-join"]').click();
+    await page.check('[name="gameType"][value="standard"]');
+    await noHorizontalScroll(page, 'setup with CPU seats');
+    await page.screenshot({ path: 'test-results/seats-setup.png' });
+
+    await page.click('#setup-start');
+    assert.deepEqual(await table(), SOLO, 'controllers and bot names reach the game');
+    assert.equal(await page.locator('.player-card__cpu').count(), 3, 'CPU tag on the three bot seats');
+    assert.equal(await page.locator('.player-card[data-seat="1"] .player-card__cpu').count(), 0);
+    assert.match(await page.locator('.player-card[data-seat="3"]').getAttribute('aria-label'), /Mayor Bot 2 \(CPU · Hard\)/);
+
+    // Autosave + Continue.
+    await page.click('#board [data-road="h-0-0"]');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.deepEqual(await table(), SOLO, 'Continue keeps the table');
+
+    // Results show who was a bot.
+    await finishCity();
+    assert.equal(await page.locator('#results-dialog .result-card__cpu').count(), 3);
+    assert.equal(await page.locator('.result-card[data-seat="3"] .result-card__cpu').textContent(), 'CPU · Hard');
+    await page.screenshot({ path: 'test-results/seats-results.png' });
+
+    await page.click('[data-results-action="rematch"]');
+    assert.deepEqual(await table(), SOLO, 'Play Again keeps the table');
+    await finishCity();
+    const seed = await page.evaluate(() => window.__GRIDLOCK__.getGame().seed);
+    await page.click('[data-results-action="replay"]');
+    assert.deepEqual(await table(), SOLO, 'Replay Same City keeps the table');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), seed);
+    assert.deepEqual(errors, []);
+    console.log('✔ seat controllers: Solo/Local Friends/Mixed, difficulty, validation; kept by Continue, results, Play Again, Replay');
+  } catch (err) {
+    failures++;
+    console.error(`✘ seat controllers: ${err.message}`);
+    await page.screenshot({ path: 'test-results/seats-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

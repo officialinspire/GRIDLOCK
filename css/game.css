@@ -1642,3 +1642,18 @@ html[data-coords='on'] .block__coord { display: block; }
 @media (max-width: 560px) {
   .results__share-actions .btn { flex-basis: 100%; max-width: none; }
 }
+
+/* CPU seats: a small paper tag next to the mayor's name */
+.player-card__cpu,
+.result-card__cpu {
+  flex: none;
+  padding: 1px 7px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--paper-hi);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}

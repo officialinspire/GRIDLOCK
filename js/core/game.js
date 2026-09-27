@@ -4,6 +4,7 @@
  * another road. The game ends when every block is claimed.
  */
 import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE } from '../config.js';
+import { controllerOf, defaultNames } from './seats.js';
 import { resolveRules } from './modes.js';
 import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
@@ -40,8 +41,10 @@ export function sanitizeName(name, fallback) {
 }
 
 /**
- * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, mode?: string, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
- *   `seats` lists the joined seats (1–4). Play order is always by seat number.
+ * @param {{ seats: Array<{seat:number, name?:string, controller?:'human'|'cpu', difficulty?:null|'easy'|'normal'|'hard'}>, seed?: number, mode?: string, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
+ *   `seats` lists the joined seats (1–4). Play order is always by seat number. Each seat's
+ *   controller (human, or cpu with a difficulty; human by default) is stored on its player
+ *   as metadata only: no rule depends on it (core/seats.js).
  *   `seed` makes city events reproducible (random by default).
  *   `mode` is a rule preset from GAME_MODES (standard | classic | chaos); its rules are
  *   copied onto the game as `game.rules`, which is all the rules engine reads.
@@ -65,13 +68,20 @@ export function createGame({ seats, seed = randomSeed(), mode = DEFAULT_MODE, ev
     seen.add(s.seat);
   }
 
+  for (const s of seats) {
+    if (!controllerOf(s)) throw new RangeError(`Invalid controller for seat ${s.seat}`);
+  }
+  const fallbackNames = defaultNames(seats);
   const players = [...seats]
     .sort((a, b) => a.seat - b.seat)
-    .map(({ seat, name }) => {
+    .map((s) => {
+      const { seat, name } = s;
       const preset = PLAYER_PRESETS[seat - 1];
       return {
         seat,
-        name: sanitizeName(name, preset.name),
+        name: sanitizeName(name, fallbackNames.get(seat)),
+        // Who makes this seat's moves; the rules never look at it.
+        ...controllerOf(s),
         color: preset.color,
         symbol: preset.symbol,
         hex: preset.hex,
