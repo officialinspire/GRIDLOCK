@@ -24,7 +24,10 @@
  */
 import { ECONOMY } from '../../config.js';
 import { allRoadIds, roadBlocks, blockRoadIds, hasRoad } from '../board.js';
-import { validateRoad, currentPlayer, roadsBuilt } from '../game.js';
+import { validateRoad, currentPlayer } from '../game.js';
+import { stream, defaultCpuSeed } from './random.js';
+
+export { defaultCpuSeed };
 
 export const CPU_REASONS = Object.freeze({
   CAPTURE: 'capture', // completes one or more blocks
@@ -37,34 +40,6 @@ export const CPU_REASONS = Object.freeze({
 
 /** Chance an Easy mayor rethinks a road that would leave a three-sided block. */
 const EASY_CAUTION = 0.7;
-
-/* ---------------- seeded choice stream (never the game's RNG) ---------------- */
-
-function mix(...parts) {
-  let h = 0x9e3779b9;
-  for (const p of parts) {
-    h = Math.imul(h ^ (p >>> 0), 0x85ebca6b);
-    h ^= h >>> 13;
-    h = Math.imul(h, 0xc2b2ae35);
-    h ^= h >>> 16;
-  }
-  return h >>> 0;
-}
-
-function stream(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = Math.imul(s ^ (s >>> 15), s | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** The default AI seed: public facts only (city seed, seat, roads down). */
-export function defaultCpuSeed(game) {
-  return mix(game.seed ?? 0, currentPlayer(game)?.seat ?? 0, roadsBuilt(game));
-}
 
 /* ---------------- a position: the roads and which blocks can still be claimed ---------------- */
 
@@ -265,6 +240,22 @@ function decideHard(pos, legal, rand, players) {
     reason: isSafe(pos, road) ? CPU_REASONS.SAFE : CPU_REASONS.SACRIFICE,
   }));
   return pickBest(scored, rand);
+}
+
+/**
+ * How many more of their own turn starts (income paydays) the current mayor can expect,
+ * judged from the board alone. Rough: the unpaved roads shared out, about one in two taken
+ * as a turn-ending move. Look-ahead: once the safe roads run out the rest of the board goes
+ * in a few long capture chains, so safe moves still to play (about half the safe roads)
+ * plus one per likely chain, shared out.
+ */
+export function expectedTurnsLeft(game, { lookAhead = false } = {}) {
+  const pos = positionOf(game);
+  const free = freeRoads(pos);
+  const players = game.players.length;
+  if (!lookAhead) return Math.floor(free.length / players / 2);
+  const safe = free.filter((r) => isSafe(pos, r)).length;
+  return Math.floor((safe / 2 + Math.ceil(pos.open.size / 4)) / players);
 }
 
 /**

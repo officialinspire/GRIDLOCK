@@ -140,6 +140,25 @@ export const ECONOMY = Object.freeze({
   }),
 });
 
+/**
+ * CPU mayor strategy (core/cpu/city.js). Tuning only: every price, income, upkeep, bonus and
+ * event effect the CPU weighs comes from the real economy through core/forecast.js.
+ */
+export const CPU = Object.freeze({
+  /** Cash a CPU mayor keeps in hand after any purchase (a table can pass its own). */
+  RESERVE: Object.freeze({ easy: 300, normal: 1000, hard: 1000 }),
+  /** Easy: chance to develop a block it just captured (when something sensible is affordable)… */
+  EASY_BUILD_CHANCE: 0.75,
+  /** …and, in Manage City, to build on or upgrade one of its blocks. */
+  EASY_MANAGE_CHANCE: 0.35,
+  /** Hard: minimum expected return per dollar spent before it commits cash. */
+  HARD_MIN_ROI: 0.05,
+  /** Hard: value per turn of civic shelter, as a share of the income it protects from emergencies. */
+  CIVIC_SHELTER_VALUE: 0.15,
+  /** Hard: share of a district bonus it counts for a build that leaves the district one block short. */
+  DISTRICT_POTENTIAL: 0.5,
+});
+
 export const MAX_NAME_LENGTH = 16;
 
 /**

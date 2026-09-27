@@ -17,6 +17,7 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 - **Rule presets:** Standard, Classic (no events) and Urban Chaos (an event every round), for 2–4 players, kept by autosave.
 - **Career:** a Statistics screen with per-mayor records and 12 achievement badges; only genuinely completed matches count.
 - **Strategic forecasts:** the Build panel and inspector show cost, income, upkeep, net per turn, City Value change, event modifiers and the bonuses a build would activate, computed by running the real transaction on a copy of the game.
+- **CPU city strategy:** `chooseCityAction()` decides builds, upgrades, leaving land vacant, keeping a configurable cash reserve, and selling or downgrading in debt. It scores everything with the real forecasts: Easy picks sensibly, Normal weighs income, upkeep, bonuses, reserve and events, and Hard adds event duration, civic shelter, district completion, return per dollar and bankruptcy risk.
 - **CPU road engine:** `chooseRoad()` with Easy, Normal and Hard play: captures, safe roads, cheapest sacrifices, and for Hard chain look-ahead, value weighting and double-dealing. Pure and deterministic; it never touches the game's random generator.
 - **Human and CPU seats:** each seat is Human or CPU (Easy/Normal/Hard), with Solo, Local Friends and Mixed presets on New Game and "Mayor Bot" default names. Seat types are kept through autosave, Continue, Play Again, Replay and the results screen. The rules are unchanged, human-only games play exactly as before, and CPU seats are currently played by hand.
 - **Replayable cities:** a city seed on New Game, the seed shown in the pause menu and on the results screen, Replay Same City, and Copy Challenge Link (`?seed=&mode=&seats=`).
@@ -62,7 +63,7 @@ Every seat is either **Human** or **CPU** (with an **Easy**, **Normal** or **Har
 
 CPU seats that aren't given a name are called **Mayor Bot 1**, **Mayor Bot 2** and so on, numbered in seat order. Standard Game is still exactly 4 seats and Custom 2–4, with CPU seats counting toward the total. At least one seat must be Human. The seat types show as a **CPU** tag on the player cards and the results screen. They're kept by autosave and Continue Game, Play Again and Replay Same City. Saves from before seat types existed load as all-Human tables.
 
-A seat's type is table information only: `createGame` stores `controller` (`"human"` / `"cpu"`) and `difficulty` (`null` / `"easy"` / `"normal"` / `"hard"`) on each player, and no rule reads them. A game with only Human seats plays exactly as before. CPU seats don't take their turns on their own yet: whoever holds the device plays them. The road-placement brain they will use already exists (see [CPU road decisions](#cpu-road-decisions)); what's still missing is hooking it into turns, plus development decisions. Career statistics and achievements count only the Human seats. Validation, presets and bot names live in `js/core/seats.js`.
+A seat's type is table information only: `createGame` stores `controller` (`"human"` / `"cpu"`) and `difficulty` (`null` / `"easy"` / `"normal"` / `"hard"`) on each player, and no rule reads them. A game with only Human seats plays exactly as before. CPU seats don't take their turns on their own yet: whoever holds the device plays them. The decisions they will use already exist (see [CPU road decisions](#cpu-road-decisions) and [CPU city strategy](#cpu-city-strategy)); what's still missing is hooking them into turns. Career statistics and achievements count only the Human seats. Validation, presets and bot names live in `js/core/seats.js`.
 
 ### CPU road decisions
 
@@ -77,6 +78,23 @@ A seat's type is table information only: `createGame` stores `controller` (`"hum
 **Fairness and determinism:** the engine sees only what a player at the table sees. It never reads `game.rngState` or the event pool and never draws from the game's random generator, so asking it for a move can't predict or change city events (a test plays the same game with and without consulting it and gets identical events). Its choices between equally good roads come from its own seeded stream: pass `seed`, or it derives one from the public city seed, the seat and how many roads are down. The same position and seed always give the same road.
 
 Measured in 40-game head-to-head matches with seats alternated (Classic rules, captures only): Normal takes 79% of the blocks against Easy, Hard takes 62% against Normal, and Hard takes 74% against Easy. Hard decides in under a millisecond typically, and 42 ms at worst in crowded endgames.
+
+### CPU city strategy
+
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, and "pave" (done managing). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave".
+
+It has no economy formulas of its own:
+- Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
+- Debt options use `quoteDowngrade()`/`quoteSale()` plus the real `downgradeBlock()`/`sellDevelopment()` on a copy, read back with `playerStats()`/`scorePlayer()`.
+- It never chooses a purchase the quote says is unaffordable, and it always keeps a **cash reserve**: `CPU.RESERVE` in `config.js` ($300 Easy, $1,000 Normal/Hard), or the `reserve` option.
+
+| Difficulty | Building | Cash kept after a purchase | In debt |
+| --- | --- | --- | --- |
+| **Easy** | Builds something sensible (any affordable option that raises net income) on 75% of captures; builds or upgrades in Manage City 35% of the time | Reserve | Random downgrades |
+| **Normal** | The best net income per turn × turns left + City Value change: adjacency bonuses, upkeep and today's event prices and income are all in the forecast. Leaves land vacant when nothing pays back before the city is finished | Reserve + next turn's upkeep and repair bills | Gives up the least net income per dollar raised |
+| **Hard** | The same judged harder: active events count only for the rounds they have left, civic shelter is worth 15% of the neighbouring income it protects, a build that leaves a district one block short counts half the bonus it would bring, and it needs a return of at least 5% per dollar | Reserve + next turn's charges even if income were halved, plus a possible Fire repair | Least (income lost over the turns left + City Value lost) per dollar of debt covered |
+
+All three declare bankruptcy only when selling everything couldn't cover the debt (the rules allow nothing else). The tuning constants live in `CPU` in `config.js`. In 30 all-CPU Standard games with the three difficulties at each table (seats rotated), average City Value was $23.6k for Easy, $38.5k for Normal and $40.8k for Hard; there were no bankruptcies, and all six categories got built.
 
 **Your turn**
 1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
@@ -429,6 +447,8 @@ js/
     modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
     seats.js               Seat controllers (human / cpu + difficulty): validation, table presets, bot names
     cpu/roads.js           CPU road choice (Easy / Normal / Hard): pure, deterministic, decision only
+    cpu/city.js            CPU Manage City + Capture/Develop: build, upgrade, vacant, reserve, debt (forecast-based)
+    cpu/random.js          The CPU's own seeded stream (never the game RNG)
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
     bus.js                 Pub/sub between core and UI
@@ -482,6 +502,7 @@ tests/
   unit/challenge.test.mjs  Seed/link parsing, links never carry ?debug, Replay setup; same seed + mode + seats + moves = same events (every preset)
   unit/seats.test.mjs      Seat validation (Standard/Custom, controllers, difficulty, a human seat), presets, bot names, human-only games unchanged, mixed tables, save/Continue/rematch/replay, career counts humans
   unit/cpu-roads.test.mjs  CPU roads on staged positions: captures, doubles/chains, safe roads, sacrifices, value-weighting, double-deal; purity, determinism, event RNG untouched; whole CPU games; Hard ≥ Normal > Easy
+  unit/cpu-city.test.mjs   CPU city decisions on staged positions: affordability, configurable reserve, endgame restraint, district and event and civic judgement, upgrades, debt and bankruptcy; purity; whole CPU games; Normal/Hard > Easy
   unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
