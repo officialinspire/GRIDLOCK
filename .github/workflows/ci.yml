@@ -39,6 +39,7 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
       - name: Offline / PWA checks
+        if: ${{ !cancelled() }}
         run: npm run test:pwa
         env:
           BROWSER: ${{ matrix.browser }}

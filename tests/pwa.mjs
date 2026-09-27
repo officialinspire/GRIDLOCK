@@ -53,7 +53,7 @@ const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
-page.on('requestfailed', (request) => errors.push(`requestfailed: ${request.url()}`));
+page.on('requestfailed', (request) => errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
 page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`); });
 
 const road = (id) => page.locator(`#board [data-road="${id}"]`);
@@ -114,7 +114,11 @@ try {
 
   // --- 2. Fully offline -----------------------------------------------------
   await stopServer();
-  await context.setOffline(true);
+  // Playwright's WebKit offline emulation fails navigations before the service worker can answer
+  // (Safari itself serves them offline). There the stopped server is the whole offline test: the
+  // site has no network at all. Chromium and Firefox also go fully offline.
+  const emulateOffline = browserName !== 'webkit';
+  if (emulateOffline) await context.setOffline(true);
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('html.is-ready');
   assert.ok(await page.isVisible('[data-screen="title"]'), 'title screen offline');
@@ -155,7 +159,7 @@ try {
 
   // --- 3. Safe update -------------------------------------------------------
   server = await startServer(port, { base: BASE_PATH });
-  await context.setOffline(false);
+  if (emulateOffline) await context.setOffline(false);
   const NEXT = `${VERSION}-next`;
   server.overrides.set('sw.js', (src) => src.replace(`const VERSION = '${VERSION}';`, `const VERSION = '${NEXT}';`));
   await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());

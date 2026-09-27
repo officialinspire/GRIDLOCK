@@ -63,8 +63,19 @@ function watchForBrowserErrors(page) {
     if (message.type() === 'error' && !optionalFont(source)) errors.push(`console: ${message.text()}`);
     if (message.type() === 'warning' && /\[assets\]/.test(message.text())) errors.push(`asset warning: ${message.text()}`);
   });
+  // A request the browser cancels because the page navigated away (reload, screen change via
+  // location) isn't an asset failure. Firefox reports those as failed when a service worker is in
+  // the path. Only such aborts are excused: every other failure, and any abort without a later
+  // navigation, still fails the test.
+  let navigations = 0;
+  const startedAt = new WeakMap();
+  page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) navigations++; });
+  page.on('request', (request) => startedAt.set(request, navigations));
   page.on('requestfailed', (request) => {
-    if (!optionalFont(request.url())) errors.push(`requestfailed: ${request.url()}`);
+    if (optionalFont(request.url())) return;
+    const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
+    if (aborted && navigations > (startedAt.get(request) ?? navigations)) return;
+    errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`);
   });
   page.on('response', (response) => {
     if (response.status() >= 400 && !optionalFont(response.url())) errors.push(`HTTP ${response.status()}: ${response.url()}`);
