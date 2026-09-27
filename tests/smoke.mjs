@@ -591,6 +591,137 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Audio: no autoplay, settings UI + persistence, ambience scenes, pause ducking, mute, capture chain.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const autoplayWarnings = [];
+  page.on('console', (m) => { if (/AudioContext|autoplay/i.test(m.text())) autoplayWarnings.push(m.text()); });
+  const audioState = () => page.evaluate(() => window.__GRIDLOCK__.audio());
+  const setSlider = (name, value) => page.locator(`#settings-form [name="${name}"]`).evaluate((el, v) => {
+    el.value = String(v);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')));
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    let st = await audioState();
+    assert.equal(st.contextState, 'none', 'no AudioContext before any gesture (no autoplay)');
+    assert.equal(st.unlocked, false);
+
+    // Settings: defaults, live labels, persistence, dependent controls.
+    await page.getByRole('button', { name: 'Settings' }).click();
+    const form = page.locator('#settings-form');
+    assert.equal(await form.locator('[name="masterVolume"]').inputValue(), '80');
+    assert.equal(await form.locator('output[data-for="ambienceVolume"]').textContent(), '50%');
+    await setSlider('masterVolume', 55);
+    await setSlider('ambienceVolume', 30);
+    assert.equal(await form.locator('output[data-for="masterVolume"]').textContent(), '55%');
+    assert.equal(await form.locator('[name="masterVolume"]').getAttribute('aria-valuetext'), '55%');
+    assert.deepEqual([(await saved()).masterVolume, (await saved()).ambienceVolume], [55, 30]);
+    await page.locator('label.setting-row', { hasText: 'City ambience' }).click();
+    assert.equal(await form.locator('[name="ambienceVolume"]').isDisabled(), true, 'ambience volume greys out with ambience off');
+    await page.locator('label.setting-row', { hasText: 'City ambience' }).click();
+    await page.locator('label.setting-row', { hasText: /^\s*Sound\s*$/ }).click();
+    assert.equal(await form.locator('[name="sfxVolume"]').isDisabled(), true, 'volumes grey out while muted');
+    assert.equal((await saved()).ambience, true, 'muting keeps the ambience choice');
+    await page.locator('label.setting-row', { hasText: /^\s*Sound\s*$/ }).click();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Settings' }).click();
+    assert.equal(await form.locator('[name="masterVolume"]').inputValue(), '55', 'volume persisted');
+    assert.equal(await form.locator('[name="ambienceVolume"]').inputValue(), '30');
+    st = await audioState();
+    assert.equal(st.unlocked, true, 'unlocked by the click');
+    assert.equal(st.levels.master, 0.55);
+    assert.equal(st.ambienceRunning, false, 'no ambience outside the game');
+    await page.locator('[data-screen="settings"] [data-nav="back"]').click();
+
+    // In game: ambience plays (where Web Audio exists), ducks for pause, resumes.
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    st = await audioState();
+    assert.equal(st.scene.name, 'game');
+    if (st.supported) {
+      assert.equal(st.ambienceRunning, true, 'ambience starts in the game');
+      assert.ok(st.levels.ambience > 0);
+    }
+    await page.click('#game-menu-btn');
+    assert.equal((await audioState()).levels.ambience, 0, 'pause fades ambience out');
+    assert.equal((await audioState()).scene.paused, true);
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    // (The dialog's close event is delivered asynchronously.)
+    await page.waitForFunction(() => window.__GRIDLOCK__.audio().levels.ambience > 0, null, { timeout: 5000 });
+
+    // Capture chain (CAPTURE ×1 → FLOW ×3) plays escalating sounds without errors.
+    for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'v-0-0']) {
+      await page.locator(`#board [data-road="${id}"]`).click();
+      await dismissEvent(page);
+    }
+    for (const id of ['v-0-1', 'v-0-2', 'v-0-3']) await pave(page, page.locator(`#board [data-road="${id}"]`));
+    assert.equal(await page.locator('#chain-meter').textContent(), 'FLOW ×3');
+    await page.click('[data-capture-choice="vacant"]');
+
+    // Top-bar mute: same saved setting, survives reload.
+    const mute = page.locator('#mute-btn');
+    assert.equal(await mute.getAttribute('aria-pressed'), 'false');
+    await mute.click();
+    assert.equal(await mute.getAttribute('aria-pressed'), 'true');
+    assert.equal(await mute.getAttribute('aria-label'), 'Unmute sound');
+    st = await audioState();
+    assert.equal(st.levels.master, 0);
+    assert.equal(st.levels.ambience, 0);
+    assert.equal((await saved()).sound, false);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await page.locator('#mute-btn').getAttribute('aria-pressed'), 'true', 'mute persisted');
+    await page.locator('#mute-btn').click();
+    assert.equal((await saved()).sound, true);
+    await noHorizontalScroll(page, 'game with mute button');
+
+    assert.deepEqual(errors, []);
+    assert.deepEqual(autoplayWarnings, [], 'no autoplay warnings');
+    console.log(`✔ audio: no autoplay, settings, ambience scenes, pause, mute, chain${st.supported ? '' : ' (no Web Audio: silent)'}`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ audio: ${err.message}`);
+    await page.screenshot({ path: 'test-results/audio-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Phone: the sound settings fit without horizontal scrolling.
+{
+  const context = await browser.newContext({ viewport: { width: 360, height: 740 }, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await noHorizontalScroll(page, 'phone settings');
+    const box = await page.locator('#settings-form [name="sfxVolume"]').boundingBox();
+    assert.ok(box.width >= 100 && box.height >= 24, `slider is a usable touch target: ${JSON.stringify(box)}`);
+    await page.screenshot({ path: 'test-results/audio-settings-phone.png', fullPage: true });
+    assert.deepEqual(errors, []);
+    console.log('✔ audio settings on a phone');
+  } catch (err) {
+    failures++;
+    console.error(`✘ audio settings (phone): ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

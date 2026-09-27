@@ -55,7 +55,19 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 | Keyboard | Tab into the board, use arrow keys between cells, Enter/Space to activate, Escape to cancel an armed road | n/a |
 | Pause, How To Play, quit | ⏸ button (top left) | same |
 
-Settings (saved on the device): sound effects, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
+Settings (saved on the device): sound on/off, master/effects/ambience volume, city ambience, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
+
+### Sound
+
+All audio is synthesised in the browser with Web Audio (no sound files), and gameplay never depends on it: everything a sound signals is also shown on screen.
+
+- **Effects:** each action has its own sound: road paved (a card tile set down), capture (rising arpeggio), build (wooden knocks and a chord), upgrade (brassy fanfare), coins (income, sales), city events (bright bells for boons, a soft two-tone siren for emergencies, low bells for downturns), refused move (a muted bonk) and the final fanfare.
+- **Capture chains escalate:** each extra capture in a chain climbs a whole tone and adds layers (octave, sparkle, then a low boom), capped after a few steps.
+- **City ambience** (game screen only): quiet room tone and a slowly swelling distant-traffic hum, with an occasional passing car, bird, far-off bell or paper rustle. It fades out for the pause menu, on other screens and when the app goes to the background (then audio is suspended entirely), and fades back in on return.
+- **Settings:** a master **Sound** switch (also the 🔈 button in the game's top bar), **Master**, **Effects** and **Ambience** volume sliders, and a **City ambience** switch. All are saved on the device; volume changes glide instead of jumping.
+- **No autoplay:** nothing is created or played until the player first taps or presses a key.
+- **Reduce motion** (the game setting or the system preference) keeps audio calmer: capture chains climb less and skip the boom, and ambient sounds don't sweep across the stereo field and come less often.
+- Browsers without Web Audio, or with audio blocked, simply stay silent.
 
 ### Saving a local game
 
@@ -280,7 +292,7 @@ js/
     eventView.js           Event card, active-event pills, block event lines
     financeView.js         Distress panel and bankruptcy card
     resultsView.js         Final results screen
-    sfx.js                 Tiny synthesised sound effects (Web Audio, no files)
+    audio.js               Audio manager: synthesised effects, procedural ambience, volume buses, fades
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -304,6 +316,7 @@ tests/
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
+  unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds, chain escalation, volumes/fades, ambience scenes, settings
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
   smoke.mjs                Playwright smoke test across 5 viewports
   pwa.mjs                  Offline/PWA browser check under a /GRIDLOCK/ subpath
@@ -364,4 +377,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, and animation/reduced-motion paths. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone). It uses a local `playwright` install if there is one and otherwise falls back to a global install.

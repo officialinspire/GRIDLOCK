@@ -158,12 +158,35 @@
       </header>
 
       <form class="page-body paper settings-panel" id="settings-form" autocomplete="off">
-        <fieldset>
-          <legend>Sound &amp; controls</legend>
+        <fieldset class="settings-sound">
+          <legend>Sound</legend>
           <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:sound"></span>Sound effects</span>
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:sound"></span>Sound</span>
             <input type="checkbox" class="toggle" name="sound">
           </label>
+          <label class="setting-row setting-row--slider" data-needs-sound>
+            <span class="setting-row__label">Master volume</span>
+            <input type="range" class="slider" name="masterVolume" min="0" max="100" step="5" aria-valuetext="80%">
+            <output class="slider__value" data-for="masterVolume">80%</output>
+          </label>
+          <label class="setting-row setting-row--slider" data-needs-sound>
+            <span class="setting-row__label">Effects volume</span>
+            <input type="range" class="slider" name="sfxVolume" min="0" max="100" step="5" aria-valuetext="80%">
+            <output class="slider__value" data-for="sfxVolume">80%</output>
+          </label>
+          <label class="setting-row" data-needs-sound>
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>City ambience (in game)</span>
+            <input type="checkbox" class="toggle" name="ambience">
+          </label>
+          <label class="setting-row setting-row--slider" data-needs-sound data-needs-ambience>
+            <span class="setting-row__label">Ambience volume</span>
+            <input type="range" class="slider" name="ambienceVolume" min="0" max="100" step="5" aria-valuetext="50%">
+            <output class="slider__value" data-for="ambienceVolume">50%</output>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Controls</legend>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
             <input type="checkbox" class="toggle" name="confirmTaps">
@@ -229,6 +252,9 @@
           <span class="round-badge__roads" title="Roads paved"><span class="round-badge__roads-icon" data-sprite="icons:road"></span><span id="hud-roads">0/84</span></span>
         </div>
         <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
+        <button class="btn btn--icon btn--sm" id="mute-btn" aria-pressed="false" aria-label="Mute sound">
+          <span class="btn__icon" data-sprite="icons:sound"></span>
+        </button>
         <button class="btn btn--icon btn--sm" data-nav="settings" aria-label="Settings">
           <span class="btn__icon" data-sprite="icons:gear"></span>
         </button>

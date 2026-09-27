@@ -194,6 +194,26 @@
 .setting-row__icon { width: 30px; }
 .settings-panel__note { font-size: 0.9rem; color: var(--ink-soft); text-align: center; }
 
+/* Volume sliders: large touch target, themed with the gold accent. */
+.setting-row--slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 46%) 4.2ch;
+  align-items: center;
+  cursor: default;
+}
+.slider {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  accent-color: var(--gold-deep);
+  cursor: pointer;
+}
+.slider:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; border-radius: 6px; }
+.slider__value { font-weight: 900; font-variant-numeric: tabular-nums; text-align: right; }
+.setting-row.is-disabled { opacity: 0.5; cursor: default; }
+.setting-row.is-disabled .slider { cursor: default; }
+
 /* Setup */
 .setup { display: grid; gap: 22px; padding-bottom: 24px; }
 .setup__mode { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 28px; padding: 14px 18px; }

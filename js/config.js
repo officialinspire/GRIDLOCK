@@ -15,7 +15,11 @@ export const PLAYER_PRESETS = Object.freeze([
 ]);
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  sound: true,
+  sound: true, // master sound on/off (the mute switch)
+  masterVolume: 80, // 0–100
+  sfxVolume: 80, // 0–100
+  ambience: true, // procedural tabletop/city background, game screen only
+  ambienceVolume: 50, // 0–100
   confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
   reducedMotion: false,
   showCoords: false,

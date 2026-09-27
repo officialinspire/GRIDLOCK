@@ -24,8 +24,8 @@ import { renderHud } from './hud.js';
 import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
-import { play } from './sfx.js';
-import { getSettings } from './settingsView.js';
+import { audio, play } from './audio.js';
+import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
@@ -145,12 +145,14 @@ function render() {
   renderActions();
 }
 
-/** Re-render after a build/upgrade and celebrate any new bonus income. */
-function handleDevelopment({ bonusBefore }) {
+/** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
+function handleDevelopment(change) {
+  const { bonusBefore } = change;
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
-  play('build');
+  // Sales/downgrades pay a refund; Level 2–3 is an upgrade; anything else is new construction.
+  play(change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build');
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
@@ -305,7 +307,7 @@ function handleRoad(id) {
   chain = result.extraTurn ? chain + n : 0;
   render();
   renderChain();
-  play(n > 0 ? 'capture' : 'pave', chain || 1);
+  play(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
 
   if (n > 0) {
     flashFrame();
@@ -328,7 +330,7 @@ function handleRoad(id) {
   if (n > 0) showCaptureChoice();
   const finishTransition = () => {
     if (result.event?.started) {
-      play('event');
+      play('event', { kind: getEventDef(result.event.started.id)?.kind });
       showEventCard(game, result.event.started, result.event.expired);
     } else if (result.event?.expired.length) {
       toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
@@ -339,6 +341,7 @@ function handleRoad(id) {
     const owed = result.turnUpkeep?.amount ?? 0;
     const repairs = result.turnRepair?.amount ?? 0;
     if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
+      if (paid > 0 && !result.event?.started) play('coins');
       showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
       const payee = getPlayer(game, result.turnIncome.seat);
       const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
@@ -422,9 +425,32 @@ function continueGame(saved = loadActiveGame()) {
   toast('Game restored', { tone: 'success' });
 }
 
+/** Top-bar mute switch: the same saved "Sound" setting as the Settings screen. */
+function initMuteButton() {
+  const btn = $('#mute-btn');
+  const sync = () => {
+    const muted = !getSettings().sound;
+    btn.setAttribute('aria-pressed', String(muted));
+    btn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound');
+    btn.title = muted ? 'Sound off' : 'Sound on';
+    btn.querySelector('.btn__icon').replaceWith(createSprite(muted ? 'icons:mute' : 'icons:sound', { className: 'btn__icon' }));
+  };
+  btn.addEventListener('click', () => {
+    updateSettings({ sound: !getSettings().sound });
+    play('tick');
+  });
+  bus.on('settings:changed', sync);
+  sync();
+}
+
 function initDialogs() {
   const pause = $('#pause-dialog');
-  $('#game-menu-btn').addEventListener('click', () => pause.showModal());
+  $('#game-menu-btn').addEventListener('click', () => {
+    pause.showModal();
+    audio.setPaused(true);
+  });
+  pause.addEventListener('close', () => audio.setPaused(false));
+  initMuteButton();
   pause.addEventListener('click', (e) => {
     // Clicking the backdrop closes the dialog.
     if (e.target === pause) return pause.close();
