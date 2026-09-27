@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TUTORIAL_KEY, TUTORIAL_STEPS, STEP_IDS, normalizeTutorial, loadTutorial, saveTutorial, isRunning, onNewGame,
-  markSeen, skipTutorial, replayTutorial, tipForGame, almostCompleteBlock,
+  markSeen, skipTutorial, replayTutorial, tipForGame, almostCompleteBlock, stepsFor,
 } from '../../js/core/tutorial.js';
 import { createGame, placeRoad, resolveCapture, startPaving, PHASES, TURN_PHASES } from '../../js/core/game.js';
 import { allRoadIds } from '../../js/core/board.js';
@@ -13,9 +13,24 @@ const memoryStorage = (initial = {}) => {
 };
 const newGame = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), seed: 7, eventPool: [] });
 
-test('the eight tips cover the first game, in teaching order', () => {
-  assert.deepEqual(STEP_IDS, ['manage', 'pave', 'complete', 'develop', 'bonus', 'income', 'events', 'scoring']);
+test('the tips cover the first game, in teaching order (CPU turns only when bots play)', () => {
+  assert.deepEqual(STEP_IDS, ['manage', 'pave', 'complete', 'develop', 'bonus', 'income', 'events', 'cpu', 'scoring']);
   for (const step of TUTORIAL_STEPS) assert.ok(step.title && step.text.length > 20 && step.text.length < 200, step.id);
+  const people = createGame({ seats: [{ seat: 1 }, { seat: 2 }], seed: 1 });
+  const solo = createGame({ seats: [{ seat: 1 }, { seat: 2, controller: 'cpu', difficulty: 'normal' }], seed: 1 });
+  assert.deepEqual(stepsFor(people), STEP_IDS.filter((id) => id !== 'cpu'), 'eight tips at an all-human table');
+  assert.deepEqual(stepsFor(solo), STEP_IDS, 'nine with bots');
+});
+
+test('an all-human first game completes the tutorial without the CPU-turns tip', () => {
+  const people = stepsFor(createGame({ seats: [{ seat: 1 }, { seat: 2 }], seed: 1 }));
+  let s = onNewGame(normalizeTutorial(null));
+  for (const id of people) s = markSeen(s, id, people);
+  assert.equal(s.status, 'done');
+  let bots = onNewGame(normalizeTutorial(null));
+  for (const id of people) bots = markSeen(bots, id, STEP_IDS);
+  assert.equal(bots.status, 'active', 'with bots, the CPU-turns tip is still to come');
+  assert.equal(markSeen(bots, 'cpu', STEP_IDS).status, 'done');
 });
 
 test('starts only on the first New Game', () => {

@@ -23,10 +23,17 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'bonus', title: 'Bonus road', text: 'Capturing gives you another road this turn. Close more blocks to keep the chain going.' },
   { id: 'income', title: 'Income & upkeep', text: 'At the start of your turn, developed blocks pay income and every block you own costs upkeep. Watch your cash!', moment: true },
   { id: 'events', title: 'City events', text: 'Each new round can bring a city event that changes income or costs for a while. Its card shows which blocks are affected.', moment: true },
+  { id: 'cpu', title: 'CPU turns', text: 'Mayor Bots play their own turns: their card lights up and this strip says what they are up to. The board waits for them. Pause, Speed up or Skip any time.', moment: true, cpuOnly: true },
   { id: 'scoring', title: 'Winning', text: 'The game ends when every road is paved. Highest City Value wins: cash + land + 75% of what you invested in buildings.' },
 ]);
 
 export const STEP_IDS = TUTORIAL_STEPS.map((s) => s.id);
+
+/** The tips that apply at this table: the CPU-turns tip only when bots are playing. */
+export function stepsFor(game) {
+  const bots = Boolean(game?.players?.some(isCpu));
+  return TUTORIAL_STEPS.filter((s) => !s.cpuOnly || bots).map((s) => s.id);
+}
 const STATUSES = ['new', 'active', 'done', 'skipped'];
 
 export function normalizeTutorial(raw) {
@@ -60,10 +67,15 @@ export function onNewGame(state) {
   return state.status === 'new' ? { ...state, status: 'active' } : state;
 }
 
-export function markSeen(state, id) {
+/**
+ * Records a tip as seen. The tutorial is done once every tip that applies (`applicable`,
+ * default all; see stepsFor) has been seen, so an all-human first game finishes without
+ * the CPU-turns tip.
+ */
+export function markSeen(state, id, applicable = STEP_IDS) {
   if (!STEP_IDS.includes(id) || state.seen.includes(id)) return state;
   const seen = STEP_IDS.filter((s) => s === id || state.seen.includes(s));
-  return { status: seen.length === STEP_IDS.length ? 'done' : state.status, seen };
+  return { status: applicable.every((s) => seen.includes(s)) ? 'done' : state.status, seen };
 }
 
 export const skipTutorial = (state) => ({ ...state, status: 'skipped' });

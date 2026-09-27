@@ -59,28 +59,41 @@
           <span class="btn__icon" data-sprite="icons:play"></span>
           <span>Continue Game</span>
         </button>
-        <button class="btn btn--gold btn--xl" data-nav="setup" data-autofocus>
-          <span class="btn__icon" data-sprite="icons:play"></span>
-          <span>New Game</span>
-        </button>
         <button class="btn btn--sm" id="discard-save" hidden>Discard Saved Game</button>
-        <button class="btn btn--xl" data-nav="howto">
-          <span class="btn__icon" data-sprite="icons:info"></span>
-          <span>How To Play</span>
-        </button>
-        <button class="btn btn--xl" data-nav="stats">
-          <span class="btn__icon" data-sprite="icons:trophy"></span>
-          <span>Statistics</span>
-        </button>
-        <button class="btn btn--xl" data-nav="settings">
-          <span class="btn__icon" data-sprite="icons:gear"></span>
-          <span>Settings</span>
-        </button>
+        <!-- Three ways to play: each opens New Game with its table preset (js/ui/setupView.js). -->
+        <div class="play-options" role="group" aria-label="Play">
+          <button class="btn btn--gold btn--xl play-option" data-nav="setup" data-setup-preset="solo" data-autofocus>
+            <span class="btn__icon" data-sprite="icons:play"></span>
+            <span class="play-option__text"><span>Play Solo</span><small>You vs 3 Mayor Bots</small></span>
+          </button>
+          <button class="btn btn--xl play-option" data-nav="setup" data-setup-preset="friends">
+            <span class="btn__icon" data-sprite="icons:swap"></span>
+            <span class="play-option__text"><span>Local Multiplayer</span><small>2–4 players · one device</small></span>
+          </button>
+          <button class="btn btn--xl play-option" data-nav="setup" data-setup-preset="mixed">
+            <span class="btn__icon" data-sprite="icons:gear"></span>
+            <span class="play-option__text"><span>Custom / Mixed Game</span><small>People and bots, your way</small></span>
+          </button>
+        </div>
+        <div class="menu-row">
+          <button class="btn menu-row__btn" data-nav="howto">
+            <span class="btn__icon" data-sprite="icons:info"></span>
+            <span>How To Play</span>
+          </button>
+          <button class="btn menu-row__btn" data-nav="stats">
+            <span class="btn__icon" data-sprite="icons:trophy"></span>
+            <span>Statistics</span>
+          </button>
+          <button class="btn menu-row__btn" data-nav="settings">
+            <span class="btn__icon" data-sprite="icons:gear"></span>
+            <span>Settings</span>
+          </button>
+        </div>
       </nav>
 
       <aside class="title-note sticky-note" aria-label="Game info">
-        <strong>Local play</strong>
-        <span>2–4 players · one device</span>
+        <strong>Solo or local play</strong>
+        <span>1–4 people · one device</span>
         <span class="title-note__ver">v1.2</span>
       </aside>
 
@@ -177,6 +190,12 @@
           <h3>Winning</h3>
           <p>When every block is enclosed, every mayor finishes the same economic round. Highest <strong>City Value</strong> wins: all cash + all land + 75% of actual construction investment.</p>
           <p>Ties go to more blocks, then more developed blocks, then more cash. Awards like Most Blocks and Greenest City go to standouts too.</p>
+        </article>
+        <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:swap"></span>
+          <h3>Ways to Play</h3>
+          <p><strong>Play Solo</strong> against three Mayor Bots, <strong>Local Multiplayer</strong> passing one device around, or a <strong>Custom / Mixed Game</strong> of people and bots.</p>
+          <p>On a bot's turn its card glows and a strip says what it is doing. The board waits for it. <strong>Pause</strong>, <strong>Speed up</strong> or <strong>Skip</strong> any time.</p>
         </article>
         <article class="paper howto-card howto-card--tutorial">
           <span class="howto-card__icon" data-sprite="icons:info"></span>
@@ -381,9 +400,15 @@
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
         <!-- Shown during CPU turns (js/ui/cpuDriver.js). -->
         <div class="cpu-status" id="cpu-status" hidden>
-          <p class="cpu-status__text" role="status" aria-live="polite"><span id="cpu-status-name">Mayor Bot</span> is thinking<span class="cpu-status__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
+          <div class="cpu-status__lines" role="status" aria-live="polite">
+            <p class="cpu-status__text"><span id="cpu-status-name">Mayor Bot</span> is thinking<span class="cpu-status__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
+            <p class="cpu-status__intent" id="cpu-status-intent" hidden></p>
+          </div>
+          <button type="button" class="btn btn--sm" id="cpu-pause">
+            <span class="btn__icon" data-sprite="icons:pause"></span><span>Pause</span>
+          </button>
           <button type="button" class="btn btn--sm" id="cpu-faster" aria-pressed="false">
-            <span class="btn__icon" data-sprite="icons:clock"></span><span>Faster</span>
+            <span class="btn__icon" data-sprite="icons:clock"></span><span>Speed up</span>
           </button>
           <button type="button" class="btn btn--sm" id="cpu-skip">
             <span class="btn__icon" data-sprite="icons:play"></span><span>Skip</span>

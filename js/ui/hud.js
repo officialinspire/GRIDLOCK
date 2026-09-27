@@ -142,7 +142,7 @@ function playerCard(game, seat) {
   const active = game.phase === PHASES.PLAYING && currentPlayer(game).seat === seat;
   const cpu = controllerLabel(player);
   return h('article', {
-    class: `player-card paper player-card--${preset.color}${active ? ' is-active' : ''}${stats.distress ? ' is-distress' : ''}`,
+    class: `player-card paper player-card--${preset.color}${active ? ' is-active' : ''}${active && isCpu(player) ? ' is-thinking' : ''}${stats.distress ? ' is-distress' : ''}`,
     'aria-label': `${player.name}${cpu ? ` (${cpu})` : ''}${active ? ', current turn' : ''}${stats.distress ? ', in debt' : ''}`,
     'aria-current': active ? 'true' : null,
     dataset: { seat },

@@ -106,7 +106,7 @@ try {
   assert.ok(manifest.icons.some((i) => i.purpose === 'maskable'));
 
   // Start a game online and make a few moves so there's an autosave.
-  await page.getByRole('button', { name: 'New Game' }).click();
+  await page.getByRole('button', { name: 'Local Multiplayer' }).click();
   await page.click('#setup-start');
   for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(id);
   assert.equal(await roadsPaved(), '3');

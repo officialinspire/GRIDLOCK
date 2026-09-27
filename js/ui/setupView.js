@@ -121,6 +121,27 @@ function syncControllers(form) {
   }
 }
 
+/** Page heading for each table preset (the title screen's three ways to play). */
+const HEADINGS = { solo: 'Play Solo', friends: 'Local Multiplayer', mixed: 'Custom Game' };
+
+/**
+ * The title screen's three ways to play, applied to the form before it is shown:
+ *   solo     Standard Game: Player 1 Human, Players 2–4 CPU on Normal (personalities automatic)
+ *   friends  every joined seat Human (the classic pass-the-device game)
+ *   mixed    Custom Game (2–4 seats), each seat Human or CPU as you like
+ */
+export function choosePlayMode(preset) {
+  const form = $('#setup-form');
+  if (!HEADINGS[preset]) return;
+  form.querySelector(`[name="seatPreset"][value="${preset}"]`).checked = true;
+  if (preset === 'solo') {
+    form.querySelector('[name="gameType"][value="standard"]').checked = true;
+    form.querySelectorAll('.seat-card [name="difficulty"]').forEach((select) => { select.value = DEFAULT_DIFFICULTY; });
+  }
+  if (preset === 'mixed') form.querySelector('[name="gameType"][value="custom"]').checked = true;
+  refresh(form);
+}
+
 /** "4 players" for an all-human table (as before); "4 players (1 human, 3 CPU)" otherwise. */
 function playersText(seats) {
   const cpus = seats.filter(isCpu).length;
@@ -145,6 +166,7 @@ function refresh(form) {
     card.querySelector('[name="name"]').disabled = !on;
   });
   syncControllers(form);
+  $('#setup-heading').textContent = HEADINGS[form.elements.seatPreset.value] ?? 'New Game';
   const seats = joinedSeats(form);
   const seatError = validateSeats({ gameType: standard ? 'standard' : 'custom', seats });
   const seatsOk = !seatError;
@@ -195,6 +217,11 @@ export function initSetupView() {
   $('#setup-rules').append(...Object.values(GAME_MODES).map(ruleOption));
 
   form.addEventListener('change', () => refresh(form));
+  // Title screen: Play Solo / Local Multiplayer / Custom / Mixed Game (before the screen switches).
+  document.addEventListener('click', (e) => {
+    const option = e.target.closest('[data-setup-preset]');
+    if (option) choosePlayMode(option.dataset.setupPreset);
+  });
   form.elements.seed.addEventListener('input', () => refresh(form));
   $('#setup-seed-new').addEventListener('click', () => {
     form.elements.seed.value = formatSeed(randomSeed());

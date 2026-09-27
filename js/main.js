@@ -40,7 +40,7 @@ function placeDecor(root = document) {
 }
 
 /**
- * A challenge link (?seed=…&mode=…&seats=…) pre-fills New Game, then leaves the address bar
+ * A challenge link (?seed=…&mode=…&seats=…) pre-fills the New Game screen, then leaves the address bar
  * so a later reload or bookmark isn't pinned to that city. Other parameters are kept.
  */
 function acceptChallengeLink() {
@@ -55,7 +55,7 @@ function acceptChallengeLink() {
   }
   applyChallenge(challenge);
   const mode = challenge.mode ? ` · ${getMode(challenge.mode).name} rules` : '';
-  toast(`Challenge city ${formatSeed(challenge.seed)}${mode} is ready. Tap New Game.`, { tone: 'success', duration: 4200 });
+  toast(`Challenge city ${formatSeed(challenge.seed)}${mode} is ready. Choose how to play it.`, { tone: 'success', duration: 4200 });
 }
 
 function boot() {

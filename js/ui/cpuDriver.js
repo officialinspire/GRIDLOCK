@@ -2,9 +2,12 @@
  * Runs CPU seats inside the real turn loop. The driver only schedules: each step is one
  * decision from core/cpu (a road, a build, a sale…) played by the game view through the same
  * handlers a person's click uses, so every move goes through the public core actions.
+ * The step is planned when the pause starts, so the strip can say what the bot intends
+ * ("Building a Landmark on C3") and the road or block it's about to use is highlighted.
  *
  * - One step at a time, after a short "thinking" pause (CPU.THINK_MS by the cpuSpeed setting;
- *   Faster switches to fast, Skip plays the rest of the CPU turns at once).
+ *   Speed up switches to fast, Skip plays the rest of the CPU turns at once; Pause opens the
+ *   pause menu).
  * - Nothing happens while anything else needs the table: an open dialog (pause, event card,
  *   handoff, an auction people are bidding in…), another screen, or no game.
  * - Every scheduled step is tied to the exact game state it was planned for. If anything has
@@ -21,6 +24,7 @@ import { isCpu } from '../core/seats.js';
 let hooks = null;
 let timer = null;
 let plannedFor = null;
+let plan = null; // { text, target, run } for the step being thought about
 let skipping = false;
 
 /** A fingerprint of everything a step could change: if it differs, the plan is stale. */
@@ -33,6 +37,18 @@ function cancel() {
   if (timer) clearTimeout(timer);
   timer = null;
   plannedFor = null;
+  plan = null;
+  showIntent(null);
+}
+
+/** "Building a Landmark on C3" under the thinking line, and a highlight on what it will use. */
+function showIntent(next) {
+  for (const el of document.querySelectorAll('.cpu-intent')) el.classList.remove('cpu-intent');
+  const line = $('#cpu-status-intent');
+  if (!line) return;
+  line.textContent = next?.text ?? '';
+  line.hidden = !next?.text;
+  if (next?.target) document.querySelector(next.target)?.classList.add('cpu-intent');
 }
 
 function showStatus(player) {
@@ -70,16 +86,25 @@ export function kickCpu() {
     return;
   }
   const key = stateKey(game);
-  if (timer && plannedFor === key) return;
+  if (timer && plannedFor === key) {
+    showIntent(plan); // a re-render may have replaced the highlighted element
+    return;
+  }
   cancel();
   plannedFor = key;
+  plan = hooks.plan(game);
+  showIntent(plan);
+  const planned = plan;
   const delay = skipping ? 0 : CPU.THINK_MS[hooks.getSettings().cpuSpeed] ?? CPU.THINK_MS.normal;
   timer = setTimeout(() => {
     timer = null;
     const now = hooks.getGame();
     const fresh = now === game && isCpuTurn(now) && stateKey(now) === key && hooks.canAct();
     plannedFor = null;
-    if (fresh) hooks.step(now);
+    plan = null;
+    showIntent(null);
+    // The plan was made for exactly this state (same key), so it is still the right move.
+    if (fresh) planned.run();
     kickCpu();
   }, delay);
 }
@@ -98,9 +123,10 @@ export function skipCpu() {
   kickCpu();
 }
 
-export function initCpuDriver({ getGame, canAct, step, getSettings, setSpeed }) {
-  hooks = { getGame, canAct, step, getSettings };
+export function initCpuDriver({ getGame, canAct, plan: planStep, getSettings, setSpeed, pause }) {
+  hooks = { getGame, canAct, plan: planStep, getSettings };
   $('#cpu-skip').addEventListener('click', skipCpu);
+  $('#cpu-pause').addEventListener('click', pause);
   $('#cpu-faster').addEventListener('click', () => {
     setSpeed(getSettings().cpuSpeed === 'fast' ? 'normal' : 'fast');
     cancel();

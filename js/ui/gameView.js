@@ -7,8 +7,8 @@ import {
   createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES,
   startPaving, resolveCapture,
 } from '../core/game.js';
-import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
-import { describeDevelopment } from '../core/buildings.js';
+import { getBlockById, DISTRICTS, builtSides, roadBlocks } from '../core/board.js';
+import { describeDevelopment, getCategory } from '../core/buildings.js';
 import { blockValue, bonusIncome, formatCash, formatDelta } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
@@ -174,8 +174,12 @@ function render() {
   renderInspector(getSelectedBlock());
   renderEventStrip(game);
   renderActions();
+  // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
+  const botTurn = isCpuTurn(game);
+  $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
   updateTutorial();
   kickCpu();
+  if (botTurn) tutorialMoment('cpu');
 }
 
 /** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
@@ -198,7 +202,7 @@ function handleDevelopment(change) {
 
 function showCaptureChoice() {
   const dialog = $('#capture-choice-dialog');
-  // CPU mayors make this choice themselves (cpuStep); people get the dialog.
+  // CPU mayors make this choice themselves (cpuPlan); people get the dialog.
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
     if (dialog.open) dialog.close();
     render();
@@ -334,7 +338,7 @@ const REJECT_MESSAGES = {
 /** Opens the distress panel for the current player, after any event card is dismissed. */
 function checkDistress() {
   if (!game || game.phase !== PHASES.PLAYING || !isInDistress(currentPlayer(game))) return;
-  if (isCpuTurn()) return; // CPU mayors sell or declare themselves (cpuStep)
+  if (isCpuTurn()) return; // CPU mayors sell or declare themselves (cpuPlan)
   const eventCard = $('#event-dialog');
   if (eventCard.open) {
     eventCard.addEventListener('close', () => openDistressPanel(game), { once: true });
@@ -449,67 +453,116 @@ function settleCpuAuction(humanBids = []) {
   render();
 }
 
+/** Blocks a road would claim right now (for "Claiming C3 & D3"). */
+function claimsOf(g, road) {
+  return roadBlocks(g.board, road).filter((b) => b.ownerSeat == null && !b.abandoned && builtSides(g.board, b) === 3);
+}
+
+/** What a CPU road choice looks like in the thinking strip. */
+function roadIntent(g, d) {
+  const claims = claimsOf(g, d.road).map((b) => b.label).join(' & ');
+  const text = {
+    capture: `Claiming ${claims}`,
+    'double-deal': 'Giving up a pair to take the longer chain',
+    sacrifice: 'No safe roads left: giving away as little as it can',
+    risky: 'Paving a risky road',
+  }[d.reason] ?? 'Paving a road';
+  return { text, target: `#board [data-road="${d.road}"]` };
+}
+
 /**
- * One CPU step: a decision from core/cpu, played through the same handlers and core actions
- * a person's clicks use (placeRoad via handleRoad, buildOnBlock/upgradeBlock via
- * handleDevelopment, resolveCapture, downgrade/sale, bankruptcy, the redevelopment auction).
+ * Plans one CPU step: a decision from core/cpu, described for the thinking strip ("Building a
+ * Landmark on C3", with the road or block it will use highlighted), and `run`, which plays it
+ * through the same handlers and core actions a person's clicks use (placeRoad via handleRoad,
+ * buildOnBlock/upgradeBlock via handleDevelopment, resolveCapture, downgrade/sale, bankruptcy,
+ * the redevelopment auction). The driver runs it only if the game is still exactly as planned.
  */
-function cpuStep(g) {
+function cpuPlan(g) {
   const me = currentPlayer(g);
   if (g.turnPhase === TURN_PHASES.PAVE_ROAD || g.turnPhase === TURN_PHASES.BONUS_ROAD) {
     const d = chooseRoad(g);
-    if (d.road) handleRoad(d.road, { cpu: true });
-    return;
+    if (!d.road) return { text: null, run: () => render() };
+    return { ...roadIntent(g, d), run: () => handleRoad(d.road, { cpu: true }) };
   }
   const d = chooseCityAction(g);
   const label = (id) => getBlockById(g.board, id).label;
+  const blockTarget = (id) => `#board [data-block="${id}"]`;
   switch (d.action) {
     case 'pave':
-      if (startPaving(g)) {
-        autosave();
-        render();
-      }
-      return;
+      return {
+        text: 'Done building: heading out to pave',
+        run: () => {
+          if (startPaving(g)) {
+            autosave();
+            render();
+          }
+        },
+      };
     case 'build':
     case 'upgrade': {
-      const bonusBefore = bonusTotal(me.seat);
-      const result = d.action === 'build' ? buildOnBlock(g, d.blockId, d.type) : upgradeBlock(g, d.blockId);
-      if (!result.ok) return render();
-      toast(`${me.name} ${d.action === 'build' ? 'builds' : 'upgrades to'} ${describeDevelopment(getBlockById(g.board, result.block))} on ${label(result.block)} · −${formatCash(result.cost)}`, { tone: 'success' });
-      handleDevelopment({ ...result, bonusBefore, cpu: true });
-      return;
+      const block = getBlockById(g.board, d.blockId);
+      const text = d.action === 'build'
+        ? `Building ${/^[aeiou]/i.test(getCategory(d.type).label) ? 'an' : 'a'} ${getCategory(d.type).label} on ${block.label}`
+        : `Upgrading ${block.label} to Level ${block.level + 1}`;
+      return {
+        text,
+        target: blockTarget(d.blockId),
+        run: () => {
+          const bonusBefore = bonusTotal(me.seat);
+          const result = d.action === 'build' ? buildOnBlock(g, d.blockId, d.type) : upgradeBlock(g, d.blockId);
+          if (!result.ok) return render();
+          toast(`${me.name} ${d.action === 'build' ? 'builds' : 'upgrades to'} ${describeDevelopment(getBlockById(g.board, result.block))} on ${label(result.block)} · −${formatCash(result.cost)}`, { tone: 'success' });
+          return handleDevelopment({ ...result, bonusBefore, cpu: true });
+        },
+      };
     }
     case 'vacant':
-      toast(`${me.name} leaves ${label(d.blockId)} vacant`);
-      leaveCapturedBlock(d.blockId);
-      return;
+      return {
+        text: `Leaving ${label(d.blockId)} vacant for now`,
+        target: blockTarget(d.blockId),
+        run: () => {
+          toast(`${me.name} leaves ${label(d.blockId)} vacant`);
+          leaveCapturedBlock(d.blockId);
+        },
+      };
     case 'downgrade':
-    case 'sell': {
-      const result = (d.action === 'sell' ? sellDevelopment : downgradeBlock)(g, d.blockId);
-      if (result.ok) toast(`${me.name} ${d.action === 'sell' ? 'sells' : 'downgrades'} ${label(d.blockId)} to pay debts · +${formatCash(result.refund)}`, { tone: 'warn' });
-      autosave();
-      render();
-      return;
-    }
-    case 'bankruptcy': {
-      const result = declareBankruptcy(g);
-      if (result.ok) toast(`${me.name} declares bankruptcy: ${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned`, { tone: 'warn', duration: 3200 });
-      autosave();
-      render();
-      return;
-    }
-    case 'redevelop': {
-      cpuAuction = { blockId: d.blockId, mode: d.mode };
-      const block = getBlockById(g.board, d.blockId);
-      const people = eligibleRedevelopers(g, block).filter((p) => !isCpu(p));
-      toast(`${me.name} opens bidding on abandoned Block ${block.label}`);
-      // People at the table may bid (sealed, in the auction panel); otherwise it settles at once.
-      if (people.length && openBuildPanel(g, d.blockId)) return;
-      settleCpuAuction();
-      return;
-    }
+    case 'sell':
+      return {
+        text: `In debt: ${d.action === 'sell' ? 'selling' : 'downgrading'} ${label(d.blockId)}`,
+        target: blockTarget(d.blockId),
+        run: () => {
+          const result = (d.action === 'sell' ? sellDevelopment : downgradeBlock)(g, d.blockId);
+          if (result.ok) toast(`${me.name} ${d.action === 'sell' ? 'sells' : 'downgrades'} ${label(d.blockId)} to pay debts · +${formatCash(result.refund)}`, { tone: 'warn' });
+          autosave();
+          render();
+        },
+      };
+    case 'bankruptcy':
+      return {
+        text: 'Out of options: declaring bankruptcy',
+        run: () => {
+          const result = declareBankruptcy(g);
+          if (result.ok) toast(`${me.name} declares bankruptcy: ${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned`, { tone: 'warn', duration: 3200 });
+          autosave();
+          render();
+        },
+      };
+    case 'redevelop':
+      return {
+        text: `Opening bidding on abandoned ${label(d.blockId)}`,
+        target: blockTarget(d.blockId),
+        run: () => {
+          cpuAuction = { blockId: d.blockId, mode: d.mode };
+          const block = getBlockById(g.board, d.blockId);
+          const people = eligibleRedevelopers(g, block).filter((p) => !isCpu(p));
+          toast(`${me.name} opens bidding on abandoned Block ${block.label}`);
+          // People at the table may bid (sealed, in the auction panel); otherwise it settles at once.
+          if (people.length && openBuildPanel(g, d.blockId)) return;
+          settleCpuAuction();
+        },
+      };
     default:
-      render();
+      return { text: null, run: () => render() };
   }
 }
 
@@ -685,7 +738,8 @@ export function initGameView() {
   initCpuDriver({
     getGame: () => game,
     canAct: cpuCanAct,
-    step: cpuStep,
+    plan: cpuPlan,
+    pause: () => $('#game-menu-btn').click(),
     getSettings,
     setSpeed: (cpuSpeed) => updateSettings({ cpuSpeed }),
   });

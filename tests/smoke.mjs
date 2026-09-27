@@ -149,7 +149,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForSelector('html.is-ready');
     assert.ok(await page.isVisible('[data-screen="title"]'), 'title visible');
     assert.match(await page.textContent('.city-edition'), /Fredericksburg, Virginia/);
-    for (const label of ['New Game', 'How To Play', 'Settings']) {
+    for (const label of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game', 'How To Play', 'Statistics', 'Settings']) {
       assert.ok(await page.getByRole('button', { name: label }).isVisible(), `${label} button`);
     }
     assert.equal(await page.$$eval('[data-sprite]', (els) => els.length), 0, 'all static sprites hydrated');
@@ -158,7 +158,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 10);
+    assert.equal(await page.locator('.howto-card').count(), 11);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -173,7 +173,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.isChecked('input[name="showCoords"]'), true, 'coords persisted');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     assert.equal(await page.locator('.seat-card').count(), 4);
     assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players · \$12,000 each/);
     assert.equal(await page.locator('[name="join"]:disabled').count(), 4);
@@ -315,7 +315,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=5&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     const fin = page.locator('#finance-dialog');
@@ -380,7 +380,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=19`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await pave(page, road(id));
@@ -412,7 +412,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'v-0-0']) {
@@ -464,7 +464,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const last = await page.evaluate(async () => {
       const { allRoadIds, getBlock } = await import('/js/core/board.js');
@@ -504,9 +504,9 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    const btn = await page.locator('[data-nav="setup"]').evaluate((el) => getComputedStyle(el).borderImageSource);
+    const btn = await page.locator('[data-setup-preset="solo"]').evaluate((el) => getComputedStyle(el).borderImageSource);
     assert.match(btn, /generated\/ui\/btn-gold\.png/);
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await page.evaluate(async () => {
       const { getBlock } = await import('/js/core/board.js');
@@ -536,7 +536,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     const size = await page.evaluate(() => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth, innerWidth]);
@@ -573,7 +573,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await pave(page, page.locator('[data-road="h-0-0"]'));
     await page.reload({ waitUntil: 'networkidle' });
@@ -606,7 +606,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
     await pave(page, page.locator('[data-road="v-0-1"]'));
@@ -687,7 +687,7 @@ for (const vp of VIEWPORTS) {
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
     // In game: ambience plays (where Web Audio exists), ducks for pause, resumes.
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     st = await audioState();
     assert.equal(st.scene.name, 'game');
@@ -801,7 +801,7 @@ const recordVibration = () => {
     assert.equal(await page.isVisible('#haptics-row'), coarse, 'haptics switch shown only on touch devices');
     if (coarse) assert.equal(await page.isChecked('#settings-form [name="haptics"]'), true, 'on by default');
     await page.locator('[data-screen="settings"] [data-nav="back"]').tap();
-    await page.getByRole('button', { name: 'New Game' }).tap();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).tap();
     await page.locator('#setup-start').tap();
 
     // Tap twice to pave: arm (tiny) then pave (short).
@@ -896,7 +896,7 @@ const recordVibration = () => {
     // Tap targets (portrait and rotated to landscape).
     for (const [w, h] of [[390, 844], [844, 390]]) {
       await page.setViewportSize({ width: w, height: h });
-      await page.getByRole('button', { name: 'New Game' }).tap();
+      await page.getByRole('button', { name: 'Local Multiplayer' }).tap();
       await page.locator('#setup-start').tap();
       const t = await page.evaluate(() => {
         const hit = (sel, axis) => {
@@ -947,7 +947,7 @@ const recordVibration = () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     if (!coarse) assert.equal(await page.isVisible('#haptics-row'), false, 'no haptics switch on desktop');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     if (await page.locator('#handoff-dialog[open]').count()) await page.click('#handoff-ready');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
@@ -989,7 +989,7 @@ const recordVibration = () => {
   const seen = async () => (await page.evaluate(() => window.__GRIDLOCK__.tutorial())).seen;
   try {
     await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     // 1. Manage City: shown at once, and the game stays fully playable around it.
     await tip('manage').waitFor();
@@ -1043,7 +1043,7 @@ const recordVibration = () => {
 
     // Completion persists: the next game has no tips.
     await page.reload({ waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await road('h-0-0').click();
     assert.equal(await page.locator('.coach-mark').count(), 0, 'no tips after completing the tutorial');
@@ -1074,7 +1074,7 @@ const recordVibration = () => {
   const errors = watchForBrowserErrors(page);
   const status = async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.tutorial.v1'))))?.status;
   const startNewGame = async () => {
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
   };
   try {
@@ -1140,7 +1140,7 @@ const recordVibration = () => {
   const chip = () => page.textContent('#hud-mode');
   try {
     await page.goto(`${base}?seed=4&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     // Three presets, each with its description, Standard preselected.
     const options = page.locator('#setup-rules .rule-option');
     assert.equal(await options.count(), 3);
@@ -1193,7 +1193,7 @@ const recordVibration = () => {
     // Classic: no city events and no "calm round" notes.
     await page.click('#game-menu-btn');
     await page.click('#pause-dialog [data-dialog-action="save-quit"]');
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.check('[name="gameType"][value="standard"]');
     await page.locator('.rule-option', { hasText: 'Classic' }).click();
     await page.click('#setup-start');
@@ -1229,7 +1229,7 @@ const recordVibration = () => {
   const errors = watchForBrowserErrors(page);
   const career = () => page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.career.v1')));
   const newGame = async (mode, players) => {
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.check(`[name="gameType"][value="${players === 4 ? 'standard' : 'custom'}"]`);
     for (let s = players + 1; s <= 4; s++) await page.locator(`label[for="seat-${s}-join"]`).click();
     await page.locator('.rule-option', { hasText: mode }).click();
@@ -1335,7 +1335,7 @@ const recordVibration = () => {
   });
   try {
     await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await page.click(`#board [data-road="${id}"]`);
     // P4 owns two neighbouring homes and a Housing Boom is on: a third home activates a district bonus.
@@ -1441,7 +1441,7 @@ const recordVibration = () => {
     await page.goto(`${base}?seed=31337&mode=chaos&seats=134&debug`, { waitUntil: 'networkidle' });
     assert.equal(new URL(page.url()).search, '?debug', 'challenge parameters leave the address bar; ?debug stays');
     assert.match(await page.textContent('#toasts'), /Challenge city 31337 · Urban Chaos rules/);
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     assert.equal(await page.inputValue('#setup-seed'), '31337', 'seed pre-filled');
     assert.equal(await page.isChecked('[name="mode"][value="chaos"]'), true, 'mode pre-selected');
     assert.equal(await page.isChecked('[name="gameType"][value="custom"]'), true);
@@ -1519,7 +1519,7 @@ const recordVibration = () => {
     // A friend opening the link (no ?debug) deals the same city too.
     await page.goto(link.href, { waitUntil: 'networkidle' });
     assert.equal(new URL(page.url()).search, '');
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     assert.equal(await page.inputValue('#setup-seed'), '31337');
     await page.click('#setup-start');
     assert.equal(await page.evaluate(() => typeof window.__GRIDLOCK__), 'undefined', 'no debug hook on a challenge link');
@@ -1599,7 +1599,7 @@ const recordVibration = () => {
       await check(label);
       await page.click(`[data-screen="${nav}"] [data-nav="back"]`);
     }
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await check('setup');
     await page.click('#setup-start');
     await check('game');
@@ -1685,7 +1685,7 @@ const recordVibration = () => {
   const SOLO = [[1, 'Player 1', 'human', null], [2, 'Mayor Bot 1', 'cpu', 'normal'], [3, 'Mayor Bot 2', 'cpu', 'hard'], [4, 'Mayor Bot 3', 'cpu', 'normal']];
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     // Local Friends by default: every seat human and locked, exactly the old setup.
     assert.equal(await page.isChecked('[name="seatPreset"][value="friends"]'), true);
     assert.deepEqual(await page.locator('.table-option__name').allTextContents(), ['Solo', 'Local Friends', 'Mixed']);
@@ -1817,7 +1817,7 @@ const recordVibration = () => {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.locator('.table-option', { hasText: 'Solo' }).click();
     await page.fill('#setup-seed', '4242'); // a fixed city, so every run sees the same events
     await page.click('#setup-start');
@@ -1900,7 +1900,7 @@ const recordVibration = () => {
   const mixedErrors = watchForBrowserErrors(mixed);
   try {
     await mixed.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    await mixed.getByRole('button', { name: 'New Game' }).click();
+    await mixed.getByRole('button', { name: 'Local Multiplayer' }).click();
     await mixed.locator('.table-option', { hasText: 'Mixed' }).click();
     for (const [seat, controller] of [[2, 'cpu'], [4, 'cpu']]) {
       await mixed.locator(`.seat-card[data-seat="${seat}"] [name="controller-${seat}"][value="${controller}"]`).check();
@@ -1992,7 +1992,7 @@ const recordVibration = () => {
   const bidErrors = watchForBrowserErrors(bidPage);
   try {
     await bidPage.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    await bidPage.getByRole('button', { name: 'New Game' }).click();
+    await bidPage.getByRole('button', { name: 'Local Multiplayer' }).click();
     await bidPage.check('[name="gameType"][value="custom"]');
     await bidPage.locator('label[for="seat-4-join"]').click();
     await bidPage.locator('.table-option', { hasText: 'Mixed' }).click();
@@ -2028,6 +2028,127 @@ const recordVibration = () => {
     await bidPage.screenshot({ path: 'test-results/cpu-auction-FAIL.png' }).catch(() => {});
   } finally {
     await auctionContext.close();
+  }
+}
+
+// Onboarding around the play options: the title offers Play Solo / Local Multiplayer /
+// Custom / Mixed Game; Solo's defaults; a first Solo game's tutorial includes the CPU tip; and
+// during a bot's turn its card glows, the strip says what it intends (with the road or block
+// highlighted), the board is locked, and Pause / Speed up work. Desktop and phone.
+for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+  const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.isMobile, hasTouch: vp.hasTouch, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true, cpuSpeed: 'relaxed' }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const game = () => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    return { seat: g.players[g.turnIndex].seat, log: g.log.length, roads: Object.keys(g.board.roads).length,
+      players: g.players.map((p) => [p.seat, p.controller, p.difficulty]), type: g.gameType };
+  });
+  const heading = () => page.textContent('#setup-heading');
+  const checked = (name) => page.evaluate((n) => document.querySelector(`#setup-form [name="${n}"]:checked`)?.value, name);
+  const controllers = () => page.evaluate(() => [...document.querySelectorAll('.seat-card')]
+    .filter((c) => !c.classList.contains('is-empty') && c.querySelector('[name^="controller-"]:checked'))
+    .map((c) => c.querySelector('[name^="controller-"]:checked').value));
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    // Title: three ways to play, then How To Play · Statistics · Settings.
+    const options = page.locator('.play-options .play-option');
+    assert.equal(await options.count(), 3);
+    for (const name of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game']) {
+      const button = page.getByRole('button', { name: new RegExp(`^${name.replace('/', '\\/')}`) });
+      assert.equal(await button.isVisible(), true, `${name} offered`);
+      const box = await button.boundingBox();
+      assert.ok(box.y + box.height <= vp.height, `${name} is above the fold`);
+    }
+    assert.deepEqual((await page.locator('.menu-row .menu-row__btn').allTextContents()).map((t) => t.trim()), ['How To Play', 'Statistics', 'Settings']);
+    await noHorizontalScroll(page, `${vp.name} title`);
+
+    // Local Multiplayer: everyone human.
+    await page.getByRole('button', { name: /^Local Multiplayer/ }).click();
+    assert.equal(await heading(), 'Local Multiplayer');
+    assert.equal(await checked('seatPreset'), 'friends');
+    assert.deepEqual(await controllers(), ['human', 'human', 'human', 'human']);
+    await page.click('[data-screen="setup"] [data-nav="back"]');
+    // Custom / Mixed Game: a Custom Game with the Mixed table.
+    await page.getByRole('button', { name: /^Custom \/ Mixed Game/ }).click();
+    assert.equal(await heading(), 'Custom Game');
+    assert.equal(await checked('seatPreset'), 'mixed');
+    assert.equal(await checked('gameType'), 'custom');
+    await page.click('[data-screen="setup"] [data-nav="back"]');
+    // Play Solo: Player 1 human, Players 2–4 CPU Normal, Standard Game.
+    await page.getByRole('button', { name: /^Play Solo/ }).click();
+    assert.equal(await heading(), 'Play Solo');
+    assert.equal(await checked('seatPreset'), 'solo');
+    assert.equal(await checked('gameType'), 'standard');
+    assert.deepEqual(await controllers(), ['human', 'cpu', 'cpu', 'cpu']);
+    assert.deepEqual(await page.locator('.seat-card [name="difficulty"]:visible').evaluateAll((s) => s.map((x) => x.value)), ['normal', 'normal', 'normal']);
+    assert.match(await page.textContent('#setup-summary'), /^Standard Game · 4 players \(1 human, 3 CPU\)/);
+    await noHorizontalScroll(page, `${vp.name} Play Solo setup`);
+    await page.fill('#setup-seed', '4242');
+    await page.click('#setup-start');
+    assert.deepEqual((await game()).players, [[1, 'human', null], [2, 'cpu', 'normal'], [3, 'cpu', 'normal'], [4, 'cpu', 'normal']]);
+
+    // First game: the tutorial counts nine tips when bots are at the table.
+    const tip = (id) => page.locator(`.coach-mark[data-step="${id}"]`);
+    await tip('manage').waitFor();
+    assert.match(await tip('manage').textContent(), /Tip 1 of 9/);
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 0);
+    await page.click('#action-pave');
+    await page.click('#board [data-road="h-0-0"]');
+
+    // Mayor Bot 1's turn.
+    await page.locator('#cpu-status').waitFor({ state: 'visible' });
+    await tip('cpu').waitFor();
+    assert.match(await tip('cpu').textContent(), /Tip \d of 9.*CPU turns/s);
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 1, 'only the active bot glows');
+    assert.equal(await page.locator(`.player-card.is-thinking[data-seat="${(await game()).seat}"]`).count(), 1, 'the glowing card is the bot whose turn it is');
+    await page.locator('#cpu-status-intent').waitFor({ state: 'visible' });
+    assert.ok((await page.textContent('#cpu-status-intent')).trim().length > 0, 'the bot says what it intends');
+    assert.equal(await page.locator('.cpu-intent').count() <= 1, true);
+    assert.equal(await page.locator('#board.is-locked').count() === 1, true, 'the board is locked');
+    assert.equal(await page.isVisible('#action-pave'), false);
+    const before = await game();
+    await page.click('#board [data-road="h-0-5"]'); // top row: clear of the tutorial note on a phone
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().board.roads['h-0-5']), 1, 'a person can\'t move for a bot');
+    assert.match(await page.textContent('#toasts'), /Mayor Bot \d is playing/);
+    await noHorizontalScroll(page, `${vp.name} CPU turn`);
+    await page.screenshot({ path: `test-results/cpu-turn-${vp.name}.png` });
+
+    // Pause (from the strip) stops the bot; resuming lets it continue.
+    await page.click('#cpu-pause');
+    await page.locator('#pause-dialog').waitFor({ state: 'visible' });
+    const paused = await game();
+    await page.waitForTimeout(1500);
+    assert.deepEqual(await game(), paused, 'nothing happens while paused');
+    assert.equal(paused.log >= before.log, true);
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    // Speed up: pressed, saved, and the bots play on until Player 1 has the table again.
+    await page.click('#cpu-faster');
+    assert.equal(await page.getAttribute('#cpu-faster', 'aria-pressed'), 'true');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).cpuSpeed), 'fast');
+    for (let i = 0; i < 300 && (await game()).seat !== 1; i++) {
+      if (await page.locator('#event-dialog[open]').count()) await page.click('#event-continue');
+      else await page.waitForTimeout(100);
+    }
+    assert.equal((await game()).seat, 1, 'control came back to the human');
+    await page.locator('#cpu-status').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 0);
+    assert.equal(await page.locator('.cpu-intent').count(), 0, 'no leftover highlight');
+    assert.deepEqual(errors, []);
+    console.log(`✔ ${vp.name}: play options (Solo / Local Multiplayer / Custom), Solo defaults, CPU tip, bot highlight + intent, locked board, Pause, Speed up`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ ${vp.name} play options / CPU turn UI: ${err.message}`);
+    await page.screenshot({ path: `test-results/play-options-${vp.name}-FAIL.png` }).catch(() => {});
+  } finally {
+    await context.close();
   }
 }
 
