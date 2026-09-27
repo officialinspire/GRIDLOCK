@@ -6,7 +6,15 @@ import { formatCash } from './core/economy.js';
 import { bindNavigation, showScreen } from './ui/router.js';
 import { initSettingsView } from './ui/settingsView.js';
 import { initSetupView } from './ui/setupView.js';
-import { initGameView, getGame } from './ui/gameView.js';
+import { initGameView, getGame, saveGameNow } from './ui/gameView.js';
+import { initPwa } from './pwa.js';
+import { audio, initAudio } from './ui/audio.js';
+import { initHaptics } from './ui/haptics.js';
+import { initTouchGuard } from './ui/touchGuard.js';
+import { tutorialState } from './ui/tutorial.js';
+import { initCareerView } from './ui/careerView.js';
+import { loadSettings } from './core/settings.js';
+import { bus } from './core/bus.js';
 
 /** Fills `[data-econ="KEY"]` text from ECONOMY so copy never drifts from the constants. */
 function fillEconomyCopy(root = document) {
@@ -31,15 +39,20 @@ function placeDecor(root = document) {
 function boot() {
   fillEconomyCopy();
   placeDecor();
+  initAudio({ bus });
+  initHaptics(loadSettings());
+  initTouchGuard();
   initSettingsView();
   hydrateSprites(document);
   initSetupView();
+  initCareerView();
   initGameView();
   bindNavigation(document);
   showScreen('title');
   // ?debug exposes the live game for automated tests and bug reproduction (never on by default).
-  if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame };
+  if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame, audio: () => audio.state(), tutorial: tutorialState };
   document.documentElement.classList.add('is-ready');
+  initPwa({ beforeReload: saveGameNow });
 }
 
 if (document.readyState === 'loading') {

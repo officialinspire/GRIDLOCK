@@ -8,6 +8,7 @@ import { PLAYER_PRESETS } from '../config.js';
 import { getBlockById } from '../core/board.js';
 import { getEventDef, eventFootprint, roundsLeft, blockImpacts, blockEventState } from '../core/events.js';
 import { getPlayer } from '../core/game.js';
+import { getMode, modeName } from '../core/modes.js';
 
 const KIND_LABEL = { emergency: 'City Emergency', boon: 'Good News', downturn: 'Downturn' };
 
@@ -97,8 +98,11 @@ export function showEventCard(game, instance, expired = []) {
 export function renderEventStrip(game) {
   const strip = $('#event-strip');
   const active = game.events.active;
-  strip.hidden = active.length === 0;
-  strip.replaceChildren(...active.map((instance) => {
+  const mode = getMode(game.mode);
+  // The rules in play are always shown first, then any active events.
+  const modeChip = h('span', { class: 'mode-chip', id: 'hud-mode', title: mode?.blurb ?? '' },
+    createSprite('icons:map', { className: 'mode-chip__icon' }), `${modeName(game)} rules`);
+  strip.replaceChildren(modeChip, ...active.map((instance) => {
     const def = getEventDef(instance.id);
     const left = roundsLeft(game, instance);
     return h('button', {

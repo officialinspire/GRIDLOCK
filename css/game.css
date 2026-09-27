@@ -204,7 +204,9 @@
 
 .board {
   --road: 5.2cqw;
-  --road-tap: max(10px, 1.6cqw); /* extra hit area either side of a road slot */
+  /* Extra hit area either side of a road slot. Capped relative to the board so that on small
+     (phone) boards the neighbouring blocks stay tappable too; boards 500px+ are unaffected. */
+  --road-tap: min(max(10px, 1.6cqw), 2cqw);
   display: grid;
   grid-template-columns: var(--road) repeat(var(--cols, 6), minmax(0, 1fr) var(--road));
   grid-template-rows: var(--road) repeat(var(--rows, 6), minmax(0, 1fr) var(--road));
@@ -1202,6 +1204,23 @@ html[data-coords='on'] .block__coord { display: block; }
   gap: 6px;
   margin-top: -4px;
 }
+/* Rules in play (always first in the strip). */
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 6px;
+  font-size: 0.85rem;
+  font-weight: 900;
+  white-space: nowrap;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--drop-sm);
+}
+.mode-chip__icon { width: 22px; }
+.results__mode { margin: 2px 0 0; font-weight: 900; text-align: center; }
+.modal__sub { margin: -6px 0 12px; text-align: center; font-weight: 800; color: var(--ink-soft); }
 .event-pill {
   --kind: var(--steel);
   display: inline-flex;
@@ -1573,3 +1592,40 @@ html[data-coords='on'] .block__coord { display: block; }
 @media (max-width: 560px) {
   .acquire-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Strategic forecasts (js/ui/forecastView.js) ---------- */
+.forecast-line { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 8px; font-size: 0.78rem; font-weight: 800; }
+.forecast-line__net.is-up, .forecast .is-up, .forecast-table .is-up { color: var(--green-deep, #2f6b2f); }
+.forecast-line__net.is-down, .forecast .is-down, .forecast-table .is-down { color: var(--red-deep); }
+.forecast-line__bonus { color: var(--gold-deep); }
+.forecast-line__event { padding: 0 6px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fdf0c4; }
+.forecast {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1.5px dashed var(--paper-edge);
+  border-radius: var(--radius-sm);
+}
+.forecast dt { font-weight: 900; color: var(--ink-soft); }
+.forecast dt[title] { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+.forecast dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.forecast__was { margin-left: 6px; color: var(--ink-soft); }
+.forecast__bonuses { margin: 0; padding: 0; list-style: none; }
+.forecast-compare { margin-top: 10px; }
+.forecast-compare summary { cursor: pointer; font-weight: 900; }
+.forecast-compare__scroll { overflow-x: auto; margin-top: 6px; }
+.forecast-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.forecast-table th, .forecast-table td { padding: 5px 8px; text-align: right; white-space: nowrap; border-bottom: 1.5px dashed var(--paper-edge); }
+.forecast-table th[scope='row'], .forecast-table thead th:first-child { text-align: left; }
+.forecast-table td:last-child { white-space: normal; text-align: left; min-width: 120px; }
+.forecast-table__icon { display: inline-block; width: 18px; margin-right: 6px; vertical-align: -3px; }
+.inspector__facts dt[title] { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+.inspector__was { color: var(--ink-soft); font-weight: 700; }
+.inspector__event { cursor: help; font-size: 0.8em; }
+.inspector__event.is-up { color: var(--green); }
+.inspector__event.is-down { color: var(--red-deep); }

@@ -27,7 +27,18 @@ let handlers = { onBlockSelect() {}, onRoadSelect() {}, onRoadArmed() {} };
 let armedId = null;
 let rovingKey = null;
 const coarsePointer = () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false;
-export const needsConfirmTap = () => coarsePointer() && getSettings().confirmTaps;
+let boardPointer = null; // pointerType of the last press on the board
+
+/**
+ * "Tap twice to pave" applies to finger taps. It follows the pointer that made the tap, so a
+ * touchscreen laptop or an iPad with a trackpad previews finger taps but not mouse clicks. Without
+ * pointer information (older browsers), fall back to whether the device's main pointer is touch.
+ * Keyboard (Enter/Space) and mouse/pen always pave directly.
+ */
+export function needsConfirmTap(e) {
+  if (!getSettings().confirmTaps || e?.detail === 0) return false;
+  return boardPointer ? boardPointer === 'touch' : coarsePointer();
+}
 
 const colorOf = (seat) => (seat ? PLAYER_PRESETS[seat - 1].color : null);
 const nodeLabel = (r, c) => blockLabel(r, c);
@@ -239,6 +250,7 @@ export function disarm() {
 
 export function initBoardView(opts) {
   handlers = { ...handlers, ...opts };
+  $('#board').addEventListener('pointerdown', (e) => { boardPointer = e.pointerType || null; }, { passive: true });
   $('#board').addEventListener('click', (e) => {
     const road = e.target.closest('.road');
     if (road) {
@@ -246,7 +258,7 @@ export function initBoardView(opts) {
       rovingKey = `[data-road="${road.dataset.road}"]`;
       const id = road.dataset.road;
       const pavable = !road.classList.contains('is-built') && !$('#board').classList.contains('is-locked');
-      if (pavable && needsConfirmTap() && armedId !== id) {
+      if (pavable && needsConfirmTap(e) && armedId !== id) {
         disarm();
         armedId = id;
         road.classList.add('is-armed');

@@ -9,12 +9,12 @@ import {
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
-import { blockValue, bonusIncome, formatCash } from '../core/economy.js';
+import { blockValue, bonusIncome, formatCash, formatDelta } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
 import { effectiveBlockIncome, getEventDef } from '../core/events.js';
 import { initFinanceView, openDistressPanel } from './financeView.js';
-import { isInDistress, blockUpkeep } from '../core/economy.js';
+import { isInDistress } from '../core/economy.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
@@ -24,8 +24,15 @@ import { renderHud } from './hud.js';
 import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
-import { play } from './sfx.js';
-import { getSettings } from './settingsView.js';
+import { audio, play } from './audio.js';
+import { buzz } from './haptics.js';
+import { modeName } from '../core/modes.js';
+import { recordFinishedMatch } from './careerView.js';
+import { blockDetails } from '../core/forecast.js';
+import { ECONOMY } from '../config.js';
+import { modifierText } from './forecastView.js';
+import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
+import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
@@ -51,6 +58,11 @@ function autosave() {
   refreshSavedGameControls();
 }
 
+/** Saves the game in progress right now (e.g. before an app update reloads the page). */
+export function saveGameNow() {
+  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+}
+
 function renderInspector(blockId, panel = $('#inspector')) {
   const block = blockId && game ? getBlockById(game.board, blockId) : null;
   if (!block) {
@@ -62,7 +74,8 @@ function renderInspector(blockId, panel = $('#inspector')) {
     return;
   }
   const owner = block.ownerSeat ? getPlayer(game, block.ownerSeat) : null;
-  const row = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
+  const row = (k, v, tip) => [h('dt', { title: tip ?? null }, k), h('dd', {}, v)];
+  const d = blockDetails(game, block.id); // every number from the game's own economy/scoring/event functions
   panel.replaceChildren(...[
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
     (owner || block.abandoned) && h('p', { class: 'inspector__dev', dataset: { type: block.type } },
@@ -72,9 +85,19 @@ function renderInspector(blockId, panel = $('#inspector')) {
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
-      row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
-      owner && row('Upkeep', `−${formatCash(blockUpkeep(block))}/turn`),
-      owner && row('City value', formatCash(blockValue(block))),
+      row('Income', owner
+        ? [`+${formatCash(d.income)}/turn`, d.income !== d.normalIncome && h('span', {
+          class: `inspector__event ${d.income > d.normalIncome ? 'is-up' : 'is-down'}`,
+          title: `City event: normally ${formatCash(d.normalIncome)}/turn`,
+          'aria-label': `, normally ${formatCash(d.normalIncome)} per turn`,
+        }, d.income > d.normalIncome ? ' ▲' : ' ▼')]
+        : '—', 'Paid at the owner\'s turn start, with active city events applied'),
+      owner && row('Upkeep', `−${formatCash(d.upkeep)}/turn`, 'Charged at the owner\'s turn start'),
+      owner && row('Net', `${formatDelta(d.net)}/turn`, 'Income minus upkeep'),
+      owner && row('Property value', formatCash(blockValue(block)), 'Land plus what was actually paid for construction'),
+      owner && d.contribution != null && row('Adds to City Value', formatCash(d.contribution),
+        `How much this block adds to ${owner.name}'s final score (land + ${Math.round(ECONOMY.SCORING.INVESTED_BUILDING * 100)}% of building investment)`),
+      owner && d.eventPrice.length > 0 && row('Upgrade price', modifierText(d.eventPrice), 'City events changing build/upgrade prices for this category'),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),
@@ -116,6 +139,7 @@ function showResults() {
     return;
   }
   openResults(game);
+  tutorialMoment('scoring');
 }
 
 function renderActions() {
@@ -138,14 +162,19 @@ function render() {
   renderInspector(getSelectedBlock());
   renderEventStrip(game);
   renderActions();
+  updateTutorial();
 }
 
-/** Re-render after a build/upgrade and celebrate any new bonus income. */
-function handleDevelopment({ bonusBefore }) {
+/** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
+function handleDevelopment(change) {
+  const { bonusBefore } = change;
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
-  play('build');
+  // Sales/downgrades pay a refund; Level 2–3 is an upgrade; anything else is new construction.
+  const kind = change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build';
+  play(kind);
+  if (kind !== 'coins') buzz(kind);
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
@@ -164,6 +193,7 @@ function showCaptureChoice() {
   $('#capture-choice-copy').textContent = `Block ${block.label} is yours. Develop it now, or leave it vacant and continue to your bonus road.`;
   if (!dialog.open) dialog.showModal();
   dialog.querySelector('[data-capture-choice="develop"]').focus();
+  tutorialMoment('develop');
   render();
 }
 
@@ -200,6 +230,7 @@ function handleBlockSelect(id) {
 
 function handleRoadArmed() {
   play('tick');
+  buzz('arm');
   if (!armHintShown) {
     armHintShown = true;
     toast('Tap the highlighted road again to pave it.', { duration: 2200 });
@@ -291,16 +322,19 @@ function handleRoad(id) {
   if (!result.ok) {
     rejectRoad(id);
     play('error');
+    buzz('error');
     toast(REJECT_MESSAGES[result.error] ?? 'You can’t build there.', { tone: 'warn', duration: 1600 });
     if (result.error === MOVE_ERRORS.IN_DISTRESS) openDistressPanel(game);
     return;
   }
 
+  tutorialMove();
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
   renderChain();
-  play(n > 0 ? 'capture' : 'pave', chain || 1);
+  play(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
+  buzz(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
 
   if (n > 0) {
     flashFrame();
@@ -310,10 +344,15 @@ function handleRoad(id) {
   }
   if (result.gameEnded) {
     $('#board-frame').classList.add('is-city-complete');
+    // Career stats/achievements: counted only if this match was genuinely played to the end.
+    recordFinishedMatch(game);
     clearActiveGame();
     refreshSavedGameControls();
     setTimeout(() => {
-      if (game?.results) play('win');
+      if (game?.results) {
+        play('win');
+        buzz('win');
+      }
       showResults();
     }, n > 0 ? 700 : 0);
     bus.emit('game:move', result);
@@ -323,8 +362,10 @@ function handleRoad(id) {
   if (n > 0) showCaptureChoice();
   const finishTransition = () => {
     if (result.event?.started) {
-      play('event');
+      play('event', { kind: getEventDef(result.event.started.id)?.kind });
+      buzz('event');
       showEventCard(game, result.event.started, result.event.expired);
+      tutorialMoment('events');
     } else if (result.event?.expired.length) {
       toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
     } else if (result.event?.calm) {
@@ -334,7 +375,9 @@ function handleRoad(id) {
     const owed = result.turnUpkeep?.amount ?? 0;
     const repairs = result.turnRepair?.amount ?? 0;
     if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
+      if (paid > 0 && !result.event?.started) play('coins');
       showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
+      tutorialMoment('income');
       const payee = getPlayer(game, result.turnIncome.seat);
       const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
         repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
@@ -366,6 +409,7 @@ function startGame(setup) {
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
   clearActiveGame();
+  tutorialNewGame();
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
   $('#board-frame').classList.remove('is-city-complete');
@@ -417,9 +461,33 @@ function continueGame(saved = loadActiveGame()) {
   toast('Game restored', { tone: 'success' });
 }
 
+/** Top-bar mute switch: the same saved "Sound" setting as the Settings screen. */
+function initMuteButton() {
+  const btn = $('#mute-btn');
+  const sync = () => {
+    const muted = !getSettings().sound;
+    btn.setAttribute('aria-pressed', String(muted));
+    btn.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound');
+    btn.title = muted ? 'Sound off' : 'Sound on';
+    btn.querySelector('.btn__icon').replaceWith(createSprite(muted ? 'icons:mute' : 'icons:sound', { className: 'btn__icon' }));
+  };
+  btn.addEventListener('click', () => {
+    updateSettings({ sound: !getSettings().sound });
+    play('tick');
+  });
+  bus.on('settings:changed', sync);
+  sync();
+}
+
 function initDialogs() {
   const pause = $('#pause-dialog');
-  $('#game-menu-btn').addEventListener('click', () => pause.showModal());
+  $('#game-menu-btn').addEventListener('click', () => {
+    $('#pause-mode').textContent = game ? `${modeName(game)} rules · Round ${game.round}` : '';
+    pause.showModal();
+    audio.setPaused(true);
+  });
+  pause.addEventListener('close', () => audio.setPaused(false));
+  initMuteButton();
   pause.addEventListener('click', (e) => {
     // Clicking the backdrop closes the dialog.
     if (e.target === pause) return pause.close();
@@ -483,6 +551,7 @@ export function initGameView() {
     ready?.();
   });
   initDialogs();
+  initTutorial({ getGame: () => game });
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });
   bus.on('game:start', startGame);

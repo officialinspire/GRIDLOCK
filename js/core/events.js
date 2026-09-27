@@ -13,6 +13,7 @@
  */
 import { CITY_EVENTS } from '../config.js';
 import { getBlockById } from './board.js';
+import { eventRules } from './modes.js';
 import { isProtected } from './bonuses.js';
 import { blockIncome } from './economy.js';
 import { nextRandom } from './rng.js';
@@ -84,7 +85,7 @@ export function startEvent(game, defOrId) {
     uid: state.nextUid++,
     id: def.id,
     startRound: game.round,
-    endRound: game.round + Math.max(1, def.duration) - 1,
+    endRound: game.round + Math.max(1, def.duration + (eventRules(game).durationBonus ?? 0)) - 1,
     targets: def.targets ? pickTargets(game, def) : [],
   };
   state.active.push(instance);
@@ -111,8 +112,10 @@ export function expireEvents(game) {
 /** Called once at the start of every round after the first. Returns { expired, started }. */
 export function onRoundStart(game, pool = POOL) {
   const expired = expireEvents(game);
-  const probability = game.eventProbability ?? CITY_EVENTS.ROUND_PROBABILITY;
-  const atCapacity = game.events.active.length >= (game.maxActiveEvents ?? CITY_EVENTS.MAX_ACTIVE);
+  // Pacing comes from the game's mode (game.rules); modes without events never draw or report calm rounds.
+  const { enabled, probability, maxActive } = eventRules(game);
+  if (!enabled) return { expired, started: null, calm: false };
+  const atCapacity = game.events.active.length >= maxActive;
   const def = !atCapacity && nextRandom(game) < probability ? drawEvent(game, pool) : null;
   const started = def ? startEvent(game, def) : null;
   return { expired, started, calm: !started };
@@ -187,15 +190,21 @@ export function effectiveIncome(game, seat) {
     .reduce((sum, b) => sum + effectiveBlockIncome(game, b), 0);
 }
 
-/** Combined (clamped) build/upgrade cost multiplier for a category. */
-export function costMultiplier(game, category) {
-  let m = 1;
+/** Every active event changing build/upgrade prices for a category: [{ instance, def, multiplier }]. */
+export function costImpacts(game, category) {
+  const out = [];
   for (const instance of game.events.active) {
-    for (const mod of getEventDef(instance.id)?.costs ?? []) {
-      if (mod.categories.includes(category)) m *= mod.multiplier;
+    const def = getEventDef(instance.id);
+    for (const mod of def?.costs ?? []) {
+      if (mod.categories.includes(category)) out.push({ instance, def, multiplier: mod.multiplier });
     }
   }
-  return clamp(m);
+  return out;
+}
+
+/** Combined (clamped) build/upgrade cost multiplier for a category. */
+export function costMultiplier(game, category) {
+  return clamp(costImpacts(game, category).reduce((m, impact) => m * impact.multiplier, 1));
 }
 
 /** A base cost adjusted by active events, rounded to whole dollars. */

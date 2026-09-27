@@ -1,0 +1,20 @@
+{
+  "id": "./",
+  "name": "Grid Lock City",
+  "short_name": "Grid Lock",
+  "description": "A papercraft tabletop city-building game for 2–4 local players. Plays fully offline once installed.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2a211a",
+  "theme_color": "#2a211a",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

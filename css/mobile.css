@@ -31,6 +31,13 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
 .road:focus-visible .road__surface { opacity: 1; box-shadow: 0 0 0 3px var(--gold); background: color-mix(in srgb, var(--turn) 45%, transparent); }
 .block:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
+/* Touch screens: never shrink controls below the 44pt (iOS) / 48dp (Android) guidance,
+   even in the slim short-landscape layout. Mouse/trackpad layouts are unchanged. */
+@media (pointer: coarse) {
+  .btn--icon.btn--sm { width: 44px; min-width: 44px; min-height: 44px; }
+  .action-bar .btn { min-height: 44px; }
+}
+
 /* Hover only where hover exists (avoids "stuck" hover after a tap). */
 @media (hover: none) {
   .btn:hover:not(:disabled) { transform: none; filter: none; }
