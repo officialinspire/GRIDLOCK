@@ -249,7 +249,7 @@
 /* ---------- Offline app update prompt (js/pwa.js) ---------- */
 .update-banner {
   position: fixed;
-  /* The toast slot: over the logo on the title screen, never over its menu buttons. */
+  /* The toast slot (on the start and title screens: over the street, see css/title.css). */
   top: calc(max(10px, env(safe-area-inset-top)) + 62px);
   left: 50%;
   z-index: 60;

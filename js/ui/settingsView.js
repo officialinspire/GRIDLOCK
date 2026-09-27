@@ -37,7 +37,7 @@ function syncSoundControls(form, s) {
     if (out) out.textContent = `${input.value}%`;
   }
   form.querySelectorAll('[data-needs-sound]').forEach((row) => {
-    const off = !s.sound || (row.hasAttribute('data-needs-ambience') && !s.ambience);
+    const off = !s.sound || (row.hasAttribute('data-needs-ambience') && !s.ambience) || (row.hasAttribute('data-needs-music') && !s.music);
     row.classList.toggle('is-disabled', off);
     row.querySelectorAll('input').forEach((input) => { input.disabled = off; });
   });
@@ -84,7 +84,6 @@ export function initSettingsView() {
     syncSoundControls(form, settings);
     // Let players hear the level they picked.
     if (['masterVolume', 'sfxVolume'].includes(e.target.name)) audio.play('coins');
-    if (e.target.name === 'sound' && settings.sound) audio.play('tick');
     if (e.target.name === 'haptics' && settings.haptics) haptics.buzz('build');
   });
 }

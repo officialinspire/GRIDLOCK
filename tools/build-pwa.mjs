@@ -23,8 +23,8 @@ const START = '// <precache>';
 const END = '// </precache>';
 
 /** Top-level files and folders the game loads at runtime (never the original PNG sheets). */
-const PRECACHE_ROOTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'assets/generated', 'assets/fonts', 'assets/icons'];
-const RUNTIME_EXT = /\.(?:html|webmanifest|css|js|webp|png|woff2)$/;
+const PRECACHE_ROOTS = ['index.html', 'manifest.webmanifest', 'css', 'js', 'assets/generated', 'assets/fonts', 'assets/icons', 'assets/media'];
+const RUNTIME_EXT = /\.(?:html|webmanifest|css|js|webp|png|woff2|mp3|mp4)$/;
 /** PNG fallbacks for browsers without WebP: fetched (and cached) only if a browser asks for them. */
 const NOT_PRECACHED = new Set(['assets/generated/props-decor.png']);
 

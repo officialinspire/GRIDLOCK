@@ -22,8 +22,10 @@
   <link rel="preload" as="font" type="font/woff2" href="assets/fonts/nunito-latin.woff2" crossorigin>
   <link rel="stylesheet" href="css/fonts.css">
 
-  <!-- Title-screen art starts downloading immediately (WebP; ~1 MB total). -->
+  <!-- Start/title art starts downloading immediately (WebP): the logo, and the downtown street. -->
   <link rel="preload" as="image" type="image/webp" href="assets/generated/title-menu-decor.webp">
+  <link rel="preload" as="image" type="image/webp" href="assets/generated/residential-commercial-buildings.webp">
+  <link rel="preload" as="image" type="image/webp" href="assets/generated/civic-buildings.webp">
   <link rel="preload" as="image" type="image/webp" href="assets/generated/ui-icons.webp">
   <link rel="preload" as="image" type="image/webp" href="assets/generated/props-decor.webp">
   <link rel="modulepreload" href="js/main.js">
@@ -32,6 +34,7 @@
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/screens.css">
+  <link rel="stylesheet" href="css/title.css">
   <link rel="stylesheet" href="css/game.css">
   <link rel="stylesheet" href="css/art.css">
   <link rel="stylesheet" href="css/mobile.css">
@@ -42,19 +45,44 @@
   <div class="tabletop" aria-hidden="true"></div>
 
   <main id="app">
-    <!-- ============ TITLE ============ -->
-    <section class="screen screen--title" data-screen="title" aria-labelledby="title-heading">
-      <h1 id="title-heading" class="visually-hidden">Grid Lock City</h1>
-
-      <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
-      <div class="city-edition" data-sprite="title:hanging-sign" data-label="Fredericksburg, Virginia edition">
-        <span>Fredericksburg, Virginia</span>
+    <!-- ============ START (once per session; js/ui/startView.js) ============ -->
+    <section class="screen screen--start" data-screen="start" aria-labelledby="start-heading" hidden>
+      <div class="downtown" data-downtown aria-hidden="true"></div>
+      <div class="start-card">
+        <h1 id="start-heading" class="visually-hidden">Grid Lock City</h1>
+        <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
+        <p class="start-tagline">Pave the roads · Claim the blocks · Build your city</p>
+        <button type="button" class="btn btn--gold btn--xl start-button" id="start-button" data-autofocus>
+          <span class="btn__icon" data-sprite="icons:play"></span>
+          <span id="start-prompt">Tap to start</span>
+        </button>
+        <p class="inspire-byline inspire-byline--start"><span>by</span> <img class="inspire-logo" src="assets/media/inspire.png" alt="INSPIRE" width="600" height="181"></p>
       </div>
+    </section>
 
-      <nav class="menu-card paper" aria-label="Main menu">
-        <span class="pin pin--left" data-sprite="title:pin-red"></span>
-        <span class="pin pin--right" data-sprite="title:pin-blue"></span>
+    <!-- ============ INSPIRE INTRO (js/ui/intro.js) ============ -->
+    <section class="screen screen--intro" data-screen="intro" aria-label="INSPIRE Software intro" hidden>
+      <h1 class="visually-hidden">INSPIRE Software</h1>
+      <video id="intro-video" class="intro-video" playsinline preload="none" disablepictureinpicture disableremoteplayback aria-hidden="true"></video>
+      <button type="button" class="btn btn--sm intro-skip" id="intro-skip">Skip <span aria-hidden="true">›</span></button>
+    </section>
 
+    <!-- ============ TITLE: downtown Fredericksburg ============ -->
+    <section class="screen screen--title" data-screen="title" aria-labelledby="title-heading" hidden>
+      <h1 id="title-heading" class="visually-hidden">Grid Lock City</h1>
+      <div class="downtown" data-downtown aria-hidden="true"></div>
+
+      <header class="title-head">
+        <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
+        <div class="city-edition" data-sprite="title:hanging-sign" data-label="Fredericksburg, Virginia edition">
+          <span>Fredericksburg, Virginia</span>
+        </div>
+        <p class="inspire-byline inspire-byline--menu"><span>by</span> <img class="inspire-logo" src="assets/media/inspire.png" alt="INSPIRE" width="600" height="181"></p>
+      </header>
+
+      <!-- The menu is a little city block: roads around, a block for each way to play. -->
+      <nav class="menu-card city-block" aria-label="Main menu">
+        <span class="street-sign" aria-hidden="true">Main St</span>
         <button class="btn btn--gold btn--xl" id="continue-game" hidden>
           <span class="btn__icon" data-sprite="icons:play"></span>
           <span>Continue Game</span>
@@ -63,15 +91,15 @@
         <!-- Three ways to play: each opens New Game with its table preset (js/ui/setupView.js). -->
         <div class="play-options" role="group" aria-label="Play">
           <button class="btn btn--gold btn--xl play-option" data-nav="setup" data-setup-preset="solo" data-autofocus>
-            <span class="btn__icon" data-sprite="icons:play"></span>
+            <span class="play-option__art" data-sprite="civic:city-hall"></span>
             <span class="play-option__text"><span>Play Solo</span><small>You vs 3 Mayor Bots</small></span>
           </button>
           <button class="btn btn--xl play-option" data-nav="setup" data-setup-preset="friends">
-            <span class="btn__icon" data-sprite="icons:swap"></span>
+            <span class="play-option__art" data-sprite="buildings:rowhouses"></span>
             <span class="play-option__text"><span>Local Multiplayer</span><small>2–4 players · one device</small></span>
           </button>
           <button class="btn btn--xl play-option" data-nav="setup" data-setup-preset="mixed">
-            <span class="btn__icon" data-sprite="icons:gear"></span>
+            <span class="play-option__art" data-sprite="buildings:market"></span>
             <span class="play-option__text"><span>Custom / Mixed Game</span><small>People and bots, your way</small></span>
           </button>
         </div>
@@ -93,12 +121,9 @@
 
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Solo or local play</strong>
-        <span>1–4 people · one device</span>
-        <span class="title-note__ver">v1.2</span>
+        <span>1–4 people, one device</span>
+        <span class="title-note__ver">v1.3</span>
       </aside>
-
-      <div class="title-skyline" data-sprite="title:skyline"></div>
-      <div class="title-decor" data-art-decor="titleDecor" aria-hidden="true"></div>
     </section>
 
     <!-- ============ STATISTICS & ACHIEVEMENTS (js/ui/careerView.js) ============ -->
@@ -233,7 +258,16 @@
             <output class="slider__value" data-for="sfxVolume">80%</output>
           </label>
           <label class="setting-row" data-needs-sound>
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>City ambience (in game)</span>
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:music"></span>Music</span>
+            <input type="checkbox" class="toggle" name="music">
+          </label>
+          <label class="setting-row setting-row--slider" data-needs-sound data-needs-music>
+            <span class="setting-row__label">Music volume</span>
+            <input type="range" class="slider" name="musicVolume" min="0" max="100" step="5" aria-valuetext="60%">
+            <output class="slider__value" data-for="musicVolume">60%</output>
+          </label>
+          <label class="setting-row" data-needs-sound>
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:sound"></span>City ambience (in game)</span>
             <input type="checkbox" class="toggle" name="ambience">
           </label>
           <label class="setting-row setting-row--slider" data-needs-sound data-needs-ambience>

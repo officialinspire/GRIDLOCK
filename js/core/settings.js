@@ -3,8 +3,8 @@ import { DEFAULT_SETTINGS } from '../config.js';
 
 const KEY = 'gridlock.settings.v1';
 
-export const BOOLEAN_SETTINGS = Object.freeze(['sound', 'ambience', 'confirmTaps', 'haptics', 'reducedMotion', 'showCoords', 'quickHandoff']);
-export const VOLUME_SETTINGS = Object.freeze(['masterVolume', 'sfxVolume', 'ambienceVolume']);
+export const BOOLEAN_SETTINGS = Object.freeze(['sound', 'ambience', 'music', 'confirmTaps', 'haptics', 'reducedMotion', 'showCoords', 'quickHandoff']);
+export const VOLUME_SETTINGS = Object.freeze(['masterVolume', 'sfxVolume', 'ambienceVolume', 'musicVolume']);
 /** Settings that take one of a fixed set of values. */
 export const CHOICE_SETTINGS = Object.freeze({ cpuSpeed: Object.freeze(['relaxed', 'normal', 'fast']) });
 

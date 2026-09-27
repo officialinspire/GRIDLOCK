@@ -42,6 +42,16 @@ const base = `http://127.0.0.1:${port}${BASE_PATH}`;
 const stopServer = () => new Promise((done) => { server.closeAllConnections(); server.close(done); });
 
 const browser = await browserType.launch(launchOpts);
+// Most runs start as a player already past the start screen and INSPIRE intro this session
+// (as after a reload). `freshStart: true` opens a context on the start screen instead.
+{
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async ({ freshStart = false, ...options } = {}) => {
+    const context = await newContext(options);
+    if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
+    return context;
+  };
+}
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
 await context.addInitScript(() => {
   if (!sessionStorage.getItem('gl-test-init')) {
@@ -53,7 +63,11 @@ const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
-page.on('requestfailed', (request) => errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`));
+page.on('requestfailed', (request) => {
+  // <audio>/<video> cancel their own streaming range requests when they pause, seek, loop or the page reloads.
+  if (/abort|cancel/i.test(request.failure()?.errorText ?? '') && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(request.url())) return;
+  errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`);
+});
 page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`); });
 
 const road = (id) => page.locator(`#board [data-road="${id}"]`);
