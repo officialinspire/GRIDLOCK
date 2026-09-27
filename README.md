@@ -30,7 +30,7 @@ ES modules don't load from `file://`, so open the game through a local server.
 
 ## How to play
 
-**Setup:** Standard Game seats exactly four mayors. Custom Game allows 2–4 seats. Optionally name each mayor; everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty Custom seats.
+**Setup:** Standard Game seats exactly four mayors. Custom Game allows 2–4 seats. Optionally name each mayor; everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty Custom seats. Then pick the **rules** (see [Rule presets](#rule-presets)); the setup screen describes each one before you start.
 
 **Your turn**
 1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
@@ -165,6 +165,18 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 
 In the UI: the HUD income includes bonuses, with a small ★ and a tooltip giving the bonus amount. Board badges get a ★ when a block earns a bonus. The details panel and Build panel list each bonus and any civic protection. A toast announces newly gained bonus income.
 
+### Rule presets
+
+Every preset works with Standard (4) or Custom (2–4) tables. The rules in play are shown at the start of the event strip during the game, in the pause menu, and on the results screen, and they're kept by autosave, Continue Game and Play Again.
+
+| Preset | Rules |
+| --- | --- |
+| **Standard** | The full rules described here, identical to V1.1: roads, captures, development, and paced city events (65% chance per round, at most two at once). |
+| **Classic** | Roads, captures and development only. City events never happen (no draws and no "calm round" notes). |
+| **Urban Chaos** | A new city event every round from round 2, each lasting one round longer than usual, with up to three at once. |
+
+Presets are plain configuration (`GAME_MODES` in `js/config.js`). `createGame({ mode })` copies the preset's rules onto the game as `game.rules`, and the event engine reads only that; there are no mode checks elsewhere in the rules or UI. Saves from before presets existed load as Standard.
+
 ### City events
 
 After every full round, a configured probability check happens before turn income. A calm round starts no event, and no more than two different events can be active. The pool and pacing controls live in `CITY_EVENTS` in `js/config.js`.
@@ -293,6 +305,7 @@ js/
     settings.js            Persisted settings (localStorage, fails safe)
     persistence.js         Versioned active-game save, migration, validation and reset
     tutorial.js            First-game tips: steps, when each applies, saved progress (skip/done)
+    modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
@@ -334,6 +347,9 @@ tests/
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds, chain escalation, volumes/fades, ambience scenes, settings
   unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions
+  unit/modes.test.mjs      Presets: Standard replays V1.1 goldens exactly, Classic never has events, Urban Chaos
+                           has one every round (≤3 at once), determinism, 2–4 players, save/restore, old saves
+  unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
   smoke.mjs                Playwright smoke test across 5 viewports
@@ -395,4 +411,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). It uses a local `playwright` install if there is one and otherwise falls back to a global install.

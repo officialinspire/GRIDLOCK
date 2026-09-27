@@ -1,8 +1,8 @@
-/** New Game screen: Standard is four players; Custom preserves 2–4 seats. */
+/** New Game screen: players (Standard = four, Custom = 2–4) and a rule preset (GAME_MODES). */
 import { $, h } from './dom.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
-import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
+import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY, GAME_MODES, DEFAULT_MODE } from '../config.js';
 import { formatCash } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
 import { bus } from '../core/bus.js';
@@ -29,6 +29,15 @@ function seatCard(preset) {
   );
 }
 
+/** One radio card per rule preset: name and its one-line description, straight from config. */
+function ruleOption(mode) {
+  return h('label', { class: 'rule-option', dataset: { mode: mode.id } },
+    h('input', { type: 'radio', name: 'mode', value: mode.id, checked: mode.id === DEFAULT_MODE }),
+    h('span', { class: 'rule-option__text' },
+      h('strong', { class: 'rule-option__name' }, mode.name),
+      h('span', { class: 'rule-option__blurb' }, mode.blurb)));
+}
+
 function joinedSeats(form) {
   return [...form.querySelectorAll('.seat-card')]
     .filter((card) => card.querySelector('[name="join"]').checked)
@@ -49,8 +58,9 @@ function refresh(form) {
   });
   const ok = standard ? seats.length === PLAYER_PRESETS.length : seats.length >= MIN_PLAYERS;
   $('#setup-start').disabled = !ok;
+  const mode = GAME_MODES[form.elements.mode.value] ?? GAME_MODES[DEFAULT_MODE];
   $('#setup-summary').textContent = ok
-    ? `${standard ? 'Standard Game' : 'Custom Game'} · ${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city`
+    ? `${standard ? 'Standard Game' : 'Custom Game'} · ${seats.length} players · ${formatCash(ECONOMY.STARTING_CASH)} each · 6×6 city · ${mode.name} rules`
     : `At least ${MIN_PLAYERS} players must join.`;
 }
 
@@ -58,6 +68,7 @@ export function initSetupView() {
   const form = $('#setup-form');
   const list = $('#setup-players');
   list.replaceChildren(...PLAYER_PRESETS.map(seatCard));
+  $('#setup-rules').append(...Object.values(GAME_MODES).map(ruleOption));
 
   form.addEventListener('change', () => refresh(form));
   form.addEventListener('submit', (e) => {
@@ -65,7 +76,7 @@ export function initSetupView() {
     const seats = joinedSeats(form);
     const standard = form.elements.gameType.value === 'standard';
     if ((standard && seats.length !== PLAYER_PRESETS.length) || (!standard && seats.length < MIN_PLAYERS)) return;
-    bus.emit('game:start', { seats, settings: getSettings(), gameType: standard ? 'standard' : 'custom' });
+    bus.emit('game:start', { seats, settings: getSettings(), gameType: standard ? 'standard' : 'custom', mode: form.elements.mode.value });
   });
   bus.on('settings:changed', () => refresh(form));
   bus.on('screen:shown', ({ name }) => {

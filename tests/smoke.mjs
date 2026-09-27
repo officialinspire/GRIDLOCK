@@ -1109,6 +1109,97 @@ const recordVibration = () => {
   }
 }
 
+// Rule presets: description before starting, mode shown in game/pause/results, preserved by autosave.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const road = (id) => page.locator(`#board [data-road="${id}"]`);
+  const chip = () => page.textContent('#hud-mode');
+  try {
+    await page.goto(`${base}?seed=4&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    // Three presets, each with its description, Standard preselected.
+    const options = page.locator('#setup-rules .rule-option');
+    assert.equal(await options.count(), 3);
+    assert.deepEqual(await page.locator('.rule-option__name').allTextContents(), ['Standard', 'Classic', 'Urban Chaos']);
+    for (const blurb of await page.locator('.rule-option__blurb').allTextContents()) assert.ok(blurb.length > 20);
+    assert.equal(await page.isChecked('[name="mode"][value="standard"]'), true);
+    assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players · .* · Standard rules/);
+
+    // Urban Chaos with a Custom 3-player table.
+    await page.check('[name="gameType"][value="custom"]');
+    await page.locator('label[for="seat-4-join"]').click();
+    await page.locator('.rule-option', { hasText: 'Urban Chaos' }).click();
+    assert.match(await page.textContent('#setup-summary'), /Custom Game · 3 players · .* · Urban Chaos rules/);
+    await noHorizontalScroll(page, 'setup with rules');
+    await page.screenshot({ path: 'test-results/modes-setup.png' });
+    await page.click('#setup-start');
+    assert.equal(await chip(), 'Urban Chaos rules', 'mode shown during play');
+    assert.equal((await page.evaluate(() => window.__GRIDLOCK__.getGame().mode)), 'chaos');
+    await page.click('#game-menu-btn');
+    assert.match(await page.textContent('#pause-mode'), /Urban Chaos rules/);
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+
+    // Round 1 → 2: Urban Chaos always starts an event.
+    for (const id of ['h-0-0', 'h-0-1', 'h-0-2']) await road(id).click();
+    assert.ok(await page.isVisible('#event-dialog'), 'an event every round');
+    await page.click('#event-continue');
+
+    // Autosave/restore keeps the mode (and the table).
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await chip(), 'Urban Chaos rules', 'mode restored');
+    assert.equal(await page.locator('.player-card:not(.is-empty)').count(), 3);
+
+    // Results show the mode; Play Again keeps it.
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlock } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await road(last).click();
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.match(await page.textContent('#results-mode'), /^Urban Chaos rules · 3 players/);
+    await page.click('#results-dialog [data-results-action="rematch"]');
+    assert.equal(await chip(), 'Urban Chaos rules', 'Play Again keeps the mode');
+
+    // Classic: no city events and no "calm round" notes.
+    await page.click('#game-menu-btn');
+    await page.click('#pause-dialog [data-dialog-action="save-quit"]');
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.check('[name="gameType"][value="standard"]');
+    await page.locator('.rule-option', { hasText: 'Classic' }).click();
+    await page.click('#setup-start');
+    assert.equal(await chip(), 'Classic rules');
+    for (let round = 0; round < 3; round++) {
+      for (const id of [`h-${round + 1}-0`, `h-${round + 1}-1`, `h-${round + 1}-2`, `h-${round + 1}-3`]) await road(id).click();
+      assert.equal(await page.isVisible('#event-dialog'), false, 'no events in Classic');
+    }
+    assert.doesNotMatch(await page.textContent('#toasts'), /Calm round/);
+    assert.equal(await page.locator('.event-pill').count(), 0);
+    assert.deepEqual(errors, []);
+    console.log('✔ rule presets: setup descriptions, mode in game/pause/results, autosave, rematch, classic, chaos');
+  } catch (err) {
+    failures++;
+    console.error(`✘ rule presets: ${err.message}`);
+    await page.screenshot({ path: 'test-results/modes-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

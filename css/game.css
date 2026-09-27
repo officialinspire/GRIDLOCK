@@ -1204,6 +1204,23 @@ html[data-coords='on'] .block__coord { display: block; }
   gap: 6px;
   margin-top: -4px;
 }
+/* Rules in play (always first in the strip). */
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 6px;
+  font-size: 0.85rem;
+  font-weight: 900;
+  white-space: nowrap;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--drop-sm);
+}
+.mode-chip__icon { width: 22px; }
+.results__mode { margin: 2px 0 0; font-weight: 900; text-align: center; }
+.modal__sub { margin: -6px 0 12px; text-align: center; font-weight: 800; color: var(--ink-soft); }
 .event-pill {
   --kind: var(--steel);
   display: inline-flex;

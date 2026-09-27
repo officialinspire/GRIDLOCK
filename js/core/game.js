@@ -3,7 +3,8 @@
  * roads: build one road per turn; enclosing a block claims it and earns
  * another road. The game ends when every block is claimed.
  */
-import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY } from '../config.js';
+import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE } from '../config.js';
+import { resolveRules } from './modes.js';
 import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
 } from './board.js';
@@ -39,13 +40,17 @@ export function sanitizeName(name, fallback) {
 }
 
 /**
- * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
+ * @param {{ seats: Array<{seat:number, name?:string}>, seed?: number, mode?: string, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
  *   `seats` lists the joined seats (1–4). Play order is always by seat number.
  *   `seed` makes city events reproducible (random by default).
+ *   `mode` is a rule preset from GAME_MODES (standard | classic | chaos); its rules are
+ *   copied onto the game as `game.rules`, which is all the rules engine reads.
  *   `eventPool` overrides CITY_EVENTS.POOL (e.g. [] for an event-free game in tests).
+ *   `eventProbability` / `maxActiveEvents` override the mode's event pacing (tests).
  *   Economy values come from ECONOMY in config.js.
  */
-export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents } = {}) {
+export function createGame({ seats, seed = randomSeed(), mode = DEFAULT_MODE, eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents } = {}) {
+  const rules = resolveRules(mode, { eventProbability, maxActiveEvents });
   if (gameType === 'standard' && seats?.length !== MAX_PLAYERS) {
     throw new RangeError('Standard Game requires exactly 4 players');
   }
@@ -95,8 +100,8 @@ export function createGame({ seats, seed = randomSeed(), eventPool = EVENT_POOL,
     eventPool,
     turnPhase: TURN_PHASES.MANAGE_CITY,
     pendingCaptures: [],
-    eventProbability,
-    maxActiveEvents,
+    mode,
+    rules,
   };
   beginTurn(game);
   return game;

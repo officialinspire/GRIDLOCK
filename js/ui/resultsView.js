@@ -7,6 +7,7 @@ import { createSprite } from '../assets.js';
 import { ART } from '../art.js';
 import { formatCash } from '../core/economy.js';
 import { TIEBREAKERS } from '../core/scoring.js';
+import { modeName } from '../core/modes.js';
 
 const ordinal = (n) => ({ 1: '1st', 2: '2nd', 3: '3rd' }[n] ?? `${n}th`);
 
@@ -119,6 +120,7 @@ function countCityValues(dialog) {
 
 export function showResults(game) {
   renderResults(game);
+  $('#results-mode').textContent = `${modeName(game)} rules · ${game.players.length} players · ${game.round} rounds`;
   const dialog = $('#results-dialog');
   if (!dialog.open) dialog.showModal();
   requestAnimationFrame(() => countCityValues(dialog));

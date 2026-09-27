@@ -19,7 +19,7 @@ function memoryStorage() {
   };
 }
 
-const setup = { gameType: 'standard', seats: [1, 2, 3, 4].map((seat) => ({ seat, name: `Mayor ${seat}` })) };
+const setup = { gameType: 'standard', mode: 'standard', seats: [1, 2, 3, 4].map((seat) => ({ seat, name: `Mayor ${seat}` })) };
 
 test('active game save/load restores all durable game state and RNG', () => {
   const storage = memoryStorage();
@@ -110,6 +110,7 @@ test('missing or incompatible setup metadata is reconstructed for a safe rematch
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   assert.deepEqual(loadActiveGame(storage).setup, {
     gameType: 'custom',
+    mode: 'standard',
     seats: game.players.map(({ seat, name }) => ({ seat, name })),
   });
 });

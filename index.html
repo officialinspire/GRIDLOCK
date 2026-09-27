@@ -247,6 +247,10 @@
           <label><input type="radio" name="gameType" value="standard" checked> <strong>Standard Game</strong> · exactly 4 players</label>
           <label><input type="radio" name="gameType" value="custom"> <strong>Custom Game</strong> · 2–4 players</label>
         </fieldset>
+        <!-- Rule presets, generated from GAME_MODES (config.js) by setupView.js. -->
+        <fieldset class="paper setup__rules" id="setup-rules">
+          <legend>Rules</legend>
+        </fieldset>
         <div class="setup__players" id="setup-players"></div>
 
         <div class="setup__footer paper">
@@ -368,6 +372,7 @@
           <span class="results__trophy" data-sprite="icons:trophy"></span>
           <p class="results__kicker">City complete · final results</p>
           <h3 id="results-heading" class="results__title">City Complete!</h3>
+          <p class="results__mode" id="results-mode"></p>
           <p class="results__formula">City Value = cash + land + invested construction cost</p>
         </header>
         <ol class="results__grid" id="results-list"></ol>
@@ -391,6 +396,7 @@
 
       <dialog class="modal paper" id="pause-dialog" aria-labelledby="pause-heading">
         <h3 id="pause-heading" class="modal__title">Paused</h3>
+        <p class="modal__sub" id="pause-mode"></p>
         <div class="modal__actions">
           <button class="btn btn--gold" value="resume" data-dialog-action="resume">
             <span class="btn__icon" data-sprite="icons:play"></span><span>Resume</span>

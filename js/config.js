@@ -229,3 +229,36 @@ export const CITY_EVENTS = Object.freeze({
     },
   ].map((e) => Object.freeze(e))),
 });
+
+/**
+ * Rule presets for the New Game screen. A mode is pure configuration: createGame()
+ * copies its `events` block into game.rules, and the event engine reads only that.
+ * Player count is chosen separately (Standard Game = 4 players, Custom = 2–4), so
+ * every mode works with any table.
+ *
+ *   events.enabled      false: no city events at all (no draws, no "calm round" notes)
+ *   events.probability  chance a new event starts at the start of each round after the first
+ *   events.maxActive    at most this many different events at once
+ *   events.durationBonus  extra rounds every event lasts (on top of its own duration)
+ */
+export const GAME_MODES = Object.freeze({
+  standard: Object.freeze({
+    id: 'standard',
+    name: 'Standard',
+    blurb: 'The full rules: roads, captures, development and paced city events.',
+    events: Object.freeze({ enabled: true, probability: CITY_EVENTS.ROUND_PROBABILITY, maxActive: CITY_EVENTS.MAX_ACTIVE, durationBonus: 0 }),
+  }),
+  classic: Object.freeze({
+    id: 'classic',
+    name: 'Classic',
+    blurb: 'Pure strategy: roads, captures and development. No city events.',
+    events: Object.freeze({ enabled: false, probability: 0, maxActive: 0, durationBonus: 0 }),
+  }),
+  chaos: Object.freeze({
+    id: 'chaos',
+    name: 'Urban Chaos',
+    blurb: 'A city event every round, each lasting longer, up to three at once.',
+    events: Object.freeze({ enabled: true, probability: 1, maxActive: 3, durationBonus: 1 }),
+  }),
+});
+export const DEFAULT_MODE = 'standard';

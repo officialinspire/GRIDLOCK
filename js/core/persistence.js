@@ -5,6 +5,7 @@ import { PHASES, TURN_PHASES } from './game.js';
 import { DISTRICTS, blockId, isValidRoad } from './board.js';
 import { CATEGORY_ORDER } from './buildings.js';
 import { refreshBonuses } from './bonuses.js';
+import { getMode, resolveRules } from './modes.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
 export const SAVE_VERSION = 1;
@@ -53,8 +54,17 @@ function validBlock(block) {
     && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0);
 }
 
+/** A saved rules snapshot must have the shape the event engine reads. */
+function validRules(rules) {
+  const events = rules?.events;
+  return plainObject(rules) && plainObject(events) && typeof events.enabled === 'boolean'
+    && typeof events.probability === 'number' && events.probability >= 0 && events.probability <= 1
+    && integer(events.maxActive) && events.maxActive >= 0 && integer(events.durationBonus) && events.durationBonus >= 0;
+}
+
 function validGame(game) {
   if (!plainObject(game) || game.phase !== PHASES.PLAYING) return false;
+  if (!getMode(game.mode) || !validRules(game.rules)) return false;
   if (!Array.isArray(game.players) || game.players.length < MIN_PLAYERS || game.players.length > MAX_PLAYERS) return false;
   const seats = new Set();
   for (const player of game.players) {
@@ -100,6 +110,7 @@ function validGame(game) {
 function setupFrom(game, setup) {
   return {
     gameType: setup?.gameType === 'standard' && game.players.length === MAX_PLAYERS ? 'standard' : 'custom',
+    mode: game.mode,
     seats: game.players.map(({ seat, name }) => ({ seat, name })),
   };
 }
@@ -133,6 +144,16 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
 export function loadActiveGame(storage = globalThis.localStorage) {
   try {
     const migrated = migrate(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
+    // Saves from before rule presets existed were standard games.
+    if (plainObject(migrated?.game) && migrated.game.mode === undefined) {
+      migrated.game.mode = 'standard';
+      migrated.game.rules = resolveRules('standard', {
+        eventProbability: migrated.game.eventProbability ?? undefined,
+        maxActiveEvents: migrated.game.maxActiveEvents ?? undefined,
+      });
+      delete migrated.game.eventProbability;
+      delete migrated.game.maxActiveEvents;
+    }
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.
     refreshBonuses(migrated.game.board);

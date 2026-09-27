@@ -26,6 +26,7 @@ import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { audio, play } from './audio.js';
 import { buzz } from './haptics.js';
+import { modeName } from '../core/modes.js';
 import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
@@ -464,6 +465,7 @@ function initMuteButton() {
 function initDialogs() {
   const pause = $('#pause-dialog');
   $('#game-menu-btn').addEventListener('click', () => {
+    $('#pause-mode').textContent = game ? `${modeName(game)} rules · Round ${game.round}` : '';
     pause.showModal();
     audio.setPaused(true);
   });
