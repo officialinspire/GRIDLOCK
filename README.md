@@ -17,6 +17,7 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 - **Rule presets:** Standard, Classic (no events) and Urban Chaos (an event every round), for 2–4 players, kept by autosave.
 - **Career:** a Statistics screen with per-mayor records and 12 achievement badges; only genuinely completed matches count.
 - **Strategic forecasts:** the Build panel and inspector show cost, income, upkeep, net per turn, City Value change, event modifiers and the bonuses a build would activate, computed by running the real transaction on a copy of the game.
+- **CPU road engine:** `chooseRoad()` with Easy, Normal and Hard play: captures, safe roads, cheapest sacrifices, and for Hard chain look-ahead, value weighting and double-dealing. Pure and deterministic; it never touches the game's random generator.
 - **Human and CPU seats:** each seat is Human or CPU (Easy/Normal/Hard), with Solo, Local Friends and Mixed presets on New Game and "Mayor Bot" default names. Seat types are kept through autosave, Continue, Play Again, Replay and the results screen. The rules are unchanged, human-only games play exactly as before, and CPU seats are currently played by hand.
 - **Replayable cities:** a city seed on New Game, the seed shown in the pause menu and on the results screen, Replay Same City, and Copy Challenge Link (`?seed=&mode=&seats=`).
 - **Balance pass:** Park income $100 → $150, Civic $250 → $325, Landmark $700 → $850. Before this, upgrading a Park or Civic building to Level 3 lost money every turn, and Landmark paid back more slowly than Industrial at every level. See *Balance simulation* for the evidence. Residential, Commercial, Industrial, scoring and events are unchanged, and the recorded V1.1 games still replay exactly.
@@ -61,7 +62,21 @@ Every seat is either **Human** or **CPU** (with an **Easy**, **Normal** or **Har
 
 CPU seats that aren't given a name are called **Mayor Bot 1**, **Mayor Bot 2** and so on, numbered in seat order. Standard Game is still exactly 4 seats and Custom 2–4, with CPU seats counting toward the total. At least one seat must be Human. The seat types show as a **CPU** tag on the player cards and the results screen. They're kept by autosave and Continue Game, Play Again and Replay Same City. Saves from before seat types existed load as all-Human tables.
 
-A seat's type is table information only: `createGame` stores `controller` (`"human"` / `"cpu"`) and `difficulty` (`null` / `"easy"` / `"normal"` / `"hard"`) on each player, and no rule reads them. A game with only Human seats plays exactly as before. CPU seats don't yet make their own moves: until a computer player is added, whoever holds the device plays those turns. Career statistics and achievements count only the Human seats. Validation, presets and bot names live in `js/core/seats.js`.
+A seat's type is table information only: `createGame` stores `controller` (`"human"` / `"cpu"`) and `difficulty` (`null` / `"easy"` / `"normal"` / `"hard"`) on each player, and no rule reads them. A game with only Human seats plays exactly as before. CPU seats don't take their turns on their own yet: whoever holds the device plays them. The road-placement brain they will use already exists (see [CPU road decisions](#cpu-road-decisions)); what's still missing is hooking it into turns, plus development decisions. Career statistics and achievements count only the Human seats. Validation, presets and bot names live in `js/core/seats.js`.
+
+### CPU road decisions
+
+`chooseRoad(game, { difficulty, seed })` in `js/core/cpu/roads.js` answers one question: which road should the current seat pave? It returns a decision (`{ road, reason, captures, score, difficulty, candidates }`) and changes nothing; the caller plays it with `placeRoad()`. Legality comes from the game's own `validateRoad()` and board geometry from `board.js`. Look-ahead runs on a copy of the paved roads.
+
+| Difficulty | How it picks a road |
+| --- | --- |
+| **Easy** | Takes a capture if there is one. Otherwise a random legal road, usually (70%) rethinking a road that would leave a three-sided block, so it now and then hands one over |
+| **Normal** | Best capture first, counting double captures and the chain behind a capture. Otherwise a safe road (one that gives nobody a block). If none is left, the road that gives the next mayor the fewest blocks. Picks randomly among equally good roads |
+| **Hard** | Everything Normal does, plus look-ahead: it plays out its own capture run, the next mayor's reply (they take what's offered, then close safely or sacrifice as little as they can) and its own follow-up, weighing blocks by what they're worth (land value + capture reward). So it sacrifices a suburb block before a downtown one, avoids handing over chains, and will **double-deal**: stop two blocks short of the end of a chain so the opponent must open the next, longer one |
+
+**Fairness and determinism:** the engine sees only what a player at the table sees. It never reads `game.rngState` or the event pool and never draws from the game's random generator, so asking it for a move can't predict or change city events (a test plays the same game with and without consulting it and gets identical events). Its choices between equally good roads come from its own seeded stream: pass `seed`, or it derives one from the public city seed, the seat and how many roads are down. The same position and seed always give the same road.
+
+Measured in 40-game head-to-head matches with seats alternated (Classic rules, captures only): Normal takes 79% of the blocks against Easy, Hard takes 62% against Normal, and Hard takes 74% against Easy. Hard decides in under a millisecond typically, and 42 ms at worst in crowded endgames.
 
 **Your turn**
 1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
@@ -413,6 +428,7 @@ js/
     tutorial.js            First-game tips: steps, when each applies, saved progress (skip/done)
     modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
     seats.js               Seat controllers (human / cpu + difficulty): validation, table presets, bot names
+    cpu/roads.js           CPU road choice (Easy / Normal / Hard): pure, deterministic, decision only
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
     bus.js                 Pub/sub between core and UI
@@ -465,6 +481,7 @@ tests/
   unit/forecast.test.mjs   Forecasts = real transactions (every category, upgrades, events, bonuses, next turn's income/upkeep, 100+ mid-game positions)
   unit/challenge.test.mjs  Seed/link parsing, links never carry ?debug, Replay setup; same seed + mode + seats + moves = same events (every preset)
   unit/seats.test.mjs      Seat validation (Standard/Custom, controllers, difficulty, a human seat), presets, bot names, human-only games unchanged, mixed tables, save/Continue/rematch/replay, career counts humans
+  unit/cpu-roads.test.mjs  CPU roads on staged positions: captures, doubles/chains, safe roads, sacrifices, value-weighting, double-deal; purity, determinism, event RNG untouched; whole CPU games; Hard ≥ Normal > Easy
   unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
