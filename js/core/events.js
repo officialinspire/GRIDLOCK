@@ -190,15 +190,21 @@ export function effectiveIncome(game, seat) {
     .reduce((sum, b) => sum + effectiveBlockIncome(game, b), 0);
 }
 
-/** Combined (clamped) build/upgrade cost multiplier for a category. */
-export function costMultiplier(game, category) {
-  let m = 1;
+/** Every active event changing build/upgrade prices for a category: [{ instance, def, multiplier }]. */
+export function costImpacts(game, category) {
+  const out = [];
   for (const instance of game.events.active) {
-    for (const mod of getEventDef(instance.id)?.costs ?? []) {
-      if (mod.categories.includes(category)) m *= mod.multiplier;
+    const def = getEventDef(instance.id);
+    for (const mod of def?.costs ?? []) {
+      if (mod.categories.includes(category)) out.push({ instance, def, multiplier: mod.multiplier });
     }
   }
-  return clamp(m);
+  return out;
+}
+
+/** Combined (clamped) build/upgrade cost multiplier for a category. */
+export function costMultiplier(game, category) {
+  return clamp(costImpacts(game, category).reduce((m, impact) => m * impact.multiplier, 1));
 }
 
 /** A base cost adjusted by active events, rounded to whole dollars. */

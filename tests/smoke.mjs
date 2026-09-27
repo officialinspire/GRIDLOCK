@@ -1297,6 +1297,99 @@ const recordVibration = () => {
   }
 }
 
+// Strategic information: forecasts in the Build panel match what actually happens; inspector details.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const money = (text) => Number(text.replace(/[^0-9−-]/g, '').replace('−', '-'));
+  const position = () => page.evaluate(async () => {
+    const { playerStats, currentPlayer } = await import('/js/core/game.js');
+    const { scorePlayer } = await import('/js/core/scoring.js');
+    const g = window.__GRIDLOCK__.getGame();
+    const p = currentPlayer(g);
+    const s = playerStats(g, p);
+    return { cash: p.cash, income: s.income, upkeep: s.upkeep, cityValue: scorePlayer(g, p).cityValue };
+  });
+  try {
+    await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await page.click(`#board [data-road="${id}"]`);
+    // P4 owns two neighbouring homes and a Housing Boom is on: a third home activates a district bonus.
+    await page.evaluate(async () => {
+      const { getBlock } = await import('/js/core/board.js');
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const { startEvent } = await import('/js/core/events.js');
+      const g = window.__GRIDLOCK__.getGame();
+      for (const c of [1, 2]) { const b = getBlock(g.board, 0, c); b.ownerSeat = 4; applyDevelopment(b, 'residential', 1); }
+      refreshBonuses(g.board);
+      startEvent(g, 'housing-boom');
+    });
+    await page.click('[data-capture-choice="develop"]');
+    const panel = page.locator('#build-dialog');
+
+    // Every option shows its forecast; the tooltip has the full breakdown.
+    assert.equal(await panel.locator('.build-option .forecast-line').count(), 6);
+    const tip = await panel.locator('[data-build="residential"]').getAttribute('title');
+    for (const part of ['Cost $1,250 (normally $1,000)', 'Your income', 'Upkeep', 'Net', 'City Value', 'Price: Housing Boom +25%',
+      'Income: Housing Boom +50%', 'Activates: Residential district']) assert.ok(tip.includes(part), `tooltip has "${part}"`);
+    await panel.locator('.forecast-compare summary').click();
+    assert.equal(await panel.locator('.forecast-table tbody tr').count(), 6);
+    const row = panel.locator('.forecast-table tr[data-forecast="residential"] td');
+    const forecastNet = money(await row.nth(1).textContent());
+    const forecastCV = money(await row.nth(2).textContent());
+    assert.equal(await row.nth(3).textContent(), '★ 3');
+
+    // Build it for real: the actual changes equal the forecast.
+    const before = await position();
+    await panel.locator('[data-build="residential"]').click();
+    const after = await position();
+    assert.equal(before.cash - after.cash, 1250, 'paid what the forecast said');
+    assert.equal((after.income - after.upkeep) - (before.income - before.upkeep), forecastNet, 'net per turn as forecast');
+    assert.equal(after.cityValue - before.cityValue, forecastCV, 'City Value change as forecast');
+
+    // Inspector: income (event marker), upkeep, net, City Value contribution, price effect, bonuses.
+    await page.click('#board [data-block="r0c1"]');
+    const insp = await page.textContent('#inspector');
+    for (const part of ['Upkeep', 'Net', 'Property value', 'Adds to City Value', 'Upgrade price', 'Housing Boom', 'Residential district']) {
+      assert.ok(insp.includes(part), `inspector shows "${part}"`);
+    }
+    assert.match(await page.getAttribute('#inspector .inspector__event', 'title'), /normally \$\d/);
+
+    // Upgrade card: full breakdown; the upgrade then matches it.
+    await page.evaluate(() => {
+      const g = window.__GRIDLOCK__.getGame();
+      g.turnPhase = 'manage-city'; // stage P4's Manage City to reach the upgrade card
+      g.pendingCaptures = [];
+    });
+    await page.click('#board [data-block="r0c0"]');
+    const card = panel.locator('.upgrade-card .forecast');
+    await card.waitFor();
+    const dd = async (label) => card.locator(`dt:text-is("${label}") + dd`).textContent();
+    const income = await dd('Your income');
+    const projected = money(income.split('→')[1]);
+    await panel.locator('[data-upgrade]').click();
+    assert.equal((await position()).income, projected, 'upgrade income as forecast');
+    assert.deepEqual(errors, []);
+    console.log('✔ strategic info: build/upgrade forecasts match real outcomes; inspector details');
+  } catch (err) {
+    failures++;
+    console.error(`✘ strategic info: ${err.message}`);
+    await page.screenshot({ path: 'test-results/forecast-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

@@ -9,12 +9,12 @@ import {
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides } from '../core/board.js';
 import { describeDevelopment } from '../core/buildings.js';
-import { blockValue, bonusIncome, formatCash } from '../core/economy.js';
+import { blockValue, bonusIncome, formatCash, formatDelta } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
 import { effectiveBlockIncome, getEventDef } from '../core/events.js';
 import { initFinanceView, openDistressPanel } from './financeView.js';
-import { isInDistress, blockUpkeep } from '../core/economy.js';
+import { isInDistress } from '../core/economy.js';
 import { isDeveloped } from '../core/development.js';
 import { initBuildPanel, openBuildPanel, closeBuildPanel, canManage } from './buildPanel.js';
 import {
@@ -28,6 +28,9 @@ import { audio, play } from './audio.js';
 import { buzz } from './haptics.js';
 import { modeName } from '../core/modes.js';
 import { recordFinishedMatch } from './careerView.js';
+import { blockDetails } from '../core/forecast.js';
+import { ECONOMY } from '../config.js';
+import { modifierText } from './forecastView.js';
 import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
@@ -71,7 +74,8 @@ function renderInspector(blockId, panel = $('#inspector')) {
     return;
   }
   const owner = block.ownerSeat ? getPlayer(game, block.ownerSeat) : null;
-  const row = (k, v) => [h('dt', {}, k), h('dd', {}, v)];
+  const row = (k, v, tip) => [h('dt', { title: tip ?? null }, k), h('dd', {}, v)];
+  const d = blockDetails(game, block.id); // every number from the game's own economy/scoring/event functions
   panel.replaceChildren(...[
     h('h3', { class: 'inspector__title' }, `Block ${block.label}`),
     (owner || block.abandoned) && h('p', { class: 'inspector__dev', dataset: { type: block.type } },
@@ -81,9 +85,19 @@ function renderInspector(blockId, panel = $('#inspector')) {
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
       row('Owner', owner ? owner.name : 'Unclaimed'),
-      row('Income', owner ? `+${formatCash(effectiveBlockIncome(game, block))}/turn` : '—'),
-      owner && row('Upkeep', `−${formatCash(blockUpkeep(block))}/turn`),
-      owner && row('City value', formatCash(blockValue(block))),
+      row('Income', owner
+        ? [`+${formatCash(d.income)}/turn`, d.income !== d.normalIncome && h('span', {
+          class: `inspector__event ${d.income > d.normalIncome ? 'is-up' : 'is-down'}`,
+          title: `City event: normally ${formatCash(d.normalIncome)}/turn`,
+          'aria-label': `, normally ${formatCash(d.normalIncome)} per turn`,
+        }, d.income > d.normalIncome ? ' ▲' : ' ▼')]
+        : '—', 'Paid at the owner\'s turn start, with active city events applied'),
+      owner && row('Upkeep', `−${formatCash(d.upkeep)}/turn`, 'Charged at the owner\'s turn start'),
+      owner && row('Net', `${formatDelta(d.net)}/turn`, 'Income minus upkeep'),
+      owner && row('Property value', formatCash(blockValue(block)), 'Land plus what was actually paid for construction'),
+      owner && d.contribution != null && row('Adds to City Value', formatCash(d.contribution),
+        `How much this block adds to ${owner.name}'s final score (land + ${Math.round(ECONOMY.SCORING.INVESTED_BUILDING * 100)}% of building investment)`),
+      owner && d.eventPrice.length > 0 && row('Upgrade price', modifierText(d.eventPrice), 'City events changing build/upgrade prices for this category'),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),

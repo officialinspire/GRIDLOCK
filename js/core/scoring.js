@@ -37,8 +37,12 @@ function highestDevelopment(blocks) {
 }
 
 /** Every stat shown on the results screen for one player. */
-export function scorePlayer(game, player) {
-  const owned = blocksOwnedBy(game.board, player.seat);
+/**
+ * @param opts.exclude  score as if this block weren't owned (used to measure a block's
+ *                      contribution to City Value with the same formula)
+ */
+export function scorePlayer(game, player, { exclude = null } = {}) {
+  const owned = blocksOwnedBy(game.board, player.seat).filter((b) => b.id !== exclude);
   const developed = owned.filter(isDev);
   const landValue = owned.reduce((s, b) => s + b.price, 0);
   const buildingValue = owned.reduce((s, b) => s + investedIn(b), 0);

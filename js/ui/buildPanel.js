@@ -12,8 +12,10 @@ import { CATEGORY_ORDER, getCategory, levelArt, describeDevelopment } from '../c
 import {
   quoteBuild, quoteUpgrade, buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL, DEV_ERRORS,
 } from '../core/development.js';
-import { formatCash, blockIncome, bonusIncome } from '../core/economy.js';
+import { formatCash, formatDelta, blockIncome, bonusIncome } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
+import { forecastDevelopment, blockContribution } from '../core/forecast.js';
+import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
 import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
 import { toast } from './toast.js';
 import { buzz } from './haptics.js';
@@ -41,7 +43,7 @@ function pips(level) {
     Array.from({ length: MAX_LEVEL }, (_, i) => h('span', { class: `pip${i < level ? ' is-on' : ''}` })));
 }
 
-function header(block, player) {
+function header(game, block, player) {
   const art = levelArt(block.type, block.level);
   return h('header', { class: 'build-panel__head' },
     art
@@ -57,7 +59,11 @@ function header(block, player) {
         pips(block.level),
         h('span', {}, `+${formatCash(blockIncome(block))}/turn`),
         bonusIncome(block) > 0 && h('span', { class: 'build-panel__bonus' }, `★ incl. ${formatCash(bonusIncome(block))} bonus`),
-        h('span', {}, `City value ${formatCash(block.value)}`),
+        h('span', { title: 'Land plus what was actually paid for construction' }, `Property ${formatCash(block.value)}`),
+        blockContribution(game, block.id) != null && h('span', {
+          class: 'build-panel__cv',
+          title: 'How much this block adds to your City Value (the final score)',
+        }, `Adds ${formatCash(blockContribution(game, block.id))} to City Value`),
       ),
     ),
     h('div', { class: 'build-panel__cash' },
@@ -78,7 +84,7 @@ function priceTag(quote) {
   ];
 }
 
-function categoryOption(game, block, type) {
+function categoryOption(game, block, type, forecast) {
   const cat = getCategory(type);
   const quote = quoteBuild(game, block.id, type);
   const art = levelArt(type, 1);
@@ -87,21 +93,26 @@ function categoryOption(game, block, type) {
     class: `build-option build-option--${type}${quote.ok ? '' : ' is-unaffordable'}`,
     dataset: { build: type },
     'aria-disabled': quote.ok ? null : 'true',
-    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : `. Need ${formatCash(quote.shortfall)} more`}`,
+    title: forecast.ok ? forecastText(forecast) : null,
+    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : `. Need ${formatCash(quote.shortfall)} more`}${forecast.ok ? `. Net ${formatDelta(forecast.delta.net)} per turn${forecast.delta.cityValue == null ? '' : `, City Value ${formatDelta(forecast.delta.cityValue)}`}` : ''}`,
   },
     createSprite(art.sprite, { className: 'build-option__art' }),
     h('span', { class: 'build-option__label' },
       createSprite(cat.icon, { className: 'build-option__icon' }), cat.label),
     h('span', { class: 'build-option__name' }, art.name),
     h('span', { class: 'build-option__price' }, priceTag(quote)),
+    forecast.ok && forecastSummary(forecast),
   );
 }
 
 function vacantView(game, block, player) {
+  // Each forecast runs the real build on a copy of the game (core/forecast.js).
+  const forecasts = CATEGORY_ORDER.map((type) => [type, forecastDevelopment(game, block.id, type)]);
   return [
-    header(block, player),
+    header(game, block, player),
     h('p', { class: 'build-panel__hint' }, 'Vacant lots earn nothing. Choose what to build (Level 1):'),
-    h('div', { class: 'build-panel__grid' }, CATEGORY_ORDER.map((type) => categoryOption(game, block, type))),
+    h('div', { class: 'build-panel__grid' }, forecasts.map(([type, f]) => categoryOption(game, block, type, f))),
+    compareForecasts(forecasts),
     h('div', { class: 'build-panel__actions' },
       h('button', { type: 'button', class: 'btn', dataset: { action: 'close' } },
         createSprite('icons:undo', { className: 'btn__icon' }), h('span', {}, 'Leave Vacant')),
@@ -111,13 +122,14 @@ function vacantView(game, block, player) {
 
 function developedView(game, block, player) {
   const cat = getCategory(block.type);
-  const nodes = [header(block, player), bonusList(block)];
+  const nodes = [header(game, block, player), bonusList(block)];
   if (block.level >= MAX_LEVEL) {
     nodes.push(h('p', { class: 'build-panel__maxed' },
       createSprite('icons:crown', { className: 'build-panel__maxed-icon' }),
       `${cat.label} is fully developed.`));
   } else {
     const quote = quoteUpgrade(game, block.id);
+    const forecast = forecastDevelopment(game, block.id);
     const next = levelArt(block.type, block.level + 1);
     nodes.push(h('div', { class: `upgrade-card build-option--${block.type}` },
       createSprite(next.sprite, { className: 'upgrade-card__art' }),
@@ -130,6 +142,7 @@ function developedView(game, block, player) {
           && h('span', { class: 'price__event' }, `City event price (normally ${formatCash(quote.baseCost)})`),
         quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
           && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
+        forecast.ok && forecastDetails(forecast),
       ),
       h('button', {
         type: 'button',
