@@ -160,6 +160,40 @@ export const CPU = Object.freeze({
   CIVIC_SHELTER_VALUE: 0.15,
   /** Hard: share of a district bonus it counts for a build that leaves the district one block short. */
   DISTRICT_POTENTIAL: 0.5,
+  /**
+   * CPU personalities: priorities, never extra knowledge or different rules. Each weight
+   * multiplies how much the mayor cares about something it has already valued from the real
+   * forecasts, and stays modest (0.85–1.35) so difficulty always matters more than personality.
+   *   categories    weight on a build/upgrade's value by category
+   *   upgrade       weight on upgrading an existing building
+   *   district      weight on district-completion value (Hard)
+   *   shelter       weight on civic shelter value (Hard)
+   *   redevelop     weight on buying abandoned land (opening auctions, and how much of its value it bids)
+   *   reserve       multiplier on the default cash reserve
+   *   followUp      weight on captures it expects next turn when choosing roads (Hard)
+   */
+  PERSONALITIES: Object.freeze({
+    builder: Object.freeze({
+      id: 'builder', name: 'Builder', blurb: 'Develops and upgrades, chasing districts.',
+      categories: Object.freeze({ residential: 1.2, commercial: 1.1, park: 1, civic: 1, industrial: 1, landmark: 1.1 }),
+      upgrade: 1.25, district: 1.35, shelter: 1, redevelop: 1, reserve: 0.9, followUp: 1,
+    }),
+    tycoon: Object.freeze({
+      id: 'tycoon', name: 'Tycoon', blurb: 'Commerce, industry and income first.',
+      categories: Object.freeze({ residential: 0.95, commercial: 1.25, park: 0.85, civic: 0.85, industrial: 1.25, landmark: 1.1 }),
+      upgrade: 1.1, district: 1, shelter: 0.85, redevelop: 1, reserve: 1, followUp: 1,
+    }),
+    planner: Object.freeze({
+      id: 'planner', name: 'Planner', blurb: 'Parks, civic buildings and mixed-use neighbourhoods.',
+      categories: Object.freeze({ residential: 1.05, commercial: 1, park: 1.35, civic: 1.35, industrial: 0.9, landmark: 1 }),
+      upgrade: 1, district: 1.1, shelter: 1.35, redevelop: 0.9, reserve: 1.15, followUp: 1,
+    }),
+    expansionist: Object.freeze({
+      id: 'expansionist', name: 'Expansionist', blurb: 'Territory first: captures and abandoned land.',
+      categories: Object.freeze({ residential: 0.95, commercial: 0.95, park: 0.9, civic: 0.9, industrial: 0.95, landmark: 0.9 }),
+      upgrade: 0.9, district: 1, shelter: 1, redevelop: 1.3, reserve: 0.85, followUp: 1.3,
+    }),
+  }),
 });
 
 export const MAX_NAME_LENGTH = 16;

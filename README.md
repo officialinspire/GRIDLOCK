@@ -17,6 +17,7 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 - **Rule presets:** Standard, Classic (no events) and Urban Chaos (an event every round), for 2–4 players, kept by autosave.
 - **Career:** a Statistics screen with per-mayor records and 12 achievement badges; only genuinely completed matches count.
 - **Strategic forecasts:** the Build panel and inspector show cost, income, upkeep, net per turn, City Value change, event modifiers and the bonuses a build would activate, computed by running the real transaction on a copy of the game.
+- **Deeper CPU play and personalities:** Hard reads the city's events: it waits out surcharges, uses discounts and boosts only while they last, builds civic shelter when emergencies are likely, and guards against downturns. Hard bids strategically in contested auctions and chooses between restoring a ruin and clearing it. CPU mayors are Builders, Tycoons, Planners or Expansionists: assigned automatically, or chosen in Mixed setup, and shown on the HUD, inspector and results.
 - **CPU turns in play:** CPU seats play their own turns (Manage City, roads, captures, bonus chains, debt, sealed redevelopment bids) through the same actions as people. They pause briefly to "think" (with Faster and Skip controls), wait for the pause menu and for dialogs, resume safely after a reload, and show the handoff screen only when a different person takes over.
 - **CPU city strategy:** `chooseCityAction()` decides builds, upgrades, leaving land vacant, keeping a configurable cash reserve, and selling or downgrading in debt. It scores everything with the real forecasts: Easy picks sensibly, Normal weighs income, upkeep, bonuses, reserve and events, and Hard adds event duration, civic shelter, district completion, return per dollar and bankruptcy risk.
 - **CPU road engine:** `chooseRoad()` with Easy, Normal and Hard play: captures, safe roads, cheapest sacrifices, and for Hard chain look-ahead, value weighting and double-dealing. Pure and deterministic; it never touches the game's random generator.
@@ -109,6 +110,36 @@ It has no economy formulas of its own:
 | **Hard** | The same judged harder: active events count only for the rounds they have left, civic shelter is worth 15% of the neighbouring income it protects, a build that leaves a district one block short counts half the bonus it would bring, and it needs a return of at least 5% per dollar | Reserve + next turn's charges even if income were halved, plus a possible Fire repair | Least (income lost over the turns left + City Value lost) per dollar of debt covered |
 
 All three declare bankruptcy only when selling everything couldn't cover the debt (the rules allow nothing else). The tuning constants live in `CPU` in `config.js`. In 30 all-CPU Standard games with the three difficulties at each table (seats rotated), average City Value was $23.6k for Easy, $38.5k for Normal and $40.8k for Hard; there were no bankruptcies, and all six categories got built.
+
+**Reading the city's events (Hard).** Income from anything bought now is first paid at the owner's *next* turn start, so Hard counts an event's boost or penalty only for the paydays it will actually cover. An event ending this round adds nothing.
+- **Surcharges:** upkeep follows the price actually paid, so a surcharge costs every turn after too. When a Housing Boom's surcharge ends this round and waiting one turn is worth more, Hard holds off (reason `wait-for-price`); Normal pays it.
+- **Discounts and boosts:** a Beautification Grant or a Recession discount is worth exactly what it saves, including the lower upkeep. Hard values a Park more during a grant, but not as if the doubled income lasted all game.
+- **Civic shelter:** it's weighted by how likely emergencies are: none in Classic, more in Urban Chaos, half as much again while an emergency is on.
+- **Downturns (Recession, Snowstorm):** Hard keeps enough extra cash to cover what the lean rounds will cost beyond its income, and buys nothing that would leave its net income negative.
+
+**Redevelopment strategy.** A lot's value to a mayor is the real auction run on a copy. "Clear & rebuild" also counts the best building the mayor could put there on its next turn, so a bot restores a valuable ruin (a Level 3 Landmark at 40% of its cost) but clears a cheap one to build something better. Bids never go above what the lot is worth to the bot, and Hard also keeps next turn's bills in hand:
+
+| Difficulty | Sealed bid |
+| --- | --- |
+| Easy | The reserve price, half the time |
+| Normal | The reserve price plus half of what the lot is worth to it |
+| Hard | Just the reserve price when no eligible rival can afford it. Otherwise one step above the richest rival's cash, since nobody can bid more than they have (cash is on the HUD), capped at 80% of the lot's surplus |
+
+### CPU personalities
+
+Every CPU mayor also has a **personality**. Personalities change priorities, never knowledge or rules:
+
+| Personality | Leans towards |
+| --- | --- |
+| **Builder** | Development: Residential (×1.2), upgrades (×1.25) and completing districts (×1.35); keeps a slightly smaller reserve |
+| **Tycoon** | Income: Commercial and Industrial (×1.25), Landmarks (×1.1); cares less for parks and civic buildings |
+| **Planner** | Parks and civic buildings (×1.35), civic shelter (×1.35) and mixed-use neighbourhoods; keeps a bigger reserve |
+| **Expansionist** | Territory: abandoned land (×1.3 on opening auctions and on how much of a lot's value it bids), follow-up captures in its road look-ahead (×1.3, so it double-deals more readily); keeps a smaller reserve |
+
+- **Weights, not rules:** a weight only scales an option the mayor already values positively from the real forecasts, so a personality can reorder good choices but never makes a bad one attractive. Easy's random picks lean the same way. The weights live in `CPU.PERSONALITIES`.
+- **Assignment:** bots get a personality automatically, fixed by the city seed (so Replay Same City and challenge links seat the same bots), with no two bots at a table sharing one. In **Mixed** setup each CPU seat can instead pick one (default *Auto*). Solo bots are always automatic.
+- **Where it shows:** the difficulty and personality appear under a bot's name on its player card, in the inspector's Owner line and on the results screen ("CPU · Hard · Tycoon").
+- **Difficulty still matters more:** with the same personality on both sides, Hard took 76–77% of the combined City Value against Easy in head-to-head games, for every personality. Two Hard bots with different personalities split about 50–59%, mostly seat luck. A unit test checks the first for all four personalities.
 
 **Your turn**
 1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
@@ -461,7 +492,7 @@ js/
     modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
     seats.js               Seat controllers (human / cpu + difficulty): validation, table presets, bot names
     cpu/roads.js           CPU road choice (Easy / Normal / Hard): pure, deterministic, decision only
-    cpu/city.js            CPU Manage City + Capture/Develop: build, upgrade, vacant, reserve, debt (forecast-based)
+    cpu/city.js            CPU Manage City + Capture/Develop: build, upgrade, vacant, reserve, debt, events, redevelopment, personalities (forecast-based)
     cpu/random.js          The CPU's own seeded stream (never the game RNG)
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
@@ -518,6 +549,7 @@ tests/
   unit/seats.test.mjs      Seat validation (Standard/Custom, controllers, difficulty, a human seat), presets, bot names, human-only games unchanged, mixed tables, save/Continue/rematch/replay, career counts humans
   unit/cpu-roads.test.mjs  CPU roads on staged positions: captures, doubles/chains, safe roads, sacrifices, value-weighting, double-deal; purity, determinism, event RNG untouched; whole CPU games; Hard ≥ Normal > Easy
   unit/cpu-city.test.mjs   CPU city decisions on staged positions: affordability, configurable reserve, endgame restraint, district and event and civic judgement, upgrades, debt and bankruptcy; purity; whole CPU games; Normal/Hard > Easy
+  unit/cpu-strategy.test.mjs  Events (wait out a surcharge, grants, civic exposure, downturns), contested bids, restore vs rebuild, personalities (reserve, bids, Easy's picks, build mix, Expansionist double-deal), difficulty > personality
   unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state

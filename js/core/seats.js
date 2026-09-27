@@ -3,12 +3,14 @@
  * Pure data and validation, no DOM. The rules engine never reads these fields: a seat's
  * controller only decides who makes its moves, never what the moves are allowed to be.
  */
-import { PLAYER_PRESETS, MIN_PLAYERS, MAX_PLAYERS } from '../config.js';
+import { PLAYER_PRESETS, MIN_PLAYERS, MAX_PLAYERS, CPU } from '../config.js';
 
 export const CONTROLLERS = Object.freeze(['human', 'cpu']);
 export const DIFFICULTIES = Object.freeze(['easy', 'normal', 'hard']);
 export const DEFAULT_DIFFICULTY = 'normal';
 export const DIFFICULTY_LABELS = Object.freeze({ easy: 'Easy', normal: 'Normal', hard: 'Hard' });
+/** CPU personalities (CPU.PERSONALITIES in config.js). A CPU seat without one is assigned one at game start. */
+export const PERSONALITIES = Object.freeze(Object.keys(CPU.PERSONALITIES));
 
 /** Table presets on the New Game screen. */
 export const SEAT_PRESETS = Object.freeze({
@@ -24,20 +26,26 @@ export const SEAT_ERRORS = Object.freeze({
   BAD_SEAT: 'Unknown or repeated seat.',
   BAD_CONTROLLER: 'Each seat must be Human or CPU.',
   BAD_DIFFICULTY: 'CPU seats need Easy, Normal or Hard.',
+  BAD_PERSONALITY: 'Unknown CPU personality.',
   NO_HUMAN: 'At least one seat must be Human.',
 });
 
 /**
  * The controller fields a seat or player carries. Anything without a controller (games and
- * saves from before controllers existed, older tests) is a human seat.
- * Returns null for values that aren't a valid controller/difficulty pair.
+ * saves from before controllers existed, older tests) is a human seat. CPU seats also carry
+ * a personality: one of PERSONALITIES, or null ("not chosen": createGame assigns one; older
+ * saves play without one). Humans never have a difficulty or personality.
+ * Returns null for values that aren't a valid combination.
  */
 export function controllerOf(seat) {
   const controller = seat?.controller ?? 'human';
-  if (controller === 'human') return seat?.difficulty == null ? { controller, difficulty: null } : null;
+  if (controller === 'human') return seat?.difficulty == null && seat?.personality == null ? { controller, difficulty: null } : null;
   if (controller !== 'cpu') return null;
   const difficulty = seat.difficulty ?? DEFAULT_DIFFICULTY;
-  return DIFFICULTIES.includes(difficulty) ? { controller, difficulty } : null;
+  const personality = seat.personality ?? null;
+  if (!DIFFICULTIES.includes(difficulty)) return null;
+  if (personality !== null && !PERSONALITIES.includes(personality)) return null;
+  return { controller, difficulty, personality };
 }
 
 export const isCpu = (seat) => seat?.controller === 'cpu';
@@ -49,9 +57,29 @@ export function defaultNames(seats) {
     isCpu(s) ? `Mayor Bot ${++bots}` : PLAYER_PRESETS[s.seat - 1]?.name ?? `Player ${s.seat}`]));
 }
 
-/** "CPU · Hard" style label, or null for a human. */
+/** "CPU · Hard · Tycoon" style label ("CPU · Hard" without a personality), or null for a human. */
 export function controllerLabel(seat) {
-  return isCpu(seat) ? `CPU · ${DIFFICULTY_LABELS[seat.difficulty] ?? DIFFICULTY_LABELS[DEFAULT_DIFFICULTY]}` : null;
+  if (!isCpu(seat)) return null;
+  const personality = CPU.PERSONALITIES[seat.personality]?.name;
+  return `CPU · ${DIFFICULTY_LABELS[seat.difficulty] ?? DIFFICULTY_LABELS[DEFAULT_DIFFICULTY]}${personality ? ` · ${personality}` : ''}`;
+}
+
+/**
+ * Personalities for CPU seats that don't have one yet, fixed by the city seed so a replay or a
+ * challenge link seats the same bots. Different bots at a table get different personalities
+ * (there are four; a table has at most three bots).
+ */
+export function assignPersonalities(seats, seed) {
+  const first = (Math.imul((seed >>> 0) ^ 0x9e3779b9, 0x85ebca6b) >>> 0) % PERSONALITIES.length;
+  const taken = new Set(seats.filter((s) => isCpu(s) && s.personality).map((s) => s.personality));
+  let next = first;
+  return [...seats].sort((a, b) => a.seat - b.seat).map((s) => {
+    if (!isCpu(s) || s.personality) return s;
+    for (let i = 0; i < PERSONALITIES.length && taken.has(PERSONALITIES[next % PERSONALITIES.length]); i++) next++;
+    const personality = PERSONALITIES[next++ % PERSONALITIES.length];
+    taken.add(personality);
+    return { ...s, personality };
+  });
 }
 
 /**
@@ -62,12 +90,14 @@ export function controllerLabel(seat) {
 export function applySeatPreset(preset, seats) {
   const sorted = [...seats].sort((a, b) => a.seat - b.seat);
   return sorted.map((s, i) => {
-    if (preset === 'friends') return { ...s, controller: 'human', difficulty: null };
+    const human = { controller: 'human', difficulty: null, personality: null };
+    if (preset === 'friends') return { ...s, ...human };
     if (preset === 'solo') {
-      return i === 0 ? { ...s, controller: 'human', difficulty: null }
-        : { ...s, controller: 'cpu', difficulty: DIFFICULTIES.includes(s.difficulty) ? s.difficulty : DEFAULT_DIFFICULTY };
+      // Solo bots get their personality automatically (chosen only in Mixed).
+      return i === 0 ? { ...s, ...human }
+        : { ...s, controller: 'cpu', difficulty: DIFFICULTIES.includes(s.difficulty) ? s.difficulty : DEFAULT_DIFFICULTY, personality: null };
     }
-    return { ...s, ...(controllerOf(s) ?? { controller: 'human', difficulty: null }) };
+    return { ...s, ...(controllerOf(s) ?? human) };
   });
 }
 
@@ -92,7 +122,10 @@ export function validateSeats({ gameType = 'custom', seats } = {}) {
     if (!PLAYER_PRESETS.some((p) => p.seat === s?.seat) || seen.has(s.seat)) return SEAT_ERRORS.BAD_SEAT;
     seen.add(s.seat);
     if (!CONTROLLERS.includes(s.controller ?? 'human')) return SEAT_ERRORS.BAD_CONTROLLER;
-    if (!controllerOf(s)) return s.controller === 'cpu' ? SEAT_ERRORS.BAD_DIFFICULTY : SEAT_ERRORS.BAD_CONTROLLER;
+    if (!controllerOf(s)) {
+      if (s.controller !== 'cpu') return SEAT_ERRORS.BAD_CONTROLLER;
+      return DIFFICULTIES.includes(s.difficulty ?? DEFAULT_DIFFICULTY) ? SEAT_ERRORS.BAD_PERSONALITY : SEAT_ERRORS.BAD_DIFFICULTY;
+    }
   }
   if (!seats.some((s) => !isCpu(s))) return SEAT_ERRORS.NO_HUMAN;
   return null;

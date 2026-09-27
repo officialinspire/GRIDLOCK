@@ -113,7 +113,9 @@ function setupFrom(game, setup) {
   return {
     gameType: setup?.gameType === 'standard' && game.players.length === MAX_PLAYERS ? 'standard' : 'custom',
     mode: game.mode,
-    seats: game.players.map(({ seat, name, controller, difficulty }) => ({ seat, name, controller, difficulty })),
+    seats: game.players.map(({ seat, name, controller, difficulty, personality }) => ({
+      seat, name, controller, difficulty, ...(controller === 'cpu' && { personality: personality ?? null }),
+    })),
   };
 }
 

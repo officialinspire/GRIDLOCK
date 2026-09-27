@@ -33,6 +33,23 @@
  *           add value, spending needs a minimum return per dollar, and the reserve covers next
  *           turn's charges even if income is badly cut (plus a possible Fire repair bill)
  *
+ * Hard also reads the city's events: it waits out a price surcharge that is about to end
+ * instead of paying it, counts boosts and discounts only while they last, builds civic shelter
+ * when emergencies are likely (Urban Chaos, an emergency on now), and during a downturn
+ * (Recession, Snowstorm) keeps extra cash for the lean rounds and buys nothing that would
+ * leave its net income negative.
+ *
+ * Redevelopment: the value of an abandoned lot is the real auction run on a copy; a cleared
+ * lot also counts the best building the mayor could put on it next turn, so it can tell
+ * "restore the ruin" from "clear and rebuild". Hard bids only the reserve price when no rival
+ * can afford it, and otherwise just enough to beat the richest eligible rival's cash (public
+ * information), never above what the lot is worth to it or what its cash risk allows.
+ *
+ * Personalities (CPU.PERSONALITIES: Builder, Tycoon, Planner, Expansionist) weight what a
+ * mayor already values: categories, upgrades, districts, civic shelter, abandoned land and its
+ * cash reserve. The weights only ever scale options that are worth doing anyway, so they
+ * change what a mayor prefers, never how well it plays.
+ *
  * Randomness (Easy's choices, ties) comes from the CPU's own stream, never the game RNG.
  */
 import { CPU, CITY_EVENTS, ECONOMY } from '../../config.js';
@@ -48,10 +65,12 @@ import {
 import { forecastDevelopment, blockDetails } from '../forecast.js';
 import { scorePlayer } from '../scoring.js';
 import { eventRules } from '../modes.js';
+import { getEventDef } from '../events.js';
 import { expectedTurnsLeft } from './roads.js';
 import { stream, mix, defaultCpuSeed } from './random.js';
 
 export const CITY_REASONS = Object.freeze({
+  WAIT: 'wait-for-price', // Hard: a price surcharge ends soon; buying after it is better
   DEBT: 'debt', // raising cash to get out of distress
   BANKRUPT: 'bankrupt', // selling everything couldn't cover the debt
   DEVELOP: 'develop', // a build or upgrade worth its cost
@@ -65,6 +84,47 @@ export const CITY_REASONS = Object.freeze({
 /** Copies are cheaper without the history, which no forecast reads. */
 const slim = (game) => ({ ...game, ledger: [], log: [] });
 const fireDef = CITY_EVENTS.POOL.find((e) => e.id === 'fire');
+
+/* ---------------- personality ---------------- */
+
+/** A CPU mayor's personality profile, or null (plays without one: all weights 1). */
+export const profileOf = (player) => CPU.PERSONALITIES[player?.personality] ?? null;
+const weight = (profile, key) => profile?.[key] ?? 1;
+const categoryWeight = (profile, type) => profile?.categories?.[type] ?? 1;
+
+/** The default cash reserve for a mayor: by difficulty, adjusted by personality. */
+export function defaultReserve(level, player) {
+  return Math.round((CPU.RESERVE[level] ?? CPU.RESERVE.normal) * weight(profileOf(player), 'reserve'));
+}
+
+/* ---------------- reading the city's events ---------------- */
+
+/** Active events cutting everyone's income (Recession, Snowstorm): [{ instance, def, multiplier }]. */
+function downturns(game) {
+  const out = [];
+  for (const instance of game.events.active) {
+    const def = getEventDef(instance.id);
+    for (const mod of def?.income ?? []) if (mod.match?.all && mod.multiplier < 1) out.push({ instance, def, multiplier: mod.multiplier });
+  }
+  return out;
+}
+
+/**
+ * How likely civic shelter is to matter, relative to a Standard game (1): the mode's chance
+ * of an event each round × the share of the pool that civic buildings shield against, and
+ * half as much again while such an emergency is on now. 0 when the mode has no events.
+ */
+function emergencyExposure(game) {
+  const rules = eventRules(game);
+  if (!rules.enabled) return 0;
+  const pool = game.eventPool ?? CITY_EVENTS.POOL;
+  const total = pool.reduce((n, e) => n + (e.weight ?? 0), 0);
+  const shielded = pool.filter((e) => e.mitigation === 'civic').reduce((n, e) => n + (e.weight ?? 0), 0);
+  const base = CITY_EVENTS.ROUND_PROBABILITY * (shielded / Math.max(1, CITY_EVENTS.POOL.reduce((n, e) => n + e.weight, 0)));
+  const likely = total ? rules.probability * (shielded / total) : 0;
+  const now = game.events.active.some((i) => getEventDef(i.id)?.mitigation === 'civic') ? 1.5 : 1;
+  return base ? (likely / base) * now : 0;
+}
 
 function pendingRepairs(game, seat) {
   return game.events.repairs.filter((r) => r.seat === seat).reduce((n, r) => n + r.amount, 0);
@@ -80,7 +140,11 @@ function cashFloor(game, level, reserve, f) {
   const exposed = eventRules(game).enabled && fireDef
     && blocksOwnedBy(game.board, seat).some((b) => isDeveloped(b) && fireDef.targets.categories.includes(b.type));
   const fire = exposed || fireDef?.targets.categories.includes(f.type) ? fireDef.repairCost : 0;
-  return reserve + Math.max(0, charges + fire - Math.floor(f.after.income / 2));
+  // During a downturn, also keep what the lean rounds after next will cost (charges beyond income).
+  const slump = downturns(game);
+  const lean = slump.length
+    ? Math.max(0, eventPaydaysLeft(game, slump.map((d) => d.instance)) - 1) * Math.max(0, charges - f.after.income) : 0;
+  return reserve + Math.max(0, charges + fire - Math.floor(f.after.income / 2)) + lean;
 }
 
 /* ---------------- Hard's extra judgement (all read from real transactions) ---------------- */
@@ -123,9 +187,14 @@ function districtPotential(game, blockId, type, turns) {
   return Math.round(groupIncome * (rule.percent / 100) * CPU.DISTRICT_POTENTIAL * (turns - 1));
 }
 
-/** Rounds the currently active city events still have to run (0 when calm). */
-function eventRoundsLeft(game) {
-  return Math.max(0, ...game.events.active.map((e) => e.endRound - game.round + 1));
+/**
+ * Paydays still under today's events for something bought now: income is first paid at the
+ * owner's next turn start (next round), so an event ending this round pays nothing extra
+ * (0 when calm). `only` narrows it to some events.
+ */
+function eventPaydaysLeft(game, only = null) {
+  const active = only ? game.events.active.filter((e) => only.includes(e)) : game.events.active;
+  return Math.max(0, ...active.map((e) => e.endRound - game.round));
 }
 
 /* ---------------- options ---------------- */
@@ -144,18 +213,35 @@ function developmentOptions(game, blockIds) {
   return options;
 }
 
-function scoreOption(game, level, option, turns) {
+function scoreOption(game, level, option, turns, profile) {
   const { f, blockId, type } = option;
-  if (level === 'normal') return { ...option, score: f.delta.net * turns + f.delta.cityValue };
+  const kind = type ?? getBlockById(game.board, blockId).type;
+  // Personality: a weight on what the option is already worth (never turns a bad option good).
+  const lean = (score) => (score > 0 ? score * categoryWeight(profile, kind) * (type ? 1 : weight(profile, 'upgrade')) : score);
+  if (level === 'normal') return { ...option, score: lean(f.delta.net * turns + f.delta.cityValue) };
   // Hard: today's events only last so long; after that the block earns its event-free income.
   const calm = forecastDevelopment({ ...slim(game), events: { ...game.events, active: [] } }, blockId, type);
-  const eventTurns = Math.min(turns, eventRoundsLeft(game));
-  const baseNet = calm.ok ? calm.delta.net : f.delta.net;
+  const paydays = eventPaydaysLeft(game);
+  const eventTurns = Math.min(turns, paydays);
+  // Upkeep follows what was actually paid, so today's surcharge (or discount) changes it for good.
+  const upkeepGap = calm.ok ? f.delta.upkeep - calm.delta.upkeep : 0;
+  const baseNet = calm.ok ? calm.delta.net - upkeepGap : f.delta.net;
   let score = f.delta.net * eventTurns + baseNet * (turns - eventTurns) + f.delta.cityValue;
-  const kind = type ?? getBlockById(game.board, blockId).type;
-  if (kind === 'civic' && eventRules(game).enabled) score += Math.round(shelteredIncome(game, blockId, type) * CPU.CIVIC_SHELTER_VALUE * turns);
-  if (type) score += districtPotential(game, blockId, type, turns);
-  return { ...option, score, roi: score / Math.max(1, f.cost) };
+  // A price surcharge that ends this round: buying next turn (one payday fewer) can be better.
+  const surcharge = f.eventPrice.filter((i) => i.multiplier > 1);
+  if (surcharge.length && calm.ok && turns >= 3 && eventPaydaysLeft(game, surcharge.map((i) => i.instance)) === 0) {
+    const later = calm.delta.net * (turns - 1) + calm.delta.cityValue;
+    if (later > score) return { ...option, score: -Infinity, roi: -Infinity, waiting: true };
+  }
+  // Downturn: nothing that leaves net income negative while it lasts.
+  if (downturns(game).length && f.after.net < 0) return { ...option, score: -Infinity, roi: -Infinity };
+  if (kind === 'civic') {
+    score += Math.round(shelteredIncome(game, blockId, type) * CPU.CIVIC_SHELTER_VALUE * emergencyExposure(game)
+      * turns * weight(profile, 'shelter'));
+  }
+  if (type) score += Math.round(districtPotential(game, blockId, type, turns) * weight(profile, 'district'));
+  const weighted = lean(score);
+  return { ...option, score: weighted, roi: score / Math.max(1, f.cost) };
 }
 
 const describe = (o, reason) => ({
@@ -170,7 +256,7 @@ const describe = (o, reason) => ({
 });
 
 /** Picks the best purchase for `blockIds`, or explains why none. */
-function choosePurchase(game, level, blockIds, rand, reserve, { capture }) {
+function choosePurchase(game, level, blockIds, rand, reserve, { capture, profile }) {
   const all = developmentOptions(game, blockIds);
   const affordable = all.filter((o) => o.f.affordable);
   if (!affordable.length) return { reason: CITY_REASONS.NO_CASH };
@@ -182,16 +268,45 @@ function choosePurchase(game, level, blockIds, rand, reserve, { capture }) {
     const chance = capture ? CPU.EASY_BUILD_CHANCE : CPU.EASY_MANAGE_CHANCE;
     if (!sensible.length) return { reason: CITY_REASONS.NOT_WORTH_IT };
     if (rand() >= chance) return { reason: CITY_REASONS.PASS };
-    return { pick: describe(sensible[Math.floor(rand() * sensible.length)], CITY_REASONS.RANDOM) };
+    // A random sensible pick, leaning towards the personality's favourite categories.
+    const weights = sensible.map((o) => categoryWeight(profile, o.type ?? getBlockById(game.board, o.blockId).type));
+    let roll = rand() * weights.reduce((a, b) => a + b, 0);
+    const pick = sensible.find((o, i) => (roll -= weights[i]) < 0) ?? sensible.at(-1);
+    return { pick: describe(pick, CITY_REASONS.RANDOM) };
   }
 
   const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
-  const scored = kept.map((o) => scoreOption(game, level, o, turns))
-    .filter((o) => o.score > 0 && (level !== 'hard' || o.roi >= CPU.HARD_MIN_ROI));
-  if (!scored.length) return { reason: CITY_REASONS.NOT_WORTH_IT };
+  const judged = kept.map((o) => scoreOption(game, level, o, turns, profile));
+  const scored = judged.filter((o) => o.score > 0 && (level !== 'hard' || o.roi >= CPU.HARD_MIN_ROI));
+  if (!scored.length) return { reason: judged.some((o) => o.waiting) ? CITY_REASONS.WAIT : CITY_REASONS.NOT_WORTH_IT };
   const top = Math.max(...scored.map((o) => o.score));
   const ties = scored.filter((o) => o.score === top);
   return { pick: describe(ties[Math.floor(rand() * ties.length)], CITY_REASONS.DEVELOP) };
+}
+
+/**
+ * Read-only: how a CPU mayor judges every build/upgrade on `blockIds` (default: all its blocks,
+ * or the pending capture) right now. [{ blockId, type, cost, affordable, keepsReserve, score,
+ * roi, waiting }], best first; `waiting` marks an option Hard is holding off on until a price
+ * surcharge ends. Handy for tests and for explaining a bot's choice.
+ */
+export function evaluatePurchases(game, { difficulty, reserve, blockIds } = {}) {
+  const me = currentPlayer(game);
+  const level = difficulty ?? me.difficulty ?? 'normal';
+  const profile = profileOf(me);
+  const keep = reserve ?? defaultReserve(level, me);
+  const ids = blockIds ?? (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length
+    ? [game.pendingCaptures[0]] : blocksOwnedBy(game.board, me.seat).map((b) => b.id));
+  const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
+  return developmentOptions(game, ids).map((o) => {
+    const judged = level === 'easy' ? { ...o, score: o.f.delta.net } : scoreOption(game, level, o, turns, profile);
+    return {
+      blockId: o.blockId, type: o.type ?? getBlockById(game.board, o.blockId).type, upgrade: !o.type,
+      cost: o.f.cost, affordable: o.f.affordable,
+      keepsReserve: o.f.affordable && o.f.after.cash >= cashFloor(game, level, keep, o.f),
+      score: judged.score, roi: judged.roi ?? null, waiting: Boolean(judged.waiting),
+    };
+  }).sort((a, b) => b.score - a.score);
 }
 
 /* ---------------- debt ---------------- */
@@ -245,9 +360,11 @@ function chooseDebtAction(game, level, rand) {
 /**
  * What winning `blockId` at its reserve price is worth to `seat`: the real auction run on a
  * copy with only that bid, read back as (net income per turn × turns left + City Value change).
- * Returns null when the seat can't take part.
+ * For "clear & rebuild" (Normal/Hard) the empty lot is also worth the best building the mayor
+ * could put on it on its next turn (forecast on the same copy). Returns null when the seat
+ * can't take part.
  */
-function redevelopmentSurplus(game, seat, blockId, mode, turns) {
+function redevelopmentSurplus(game, seat, blockId, mode, turns, level = 'normal') {
   const q = quoteRedevelopment(game, blockId, mode);
   if (!q.ok) return null;
   const sim = structuredClone(slim(game));
@@ -258,26 +375,51 @@ function redevelopmentSurplus(game, seat, blockId, mode, turns) {
   const after = getPlayer(sim, seat);
   const statsAfter = playerStats(sim, after);
   const net = (statsAfter.income - statsAfter.upkeep) - (statsBefore.income - statsBefore.upkeep);
-  return { reserve: q.reserve, surplus: net * turns + scorePlayer(sim, after).cityValue - valueBefore };
+  let surplus = net * turns + scorePlayer(sim, after).cityValue - valueBefore;
+  if (mode === ACQUIRE_MODES.REBUILD && level !== 'easy' && turns > 1) {
+    // Imagine its own next Manage City on the copy: what would it build there?
+    sim.turnIndex = sim.players.findIndex((p) => p.seat === seat);
+    sim.turnPhase = TURN_PHASES.MANAGE_CITY;
+    sim.pendingCaptures = [];
+    let best = 0;
+    for (const type of CATEGORY_ORDER) {
+      const f = forecastDevelopment(sim, blockId, type);
+      if (f.ok && f.affordable) best = Math.max(best, f.delta.net * (turns - 1) + f.delta.cityValue);
+    }
+    surplus += best;
+  }
+  return { reserve: q.reserve, surplus };
 }
 
-/** How much of its surplus a CPU mayor will bid above the reserve price. */
+/** How much of its surplus a CPU mayor will bid above the reserve price (before personality). */
 const BID_SHARE = { easy: 0, normal: 0.5, hard: 0.8 };
 
 /**
  * A CPU seat's sealed bid for an abandoned block in a redevelopment auction, or null to pass.
- * Bids never exceed what the mayor can pay while keeping its cash reserve, and are whole
- * multiples of the minimum increment above the reserve price (as the auction requires).
+ * Bids never exceed what the mayor can pay while keeping its cash reserve (Hard: plus next
+ * turn's charges), never exceed what the lot is worth to it, and are whole multiples of the
+ * minimum increment above the reserve price (as the auction requires).
+ *   easy    the reserve price, half the time
+ *   normal  the reserve price plus half the lot's surplus value to it
+ *   hard    the reserve price when no rival could pay it; otherwise just enough to beat the
+ *           richest eligible rival's whole cash (bids must be affordable), up to 80% of the surplus
  */
 export function chooseRedevelopmentBid(game, seat, blockId, mode, { difficulty, reserve } = {}) {
   const player = getPlayer(game, seat);
   const block = getBlockById(game.board, blockId);
-  if (!player || !block || !eligibleRedevelopers(game, block).some((p) => p.seat === seat)) return null;
+  if (!player || !block) return null;
+  const eligible = eligibleRedevelopers(game, block);
+  if (!eligible.some((p) => p.seat === seat)) return null;
   const level = difficulty ?? player.difficulty ?? 'normal';
-  const keep = reserve ?? CPU.RESERVE[level] ?? CPU.RESERVE.normal;
-  const value = redevelopmentSurplus(game, seat, blockId, mode, expectedTurnsLeft(game, { lookAhead: level === 'hard' }));
+  const profile = profileOf(player);
+  const keep = reserve ?? defaultReserve(level, player);
+  const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
+  const value = redevelopmentSurplus(game, seat, blockId, mode, turns, level);
   if (!value) return null;
-  const budget = player.cash - keep;
+  // Cash risk: Hard also keeps next turn's upkeep and repair bills in hand.
+  const stats = playerStats(game, player);
+  const risk = level === 'hard' ? stats.upkeep + pendingRepairs(game, seat) : 0;
+  const budget = player.cash - keep - risk;
   if (budget < value.reserve) return null;
   if (level === 'easy') {
     const rand = stream(mix(defaultCpuSeed(game), game.log.length, seat, blockId.length, mode.length));
@@ -285,8 +427,18 @@ export function chooseRedevelopmentBid(game, seat, blockId, mode, { difficulty, 
   }
   if (value.surplus <= 0) return null;
   const step = ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT;
-  const most = Math.min(budget, value.reserve + value.surplus * BID_SHARE[level]);
-  return value.reserve + Math.floor((most - value.reserve) / step) * step;
+  const onGrid = (amount) => value.reserve + Math.floor((amount - value.reserve) / step) * step;
+  const share = Math.min(1, BID_SHARE[level] * weight(profile, 'redevelop'));
+  const most = Math.min(budget, value.reserve + value.surplus * share);
+  if (level === 'hard') {
+    const rivals = eligible.filter((p) => p.seat !== seat && p.cash >= value.reserve);
+    if (!rivals.length) return value.reserve; // uncontested: no need to pay more
+    const richest = Math.max(...rivals.map((p) => p.cash));
+    // Nobody can bid more than their cash: one step above the richest rival wins outright.
+    const winning = value.reserve + (Math.floor((richest - value.reserve) / step) + 1) * step;
+    return onGrid(Math.min(most, winning));
+  }
+  return onGrid(most);
 }
 
 /** Sealed bids from every eligible CPU seat (humans bid through the auction panel). */
@@ -298,19 +450,23 @@ export function cpuBids(game, blockId, mode) {
     .filter((b) => b.bid != null);
 }
 
-/** Normal/Hard, Manage City: the abandoned block most worth opening an auction for, if any. */
-function chooseRedevelopment(game, level, reserve) {
+/**
+ * Normal/Hard, Manage City: the abandoned block (and whether to restore it or clear and
+ * rebuild) most worth opening an auction for, if any.
+ */
+function chooseRedevelopment(game, level, reserve, profile) {
   if (level === 'easy') return null;
   const me = currentPlayer(game);
   const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
   let best = null;
   for (const block of game.board.blocks.filter((b) => b.abandoned && b.ownerSeat == null)) {
+    if (!eligibleRedevelopers(game, block).some((p) => p.seat === me.seat)) continue;
     for (const mode of [ACQUIRE_MODES.RESTORE, ACQUIRE_MODES.REBUILD]) {
-      const value = redevelopmentSurplus(game, me.seat, block.id, mode, turns);
+      const value = redevelopmentSurplus(game, me.seat, block.id, mode, turns, level);
       if (!value || value.surplus <= 0 || me.cash - value.reserve < reserve) continue;
-      if (!eligibleRedevelopers(game, block).some((p) => p.seat === me.seat)) continue;
-      if (!best || value.surplus > best.score) {
-        best = { action: 'redevelop', blockId: block.id, mode, reason: CITY_REASONS.DEVELOP, cost: value.reserve, score: value.surplus };
+      const score = value.surplus * weight(profile, 'redevelop');
+      if (!best || score > best.score) {
+        best = { action: 'redevelop', blockId: block.id, mode, reason: CITY_REASONS.DEVELOP, cost: value.reserve, score };
       }
     }
   }
@@ -322,26 +478,28 @@ function chooseRedevelopment(game, level, reserve) {
 /**
  * The next thing the current (CPU) mayor should do in Manage City or Capture / Develop.
  * Options: difficulty (default: the seat's own), seed (default: public facts + progress this
- * turn), reserve (dollars to keep after any purchase; default CPU.RESERVE[difficulty]).
+ * turn), reserve (dollars to keep after any purchase; default CPU.RESERVE[difficulty] adjusted
+ * by the seat's personality).
  */
 export function chooseCityAction(game, { difficulty, seed, reserve } = {}) {
   if (game.phase !== PHASES.PLAYING) return { action: null, error: 'game-over' };
   const me = currentPlayer(game);
   const level = difficulty ?? me.difficulty ?? 'normal';
-  const keep = reserve ?? CPU.RESERVE[level] ?? CPU.RESERVE.normal;
+  const profile = profileOf(me);
+  const keep = reserve ?? defaultReserve(level, me);
   // Each step this turn (a build, a sale) changes the log, so a fresh draw per decision.
   const rand = stream(seed ?? mix(defaultCpuSeed(game), game.log.length));
 
   if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length) {
     const blockId = game.pendingCaptures[0];
-    const { pick, reason } = choosePurchase(game, level, [blockId], rand, keep, { capture: true });
+    const { pick, reason } = choosePurchase(game, level, [blockId], rand, keep, { capture: true, profile });
     return pick ?? { action: 'vacant', blockId, reason };
   }
   if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return { action: null, error: 'wrong-turn-phase' };
   if (me.cash < 0) return chooseDebtAction(game, level, rand);
   const owned = blocksOwnedBy(game.board, me.seat).map((b) => b.id);
-  const { pick, reason } = choosePurchase(game, level, owned, rand, keep, { capture: false });
-  const redevelop = chooseRedevelopment(game, level, keep);
+  const { pick, reason } = choosePurchase(game, level, owned, rand, keep, { capture: false, profile });
+  const redevelop = chooseRedevelopment(game, level, keep, profile);
   if (redevelop && (!pick || redevelop.score > (pick.score ?? 0))) return redevelop;
   return pick ?? { action: 'pave', reason };
 }

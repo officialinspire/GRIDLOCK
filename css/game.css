@@ -1678,3 +1678,5 @@ html[data-coords='on'] .block__coord { display: block; }
 #cpu-faster[aria-pressed='true'] { background-color: #fdf0c4; }
 .auction-bid--cpu { margin: 0; font-weight: 800; }
 .auction-bid__sealed { justify-self: end; font-style: italic; color: var(--ink-soft); }
+.player-card__bot { margin: -2px 0 2px; font-size: 0.75rem; font-weight: 800; color: var(--ink-soft); }
+.inspector__bot { font-weight: 700; color: var(--ink-soft); }

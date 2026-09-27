@@ -255,6 +255,7 @@
 .seat-card {
   --seat: var(--p-red);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 8px;
   min-width: 0;
@@ -290,9 +291,12 @@
 .controller-option:has(input:checked) { border-color: var(--ink); background: #fdf0c4; }
 .controller-option:has(input:disabled) { cursor: default; }
 .controller-option:has(input:disabled:not(:checked)) { opacity: 0.55; }
-.seat-card__difficulty { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; }
-.seat-card__difficulty[hidden] { display: none; }
-.seat-card__difficulty .select { min-width: 9ch; }
+.seat-card__difficulty,
+.seat-card__personality { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; }
+.seat-card__difficulty[hidden],
+.seat-card__personality[hidden] { display: none; }
+.seat-card__difficulty .select,
+.seat-card__personality .select { flex: 1 1 0; min-width: 0; max-width: 17ch; }
 .seat-card__join {
   display: flex;
   align-items: center;
@@ -416,3 +420,6 @@
   border: 2px dashed var(--ink);
   border-radius: var(--radius-sm);
 }
+/* Personality names are long ("Expansionist"): label above, select at full card width. */
+.seat-card__personality { flex-direction: column; align-items: stretch; gap: 4px; }
+.seat-card__personality .select { flex: none; width: 100%; max-width: none; }

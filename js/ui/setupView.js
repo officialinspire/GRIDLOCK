@@ -6,14 +6,14 @@
 import { $, h } from './dom.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
-import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY, GAME_MODES, DEFAULT_MODE } from '../config.js';
+import { PLAYER_PRESETS, MIN_PLAYERS, MAX_NAME_LENGTH, ECONOMY, GAME_MODES, DEFAULT_MODE, CPU } from '../config.js';
 import { formatCash } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
 import { bus } from '../core/bus.js';
 import { randomSeed } from '../core/rng.js';
 import { parseSeed, formatSeed } from '../core/challenge.js';
 import {
-  SEAT_PRESETS, DEFAULT_SEAT_PRESET, DIFFICULTIES, DIFFICULTY_LABELS, DEFAULT_DIFFICULTY, SEAT_ERRORS,
+  SEAT_PRESETS, DEFAULT_SEAT_PRESET, DIFFICULTIES, DIFFICULTY_LABELS, DEFAULT_DIFFICULTY, SEAT_ERRORS, PERSONALITIES,
   applySeatPreset, defaultNames, validateSeats, isCpu,
 } from '../core/seats.js';
 
@@ -40,6 +40,12 @@ function seatCard(preset) {
       h('span', {}, 'Difficulty'),
       h('select', { class: 'select', name: 'difficulty' },
         DIFFICULTIES.map((d) => h('option', { value: d, selected: d === DEFAULT_DIFFICULTY }, DIFFICULTY_LABELS[d])))),
+    // Mixed tables only: pick a bot's personality, or leave it to the game (Auto).
+    h('label', { class: 'seat-card__personality', hidden: true },
+      h('span', {}, 'Personality'),
+      h('select', { class: 'select', name: 'personality', title: 'Auto: the game picks a different personality for each bot' },
+        h('option', { value: '' }, 'Auto'),
+        PERSONALITIES.map((id) => h('option', { value: id, title: CPU.PERSONALITIES[id].blurb }, CPU.PERSONALITIES[id].name)))),
     h('label', { class: 'seat-card__join', for: joinId },
       h('span', {}, 'Playing'),
       h('input', { type: 'checkbox', class: 'toggle', id: joinId, name: 'join', checked: true }),
@@ -58,7 +64,14 @@ function tableOption(preset) {
 
 const controllerOfCard = (card) => {
   const controller = card.querySelector(`[name="controller-${card.dataset.seat}"]:checked`)?.value ?? 'human';
-  return { controller, difficulty: controller === 'cpu' ? card.querySelector('[name="difficulty"]').value : null };
+  if (controller !== 'cpu') return { controller, difficulty: null };
+  const chosen = card.querySelector('[name="personality"]');
+  return {
+    controller,
+    difficulty: card.querySelector('[name="difficulty"]').value,
+    // Only Mixed offers a choice; otherwise (and for Auto) the game assigns one.
+    personality: !chosen.closest('label').hidden && chosen.value ? chosen.value : null,
+  };
 };
 
 /** One radio card per rule preset: name and its one-line description, straight from config. */
@@ -96,6 +109,9 @@ function syncControllers(form) {
     const difficulty = card.querySelector('.seat-card__difficulty');
     difficulty.hidden = controller !== 'cpu';
     difficulty.querySelector('select').disabled = !want;
+    const personality = card.querySelector('.seat-card__personality');
+    personality.hidden = controller !== 'cpu' || preset !== 'mixed';
+    personality.querySelector('select').disabled = !want;
     card.classList.toggle('is-cpu', controller === 'cpu');
   }
   // Placeholders show the name a blank box will get ("Mayor Bot 1" for CPU seats).

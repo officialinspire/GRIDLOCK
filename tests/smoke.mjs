@@ -1702,6 +1702,7 @@ const recordVibration = () => {
     assert.deepEqual(await Promise.all([1, 2, 3, 4].map((seat) => card(seat).locator('[name="name"]').getAttribute('placeholder'))),
       ['Player 1', 'Mayor Bot 1', 'Mayor Bot 2', 'Mayor Bot 3']);
     assert.equal(await card(1).locator('.seat-card__difficulty').isVisible(), false);
+    assert.equal(await card(2).locator('.seat-card__personality').isVisible(), false, 'Solo bots get an automatic personality');
     await card(3).locator('[name="difficulty"]').selectOption('hard');
     assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players \(1 human, 3 CPU\)/);
 
@@ -1725,7 +1726,7 @@ const recordVibration = () => {
     assert.deepEqual(await table(), SOLO, 'controllers and bot names reach the game');
     assert.equal(await page.locator('.player-card__cpu').count(), 3, 'CPU tag on the three bot seats');
     assert.equal(await page.locator('.player-card[data-seat="1"] .player-card__cpu').count(), 0);
-    assert.match(await page.locator('.player-card[data-seat="3"]').getAttribute('aria-label'), /Mayor Bot 2 \(CPU · Hard\)/);
+    assert.match(await page.locator('.player-card[data-seat="3"]').getAttribute('aria-label'), /Mayor Bot 2 \(CPU · Hard · (Builder|Tycoon|Planner|Expansionist)\)/);
 
     // Autosave + Continue.
     await page.click('#board [data-road="h-0-0"]');
@@ -1736,7 +1737,7 @@ const recordVibration = () => {
     // Results show who was a bot.
     await finishCity();
     assert.equal(await page.locator('#results-dialog .result-card__cpu').count(), 3);
-    assert.equal(await page.locator('.result-card[data-seat="3"] .result-card__cpu').textContent(), 'CPU · Hard');
+    assert.match(await page.locator('.result-card[data-seat="3"] .result-card__cpu').textContent(), /^CPU · Hard · (Builder|Tycoon|Planner|Expansionist)$/);
     await page.screenshot({ path: 'test-results/seats-results.png' });
 
     await page.click('[data-results-action="rematch"]');
@@ -1905,8 +1906,14 @@ const recordVibration = () => {
       await mixed.locator(`.seat-card[data-seat="${seat}"] [name="controller-${seat}"][value="${controller}"]`).check();
     }
     await mixed.locator('.seat-card[data-seat="4"] [name="difficulty"]').selectOption('hard');
+    assert.equal(await mixed.locator('.seat-card[data-seat="4"] .seat-card__personality').isVisible(), true, 'Mixed offers a personality');
+    await mixed.locator('.seat-card[data-seat="4"] [name="personality"]').selectOption('tycoon');
     await mixed.fill('#setup-seed', '777');
     await mixed.click('#setup-start');
+    // Difficulty and personality on the HUD (seat 2 was left on Auto).
+    assert.equal(await mixed.textContent('.player-card[data-seat="4"] .player-card__bot'), 'Hard · Tycoon');
+    assert.match(await mixed.textContent('.player-card[data-seat="2"] .player-card__bot'), /^Normal · (Builder|Planner|Expansionist)$/);
+    assert.equal(await mixed.locator('.player-card[data-seat="1"] .player-card__bot').count(), 0);
     const handoffs = () => mixed.evaluate(() => window.__opened.filter((id) => id === 'handoff-dialog').length);
 
     // Human 1 → CPU 2 → handoff to Human 3 (none before or after the bot).
@@ -1963,6 +1970,9 @@ const recordVibration = () => {
     await auction.locator('[name="bid-3"]').fill('');
     await auction.locator('[data-auction="restore"]').click();
     assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
+    // The inspector names the bot's difficulty and personality.
+    await mixed.click('#board [data-block="r5c5"]');
+    assert.match(await mixed.textContent('#inspector'), /Mayor Bot 2 \(CPU · Hard · Tycoon\)/);
     assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
 
     // (The Solo run plays a whole city to the results; this one stops here to keep CI quick.)

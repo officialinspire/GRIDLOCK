@@ -35,7 +35,7 @@ import { modifierText } from './forecastView.js';
 import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
-import { isCpu } from '../core/seats.js';
+import { isCpu, controllerLabel } from '../core/seats.js';
 import { chooseRoad } from '../core/cpu/roads.js';
 import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
 import { buildOnBlock, upgradeBlock } from '../core/development.js';
@@ -95,7 +95,7 @@ function renderInspector(blockId, panel = $('#inspector')) {
       row('District', DISTRICTS[block.district].label),
       row('Roads', `${builtSides(game.board, block)} / 4`),
       row('Land value', formatCash(block.price)),
-      row('Owner', owner ? owner.name : 'Unclaimed'),
+      row('Owner', owner ? [owner.name, isCpu(owner) && h('span', { class: 'inspector__bot' }, ` (${controllerLabel(owner)})`)] : 'Unclaimed'),
       row('Income', owner
         ? [`+${formatCash(d.income)}/turn`, d.income !== d.normalIncome && h('span', {
           class: `inspector__event ${d.income > d.normalIncome ? 'is-up' : 'is-down'}`,

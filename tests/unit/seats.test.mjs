@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateSeats, applySeatPreset, defaultNames, presetFor, controllerOf, controllerLabel, SEAT_ERRORS,
+  PERSONALITIES, assignPersonalities,
 } from '../../js/core/seats.js';
 import { createGame } from '../../js/core/game.js';
 import { saveActiveGame, loadActiveGame, SAVE_KEY } from '../../js/core/persistence.js';
@@ -19,7 +20,7 @@ const memoryStorage = () => {
 /** A game's state without seat metadata: what the rules engine produced. */
 const rulesState = (game) => JSON.stringify({
   ...game,
-  players: game.players.map(({ name, controller, difficulty, ...rest }) => rest),
+  players: game.players.map(({ name, controller, difficulty, personality, ...rest }) => rest),
   results: game.results && { ...game.results, rows: game.results.rows.map(({ name, ...rest }) => rest) },
 });
 
@@ -47,8 +48,12 @@ test('seats, controllers and difficulties are checked', () => {
 
 test('controller normalisation', () => {
   assert.deepEqual(controllerOf({ seat: 1 }), { controller: 'human', difficulty: null });
-  assert.deepEqual(controllerOf({ seat: 1, controller: 'cpu' }), { controller: 'cpu', difficulty: 'normal' });
-  assert.deepEqual(controllerOf(cpu(1, 'hard')), { controller: 'cpu', difficulty: 'hard' });
+  assert.deepEqual(controllerOf({ seat: 1, controller: 'cpu' }), { controller: 'cpu', difficulty: 'normal', personality: null });
+  assert.deepEqual(controllerOf(cpu(1, 'hard')), { controller: 'cpu', difficulty: 'hard', personality: null });
+  assert.deepEqual(controllerOf({ ...cpu(1, 'hard'), personality: 'tycoon' }), { controller: 'cpu', difficulty: 'hard', personality: 'tycoon' });
+  assert.equal(controllerOf({ ...cpu(1), personality: 'gambler' }), null, 'unknown personality');
+  assert.equal(controllerOf({ seat: 1, controller: 'human', difficulty: null, personality: 'builder' }), null, 'humans have no personality');
+  assert.equal(controllerLabel({ ...cpu(2, 'hard'), personality: 'planner' }), 'CPU · Hard · Planner');
   assert.equal(controllerOf({ controller: 'cpu', difficulty: 'nightmare' }), null);
   assert.equal(controllerOf({ controller: 'alien' }), null);
   assert.equal(controllerLabel(cpu(2, 'easy')), 'CPU · Easy');
@@ -114,10 +119,13 @@ test('autosave and Continue keep every seat controller, and the rematch setup to
   const restored = loadActiveGame(storage);
   assert.deepEqual(restored.game.players.map((p) => [p.seat, p.name, p.controller, p.difficulty]),
     [[1, 'Ada', 'human', null], [3, 'Mayor Bot 1', 'cpu', 'hard'], [4, 'Mayor Bot 2', 'cpu', 'easy']]);
+  const [p3, p4] = game.players.slice(1).map((p) => p.personality);
+  assert.ok(PERSONALITIES.includes(p3) && PERSONALITIES.includes(p4) && p3 !== p4, 'bots got distinct personalities');
+  assert.equal(game.players[0].personality, undefined, 'people have none');
   assert.deepEqual(restored.setup.seats, [
     { seat: 1, name: 'Ada', controller: 'human', difficulty: null },
-    { seat: 3, name: 'Mayor Bot 1', controller: 'cpu', difficulty: 'hard' },
-    { seat: 4, name: 'Mayor Bot 2', controller: 'cpu', difficulty: 'easy' },
+    { seat: 3, name: 'Mayor Bot 1', controller: 'cpu', difficulty: 'hard', personality: p3 },
+    { seat: 4, name: 'Mayor Bot 2', controller: 'cpu', difficulty: 'easy', personality: p4 },
   ]);
   // Play Again starts from the saved setup (a fresh seed); the table is the same.
   const rematch = createGame({ ...restored.setup, seed: undefined });
@@ -130,11 +138,18 @@ test('saves from before controllers load as all-human; corrupt controllers are r
   const game = createGame({ seats: [human(1), cpu(2)], seed: 3 });
   saveActiveGame(game, null, storage);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
-  for (const p of raw.game.players) { delete p.controller; delete p.difficulty; }
+  for (const p of raw.game.players) { delete p.controller; delete p.difficulty; delete p.personality; }
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   assert.deepEqual(loadActiveGame(storage).game.players.map((p) => [p.controller, p.difficulty]), [['human', null], ['human', null]]);
 
   raw.game.players[1].controller = 'cpu';
+  raw.game.players[1].difficulty = 'hard';
+  raw.game.players[1].personality = 'gambler';
+  storage.setItem(SAVE_KEY, JSON.stringify(raw));
+  assert.equal(loadActiveGame(storage), null, 'an unknown personality is not trusted');
+  raw.game.players[1].personality = null; // saves from before personalities: plays without one
+  storage.setItem(SAVE_KEY, JSON.stringify(raw));
+  assert.equal(loadActiveGame(storage).game.players[1].personality, null);
   raw.game.players[1].difficulty = 'godlike';
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   assert.equal(loadActiveGame(storage), null, 'an invalid difficulty is not trusted');
@@ -167,4 +182,22 @@ test('results rank CPU seats like anyone else; the career only counts the humans
   const all = recordMatch(emptyCareer(), people, 1000).career;
   assert.equal(Object.keys(all.mayors).length, 4);
   assert.equal(all.totals.blocksCaptured, people.log.filter((e) => e.type === 'road').reduce((n, e) => n + e.captured.length, 0));
+});
+
+test('personalities: chosen ones are kept; the rest are assigned from the seed, distinct at the table', () => {
+  const table = [human(1), cpu(2), { ...cpu(3), personality: 'planner' }, cpu(4)];
+  const a = assignPersonalities(table, 42);
+  assert.equal(a[0].personality, undefined, 'people get none');
+  assert.equal(a[2].personality, 'planner', 'a chosen personality is kept');
+  const bots = a.filter((s) => s.controller === 'cpu').map((s) => s.personality);
+  assert.equal(new Set(bots).size, 3, 'no two bots share one');
+  assert.deepEqual(assignPersonalities(table, 42), a, 'same seed, same bots');
+  const seen = new Set();
+  for (let seed = 0; seed < 40; seed++) seen.add(assignPersonalities([human(1), cpu(2)], seed)[1].personality);
+  assert.deepEqual([...seen].sort(), [...PERSONALITIES].sort(), 'every personality turns up');
+  assert.equal(validateSeats({ seats: [human(1), { ...cpu(2), personality: 'gambler' }] }), SEAT_ERRORS.BAD_PERSONALITY);
+  // Replay Same City keeps them.
+  const game = createGame({ seats: [human(1), cpu(2), cpu(3)], seed: 9 });
+  const again = createGame(replaySetup(game, {}));
+  assert.deepEqual(again.players.map((p) => p.personality), game.players.map((p) => p.personality));
 });

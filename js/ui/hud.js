@@ -6,7 +6,7 @@
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { ART } from '../art.js';
-import { PLAYER_PRESETS } from '../config.js';
+import { PLAYER_PRESETS, CPU } from '../config.js';
 import { formatCash, formatCashShort, formatDelta } from '../core/economy.js';
 
 /** Short phones show four HUD cards in one row; money is abbreviated there (matches css/mobile.css). */
@@ -14,7 +14,10 @@ const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-heigh
 const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
 import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
-import { controllerLabel } from '../core/seats.js';
+import { controllerLabel, isCpu, DIFFICULTY_LABELS } from '../core/seats.js';
+
+/** A CPU mayor's personality in a sentence (tooltip), or null. */
+const profileBlurb = (player) => CPU.PERSONALITIES[player.personality]?.blurb ?? null;
 
 const LAYOUT = { left: [1, 4], right: [2, 3] };
 const TWEEN_MS = 700;
@@ -152,6 +155,8 @@ function playerCard(game, seat) {
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
       stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
     ),
+    isCpu(player) && h('p', { class: 'player-card__bot', title: profileBlurb(player) },
+      [DIFFICULTY_LABELS[player.difficulty], CPU.PERSONALITIES[player.personality]?.name].filter(Boolean).join(' · ')),
     h('dl', { class: 'player-card__stats' },
       stat('cash', 'Cash', money(shownCash.get(seat) ?? stats.cash), 'icons:coins', formatCash(stats.cash)),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),

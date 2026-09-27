@@ -20,9 +20,10 @@
  *           safe road; if none, the road that gives the next mayor the fewest blocks
  *   hard    normal's instincts plus look-ahead: plays out its own capture run, the next mayor's
  *           reply and its own follow-up, weighing blocks by what they're worth (land value +
- *           capture reward); may stop a chain two blocks early (a "double-deal") to keep control
+ *           capture reward); may stop a chain two blocks early (a "double-deal") to keep control.
+ *           An Expansionist personality weighs the captures it expects to get back more.
  */
-import { ECONOMY } from '../../config.js';
+import { ECONOMY, CPU } from '../../config.js';
 import { allRoadIds, roadBlocks, blockRoadIds, hasRoad } from '../board.js';
 import { validateRoad, currentPlayer } from '../game.js';
 import { stream, defaultCpuSeed } from './random.js';
@@ -215,8 +216,10 @@ function bestContinuation(pos, follow) {
   return best;
 }
 
-function decideHard(pos, legal, rand, players) {
-  const follow = players === 2 ? 1 : 0.5;
+function decideHard(pos, legal, rand, players, followUp = 1) {
+  // Follow-up captures count in full at a two-player table, half otherwise (others move in
+  // between); an Expansionist weighs them more (CPU.PERSONALITIES followUp).
+  const follow = (players === 2 ? 1 : 0.5) * followUp;
   const captures = legal.filter((r) => completes(pos, r).length);
   if (captures.length) {
     const scored = captures.map((road) => {
@@ -273,7 +276,8 @@ export function chooseRoad(game, { difficulty, seed } = {}) {
   const pos = positionOf(game);
   const rand = stream(seed ?? defaultCpuSeed(game));
   const decide = level === 'easy' ? decideEasy : level === 'hard' ? decideHard : decideNormal;
-  const choice = decide(pos, legal, rand, game.players.length);
+  const followUp = CPU.PERSONALITIES[currentPlayer(game)?.personality]?.followUp ?? 1;
+  const choice = decide(pos, legal, rand, game.players.length, followUp);
   return {
     road: choice.road,
     reason: choice.reason,

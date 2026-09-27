@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseCityAction, applyCityAction, CITY_REASONS } from '../../js/core/cpu/city.js';
+import { chooseCityAction, applyCityAction, CITY_REASONS, defaultReserve } from '../../js/core/cpu/city.js';
 import { chooseRoad } from '../../js/core/cpu/roads.js';
 import { CPU, ECONOMY } from '../../js/config.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, TURN_PHASES } from '../../js/core/game.js';
@@ -13,9 +13,13 @@ import { quoteBuild, quoteUpgrade } from '../../js/core/development.js';
 const seats = (n = 4) => Array.from({ length: n }, (_, i) => ({ seat: i + 1 }));
 const LEVELS = ['easy', 'normal', 'hard'];
 
-/** P4 has just captured A1 (r0c0) through real play and must choose Develop Now or Leave Vacant. */
-function captured({ cash } = {}) {
-  const game = createGame({ seats: seats(), seed: 3, eventPool: [] });
+/**
+ * P4 has just captured A1 (r0c0) through real play and must choose Develop Now or Leave Vacant.
+ * `mode` picks the rule preset; the city's event pool is empty unless `events` (none are drawn
+ * before round 2 either way, so the position is identical).
+ */
+function captured({ cash, events = false, mode = 'standard' } = {}) {
+  const game = createGame({ seats: seats(), seed: 3, mode, ...(!events && { eventPool: [] }) });
   for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) assert.ok(placeRoad(game, id).ok);
   assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
   if (cash != null) currentPlayer(game).cash = cash;
@@ -122,8 +126,8 @@ test('events: Normal takes today’s prices and income at face value, Hard sees 
 });
 
 test('Hard values civic shelter over its own developed neighbours; Normal does not', () => {
-  const setup = () => {
-    const game = captured();
+  const setup = (mode = 'standard') => {
+    const game = captured({ events: true, mode });
     own(game, [[0, 1, 'industrial', 3], [1, 0, 'industrial', 3]]);
     return game;
   };
@@ -131,6 +135,8 @@ test('Hard values civic shelter over its own developed neighbours; Normal does n
   assert.deepEqual([hard.action, hard.type], ['build', 'civic'], 'Hard shelters $3,600/turn of Industrial');
   const normal = chooseCityAction(setup(), { difficulty: 'normal', seed: 1 });
   assert.notEqual(normal.type, 'civic');
+  // No emergencies can happen in Classic, so there is nothing to shelter from.
+  assert.notEqual(chooseCityAction(setup('classic'), { difficulty: 'hard', seed: 1 }).type, 'civic');
 });
 
 /* ---------------- Manage City ---------------- */
@@ -223,7 +229,7 @@ function cpuGame(difficulties, seed, mode = 'standard') {
       const result = applyCityAction(game, d);
       assert.ok(result.ok, `seed ${seed}: ${d.action} ${d.blockId ?? ''} ${d.type ?? ''} applies`);
       if (d.action === 'build' || d.action === 'upgrade') {
-        assert.ok(cash - d.cost >= CPU.RESERVE[me.difficulty], 'reserve kept');
+        assert.ok(cash - d.cost >= defaultReserve(me.difficulty, me), 'reserve kept');
       }
     } else {
       const d = chooseRoad(game);
@@ -246,8 +252,10 @@ test('stronger difficulties build better cities: Hard and Normal out-score Easy'
   const totals = { easy: 0, normal: 0, hard: 0 };
   const rounds = 6;
   for (let i = 0; i < rounds; i++) {
-    // Rotate the three difficulties through the seats.
-    const table = [['easy', 'normal', 'hard'], ['hard', 'easy', 'normal'], ['normal', 'hard', 'easy']][i % 3];
+    // Every seating order once: rotating alone keeps the cyclic order, so one difficulty would
+    // always sit right after (and collect the gifts of) the same other one.
+    const table = [['easy', 'normal', 'hard'], ['easy', 'hard', 'normal'], ['normal', 'easy', 'hard'],
+      ['normal', 'hard', 'easy'], ['hard', 'easy', 'normal'], ['hard', 'normal', 'easy']][i % 6];
     const game = cpuGame(table, 40 + i);
     for (const row of game.results.rows) totals[getPlayer(game, row.seat).difficulty] += row.cityValue;
     for (const p of game.players) assert.ok(Number.isSafeInteger(playerStats(game, p).income));
@@ -296,7 +304,8 @@ test('a CPU mayor opens bidding on a lot worth having, and the sealed bids settl
   placeRoad(game, 'h-0-0'); // seat 1 → the Hard bot's Manage City
   assert.equal(currentPlayer(game).seat, 2);
   const d = chooseCityAction(game);
-  assert.deepEqual([d.action, d.blockId, d.mode], ['redevelop', 'r2c2', 'restore']);
+  // Clearing the Commercial ruin and building something better beats restoring it.
+  assert.deepEqual([d.action, d.blockId, d.mode], ['redevelop', 'r2c2', 'rebuild']);
   // A person outbids it: the highest sealed bid wins.
   const outbid = structuredClone(game);
   const r = applyCityAction(outbid, { ...d, humanBids: [{ seat: 1, bid: 9000 }] });

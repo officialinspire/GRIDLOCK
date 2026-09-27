@@ -70,9 +70,11 @@ export function challengeUrl({ seed, mode = DEFAULT_MODE, seats }, pageHref) {
   return url.href;
 }
 
-/** A setup that deals the exact same city as `game`: same seed, rules, seats, names and controllers. */
+/** A setup that deals the exact same city as `game`: same seed, rules, seats, names, controllers and personalities. */
 export function replaySetup(game, setup = {}) {
-  const seats = game.players.map(({ seat, name, controller = 'human', difficulty = null }) => ({ seat, name, controller, difficulty }));
+  const seats = game.players.map(({ seat, name, controller = 'human', difficulty = null, personality = null }) => ({
+    seat, name, controller, difficulty, ...(controller === 'cpu' && { personality }),
+  }));
   return {
     ...setup,
     seats,

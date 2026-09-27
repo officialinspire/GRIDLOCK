@@ -4,7 +4,7 @@
  * another road. The game ends when every block is claimed.
  */
 import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE } from '../config.js';
-import { controllerOf, defaultNames } from './seats.js';
+import { controllerOf, defaultNames, assignPersonalities } from './seats.js';
 import { resolveRules } from './modes.js';
 import {
   createBoard, blocksOwnedBy, isValidRoad, hasRoad, roadBlocks, isBlockEnclosed, totalRoads,
@@ -43,8 +43,9 @@ export function sanitizeName(name, fallback) {
 /**
  * @param {{ seats: Array<{seat:number, name?:string, controller?:'human'|'cpu', difficulty?:null|'easy'|'normal'|'hard'}>, seed?: number, mode?: string, eventPool?: object[], gameType?: string, eventProbability?: number, maxActiveEvents?: number }} options
  *   `seats` lists the joined seats (1–4). Play order is always by seat number. Each seat's
- *   controller (human, or cpu with a difficulty; human by default) is stored on its player
- *   as metadata only: no rule depends on it (core/seats.js).
+ *   controller (human, or cpu with a difficulty and personality; human by default) is stored on
+ *   its player as metadata only: no rule depends on it (core/seats.js). CPU seats without a
+ *   personality get one from the seed (assignPersonalities).
  *   `seed` makes city events reproducible (random by default).
  *   `mode` is a rule preset from GAME_MODES (standard | classic | chaos); its rules are
  *   copied onto the game as `game.rules`, which is all the rules engine reads.
@@ -72,7 +73,7 @@ export function createGame({ seats, seed = randomSeed(), mode = DEFAULT_MODE, ev
     if (!controllerOf(s)) throw new RangeError(`Invalid controller for seat ${s.seat}`);
   }
   const fallbackNames = defaultNames(seats);
-  const players = [...seats]
+  const players = assignPersonalities(seats, seed)
     .sort((a, b) => a.seat - b.seat)
     .map((s) => {
       const { seat, name } = s;
