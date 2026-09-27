@@ -53,18 +53,6 @@ function buildDowntown(root = document) {
   });
 }
 
-/** Fills `[data-art-decor="key"]` containers with the prop list ART[key]. */
-function placeDecor(root = document) {
-  root.querySelectorAll('[data-art-decor]').forEach((box) => {
-    const items = ART[box.dataset.artDecor] ?? [];
-    box.replaceChildren(...items.map(({ sprite, spot }) => {
-      const el = createSprite(sprite);
-      el.dataset.spot = spot;
-      return el;
-    }));
-  });
-}
-
 /**
  * A challenge link (?seed=…&mode=…&seats=…) pre-fills the New Game screen, then leaves the address bar
  * so a later reload or bookmark isn't pinned to that city. Other parameters are kept.
@@ -86,7 +74,6 @@ function acceptChallengeLink() {
 
 function boot() {
   fillEconomyCopy();
-  placeDecor();
   buildDowntown();
   initAudio({ bus });
   initHaptics(loadSettings());

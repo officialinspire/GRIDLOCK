@@ -83,20 +83,22 @@
 .inspector { grid-area: insp; align-self: start; }
 
 .district-legend {
+  /* A one-line key in the strip reserved under the board (--legend-room), never over it. */
   position: absolute;
-  right: 4px;
-  bottom: 4px;
+  top: calc(var(--board-size) + 12px);
+  left: 50%;
   z-index: 21;
-  display: grid;
-  grid-template-columns: repeat(3, auto);
-  gap: 3px 8px;
-  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px;
   pointer-events: none;
-  font-size: clamp(7px, 1.2cqw, 11px);
+  font-size: 11px;
   line-height: 1.1;
-  transform: rotate(-1deg);
+  white-space: nowrap;
+  transform: translateX(-50%);
 }
-.district-legend strong { grid-column: 1 / -1; font-family: var(--font-display); letter-spacing: .04em; }
+.district-legend strong { font-family: var(--font-display); letter-spacing: .04em; }
 .district-key::before { content: ''; display: inline-block; width: .75em; height: .75em; margin-right: 3px; border: 1px solid var(--ink); vertical-align: -.05em; }
 .district-key--suburbs::before { background: #b7c995; }
 .district-key--midtown::before { background: #c8b582; }
@@ -109,12 +111,14 @@
   min-width: 0;
 }
 
-/* Board sizing: largest square that fits the available area. */
+/* Board sizing: largest square that fits the available area, above a strip for the district key. */
 .board-area {
+  --legend-room: 38px;
+  --board-size: min(100cqw, calc(100cqh - var(--legend-room)));
   position: relative;
   container-type: size;
   display: grid;
-  place-items: center;
+  place-items: start center;
   min-height: 0;
 }
 
@@ -169,7 +173,7 @@
 }
 .board-frame {
   container-type: inline-size;
-  width: min(100cqw, 100cqh);
+  width: var(--board-size);
   aspect-ratio: 1;
   padding: clamp(6px, 1.4vmin, 14px);
   background:
@@ -620,6 +624,10 @@ html[data-coords='on'] .block__coord { display: block; }
 .stat dd { margin: 0; font-weight: 900; font-variant-numeric: tabular-nums; }
 
 /* ---------- Inspector ---------- */
+/* Just the "tap a block" hint: only where there's room for it under the cards. */
+@media (max-height: 820px) {
+  .inspector:has(> .inspector__hint:only-child) { display: none; }
+}
 .inspector {
   transform: rotate(1.2deg);
   font-size: 0.95rem;
@@ -694,7 +702,7 @@ html[data-coords='on'] .block__coord { display: block; }
   }
   .hud { gap: 10px; }
   .board-area { container-type: inline-size; }
-  .board-frame { width: min(100cqw, 72dvh); }
+  .board-area { --board-size: min(100cqw, 72dvh); padding-bottom: var(--legend-room); }
   .inspector { transform: none; margin-top: 8px; }
   .action-bar {
     position: sticky;
@@ -748,6 +756,15 @@ html[data-coords='on'] .block__coord { display: block; }
   .stat { grid-template-columns: 18px 1fr; }
   .stat__icon { width: 18px; }
   .inspector { display: none; }
+  /* Compact cards so both fit each side: cash, then blocks and income. */
+  .player-card__stats { grid-template-columns: 1fr 1fr; gap: 2px 4px; }
+  .stat--cash { grid-column: 1 / -1; }
+  .stat--property { display: none; }
+  .stat { padding: 1px 4px; }
+  .player-card__meta { font-size: 0.66rem; margin: -2px 0 0; }
+  /* Every pixel goes to the (small) board here; districts are explained in How To Play and the inspector. */
+  .board-area { --legend-room: 0px; }
+  .district-legend { display: none; }
   .action-bar { padding: 6px; flex-wrap: nowrap; }
   .action-bar .btn { min-height: 40px; font-size: 1rem; }
   .turn-prompt { font-size: 1rem; padding: 4px 10px; }
@@ -1678,7 +1695,25 @@ html[data-coords='on'] .block__coord { display: block; }
 #cpu-faster[aria-pressed='true'] { background-color: #fdf0c4; }
 .auction-bid--cpu { margin: 0; font-weight: 800; }
 .auction-bid__sealed { justify-self: end; font-style: italic; color: var(--ink-soft); }
-.player-card__bot { margin: -2px 0 2px; font-size: 0.75rem; font-weight: 800; color: var(--ink-soft); }
+/* The card's second line: "CPU · Hard · Tycoon" for bots, "Human" for people (every card has
+   one, so cards line up). Names scale down on narrow cards instead of being cut short. */
+.player-card { container-type: inline-size; }
+.player-card__name { font-size: clamp(0.88rem, 8.6cqi, 1.2rem); }
+.player-card__turn { padding: 1px 6px; font-size: 0.66rem; }
+.player-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 1.4em;
+  margin: -3px 0 1px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.player-card__meta .player-card__cpu { padding: 0 6px; font-size: 0.6rem; line-height: 1.5; }
+.player-card__bot { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-card__role { letter-spacing: 0.02em; }
 .inspector__bot { font-weight: 700; color: var(--ink-soft); }
 
 /* CPU turns: the active bot's card glows, the board waits, the planned road/block is marked. */

@@ -150,13 +150,18 @@ function playerCard(game, seat) {
     h('header', { class: 'player-card__head' },
       createSprite(ART.owner.chip(seat), { className: 'player-card__token' }),
       h('span', { class: 'player-card__name' }, player.name),
-      cpu && h('span', { class: 'player-card__cpu', title: cpu }, 'CPU'),
       stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
       stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
     ),
-    isCpu(player) && h('p', { class: 'player-card__bot', title: profileBlurb(player) },
-      [DIFFICULTY_LABELS[player.difficulty], CPU.PERSONALITIES[player.personality]?.name].filter(Boolean).join(' · ')),
+    // Second line when bots are at the table, on every card so they line up: "CPU · Hard · Tycoon"
+    // or "Human". (An all-human table needs neither.)
+    game.players.some(isCpu) && h('p', { class: 'player-card__meta' },
+      cpu
+        ? [h('span', { class: 'player-card__cpu', title: cpu }, 'CPU'),
+          h('span', { class: 'player-card__bot', title: profileBlurb(player) },
+            [DIFFICULTY_LABELS[player.difficulty], CPU.PERSONALITIES[player.personality]?.name].filter(Boolean).join(' · '))]
+        : h('span', { class: 'player-card__role' }, 'Human')),
     h('dl', { class: 'player-card__stats' },
       stat('cash', 'Cash', money(shownCash.get(seat) ?? stats.cash), 'icons:coins', formatCash(stats.cash)),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
