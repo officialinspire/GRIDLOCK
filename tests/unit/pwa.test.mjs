@@ -62,13 +62,20 @@ test('the precache holds every file the game loads, and nothing outside the site
   for (const sheet of Object.values(SHEETS)) assert.ok(files.has(sheet.webp), `${sheet.webp} is precached`);
 });
 
-test('precache stays lean: PNG sheet fallbacks (browsers without WebP) are fetched on demand', async () => {
+test('precache stays lean: PNG sheet fallbacks (browsers without WebP) are fetched on demand; media has its own budget', async () => {
   const files = await precacheFiles();
   for (const sheet of Object.values(SHEETS)) assert.ok(!files.includes(decodeURI(sheet.url)), `${sheet.url} not precached`);
   assert.ok(SHEETS.props.url.startsWith(GENERATED_DIR), 'covers the keyed-out props PNG too');
   let bytes = 0;
-  for (const file of files) bytes += (await stat(ROOT + file)).size;
-  assert.ok(bytes < 7 * 1024 * 1024, `precache is ${(bytes / 1048576).toFixed(1)} MB`);
+  let media = 0;
+  for (const file of files) {
+    const size = (await stat(ROOT + file)).size;
+    if (file.startsWith('assets/media/')) media += size;
+    else bytes += size;
+  }
+  assert.ok(bytes < 7 * 1024 * 1024, `game code and art precache is ${(bytes / 1048576).toFixed(1)} MB`);
+  // Music (two streamed themes) and the INSPIRE intro, cached so they also play offline.
+  assert.ok(media < 6.5 * 1024 * 1024, `music and intro video are ${(media / 1048576).toFixed(1)} MB`);
 });
 
 test('the game needs no network: no external URLs in the page, styles or scripts', async () => {
@@ -156,7 +163,7 @@ async function loadServiceWorker({ network = true, existingCaches = [] } = {}) {
     Set,
     Request: class { constructor(url, init = {}) { this.url = url; this.cache = init.cache; this.method = 'GET'; } },
     Response: class {
-      constructor(body, init = {}) { Object.assign(this, { body, status: init.status ?? 200, ok: (init.status ?? 200) < 300, type: 'default' }); }
+      constructor(body, init = {}) { Object.assign(this, { body, status: init.status ?? 200, ok: (init.status ?? 200) < 300, type: 'default', headers: new Map(Object.entries(init.headers ?? {})) }); }
       clone() { return this; }
       static error() { return { type: 'error', ok: false, status: 0, clone() { return this; } }; }
     },
@@ -220,6 +227,28 @@ test('service worker: plays offline (app shell with any query, assets, lazy modu
     const res = await run('fetch', { request: request(SCOPE + file) });
     assert.equal(res?.url, SCOPE + file, `${file} served offline`);
   }
+});
+
+test('service worker: media byte-range requests get 206 slices of the cached file (music, intro video)', async () => {
+  const { stores, state, run } = await loadServiceWorker();
+  await run('install');
+  state.online = false;
+  const url = `${SCOPE}assets/media/cardboard-city.mp3`;
+  const cache = [...stores.values()][0];
+  const bytes = Uint8Array.from({ length: 10 }, (_, i) => i);
+  cache.map.set(url, { arrayBuffer: async () => bytes.buffer.slice(0), headers: new Map([['Content-Type', 'audio/mpeg']]) });
+  const ranged = (range) => run('fetch', { request: { url, method: 'GET', mode: 'no-cors', headers: new Map([['range', range]]) } });
+  const mid = await ranged('bytes=2-5');
+  assert.equal(mid.status, 206);
+  assert.deepEqual([...new Uint8Array(mid.body)], [2, 3, 4, 5]);
+  assert.equal(mid.headers.get('Content-Range'), 'bytes 2-5/10');
+  assert.equal(mid.headers.get('Content-Type'), 'audio/mpeg');
+  const open = await ranged('bytes=7-');
+  assert.deepEqual([...new Uint8Array(open.body)], [7, 8, 9]);
+  const tail = await ranged('bytes=-3');
+  assert.equal(tail.headers.get('Content-Range'), 'bytes 7-9/10');
+  assert.equal((await ranged('bytes=20-')).status, 416, 'outside the file');
+  assert.ok((await precacheFiles()).includes('assets/media/inspiresoftwareintro.mp4'), 'the intro video is precached too');
 });
 
 test('service worker: other in-scope files are network-first with an offline copy', async () => {

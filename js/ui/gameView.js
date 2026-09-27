@@ -191,7 +191,8 @@ function handleDevelopment(change) {
   autosave();
   // Sales/downgrades pay a refund; Level 2–3 is an upgrade; anything else is new construction.
   const kind = change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build';
-  play(kind);
+  // Each building type has its own construction sound.
+  play(kind, { id: change.block ? getBlockById(game.board, change.block)?.type : undefined });
   if (kind !== 'coins' && !change.cpu) buzz(kind);
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
@@ -401,7 +402,7 @@ function handleRoad(id, { cpu = false } = {}) {
   if (n > 0) showCaptureChoice();
   const finishTransition = () => {
     if (result.event?.started) {
-      play('event', { kind: getEventDef(result.event.started.id)?.kind });
+      play('event', { kind: getEventDef(result.event.started.id)?.kind, id: result.event.started.id });
       buzz('event');
       showEventCard(game, result.event.started, result.event.expired);
       tutorialMoment('events');
@@ -428,6 +429,8 @@ function handleRoad(id, { cpu = false } = {}) {
     bus.emit('game:move', result);
   };
   const next = currentPlayer(game);
+  // A new mayor's turn: a soft chime, just after the road's own sound.
+  if (next.seat !== mover.seat) setTimeout(() => { if (game && currentPlayer(game).seat === next.seat) play('turn'); }, 260);
   if (result.turnIncome && result.turnIncome.seat !== mover.seat && needsHandoff(next)) showHandoff(next, finishTransition);
   else {
     if (!isCpu(next)) lastHuman = next.seat;

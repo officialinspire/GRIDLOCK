@@ -9,7 +9,7 @@ function fakeWebAudio({ throwOnCreate = false } = {}) {
   const log = { contexts: [], gains: [], oscillators: [], sources: [], panners: [], resumes: 0, suspends: 0 };
   const param = (value = 0) => {
     const p = { value, events: [] };
-    for (const m of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'setTargetAtTime']) {
+    for (const m of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'setTargetAtTime', 'cancelScheduledValues']) {
       p[m] = (v, t, tc) => { p.events.push([m, v, t, tc]); if (m === 'setValueAtTime') p.value = v; return p; };
     }
     return p;
@@ -123,11 +123,117 @@ test('every sound plays and has its own recipe', () => {
   assert.equal(new Set(kinds).size, 3);
 });
 
+test('construction sounds are unique per building type, and events per event id', async () => {
+  const { CATEGORY_ORDER } = await import('../../js/core/buildings.js');
+  const { CITY_EVENTS } = await import('../../js/config.js');
+  const { manager, log } = setup();
+  manager.unlock();
+  const signature = (name, opts) => {
+    const before = log.oscillators.length;
+    const sources = log.sources.length;
+    assert.equal(manager.play(name, opts), true);
+    return JSON.stringify([log.oscillators.slice(before).map((o) => [o.type, Math.round(o.frequency.events[0][1])]), log.sources.length - sources]);
+  };
+  for (const name of ['build', 'upgrade']) {
+    const sigs = CATEGORY_ORDER.map((id) => signature(name, { id }));
+    assert.equal(new Set(sigs).size, CATEGORY_ORDER.length, `${name}: one sound per building type`);
+    assert.ok(!sigs.includes(signature(name, {})), `${name}: unknown type has its own fallback`);
+  }
+  const ids = CITY_EVENTS.POOL.map((e) => e.id);
+  const events = ids.map((id) => signature('event', { id, kind: CITY_EVENTS.POOL.find((e) => e.id === id).kind }));
+  assert.equal(new Set(events).size, ids.length, 'one sound per city event');
+});
+
+/** A fake <audio> element: play() resolves (or rejects with `refuse`), records pause/play. */
+function fakeMusic() {
+  const elements = [];
+  const createAudio = (url) => {
+    const el = {
+      url, paused: true, currentTime: 0, duration: 120, volume: 1, listeners: {},
+      addEventListener(type, fn) { this.listeners[type] = fn; },
+      play() { this.paused = false; return Promise.resolve(); },
+      pause() { this.paused = true; },
+    };
+    elements.push(el);
+    return el;
+  };
+  return { elements, createAudio };
+}
+
+function musicSetup() {
+  const { FakeContext, log } = fakeWebAudio();
+  FakeContext.prototype.createMediaElementSource = function () { return { connect: (n) => n }; };
+  const timers = fakeTimers();
+  const { elements, createAudio } = fakeMusic();
+  const manager = createAudioManager({
+    AudioContextClass: FakeContext, setTimer: timers.setTimer, clearTimer: timers.clearTimer, setRepeat: () => 0, clearRepeat: () => {}, createAudio,
+    tracks: { menu: 'menu.mp3', game: 'game.mp3' }, osReducedMotion: () => false,
+  });
+  const playing = () => elements.filter((e) => !e.paused).map((e) => e.url);
+  return { manager, elements, timers, playing, log };
+}
+
+test('music: menu theme on menus and in the pause menu, gameplay theme in play, none in the intro', () => {
+  const { manager, timers, playing } = musicSetup();
+  manager.setScene('start');
+  assert.deepEqual(playing(), [], 'no music before a gesture');
+  manager.unlock();
+  assert.equal(manager.state().music.theme, 'menu');
+  assert.deepEqual(playing(), ['menu.mp3'], 'the start tap starts the menu theme');
+  manager.setScene('intro');
+  assert.equal(manager.state().music.theme, null, 'the intro video plays alone');
+  timers.runAll(); // fade-outs finish
+  assert.deepEqual(playing(), []);
+  manager.setScene('title');
+  manager.setScene('game');
+  assert.equal(manager.state().music.active, 'game');
+  timers.runAll();
+  assert.deepEqual(playing(), ['game.mp3'], 'crossfaded to the gameplay theme');
+  manager.setPaused(true);
+  assert.equal(manager.state().music.active, 'menu', 'pause menu: the menu theme');
+  manager.setPaused(false);
+  assert.equal(manager.state().music.active, 'game');
+});
+
+test('music: its switch and volume, the master mute, and a hidden tab', () => {
+  const { manager, timers, playing } = musicSetup();
+  manager.configure({ ...DEFAULT_SETTINGS });
+  manager.unlock();
+  manager.setScene('title');
+  assert.ok(manager.state().levels.music > 0);
+  manager.configure({ music: false });
+  assert.equal(manager.state().levels.music, 0);
+  assert.equal(manager.state().music.theme, null);
+  timers.runAll();
+  assert.deepEqual(playing(), [], 'Music off: faded out and paused');
+  manager.configure({ music: true, musicVolume: 0 });
+  assert.equal(manager.state().music.theme, null, 'volume 0 counts as off');
+  manager.configure({ musicVolume: 40 });
+  manager.configure({ sound: false });
+  assert.equal(manager.state().levels.music, 0, 'the master mute silences music too');
+  manager.configure({ sound: true });
+  assert.deepEqual(playing(), ['menu.mp3']);
+  manager.setHidden(true);
+  assert.deepEqual(playing(), [], 'hidden tab: paused in place');
+  manager.setHidden(false);
+  assert.deepEqual(playing(), ['menu.mp3'], 'and back on return');
+});
+
+test('music: no <audio> support means no music, and everything else still works', () => {
+  const { FakeContext } = fakeWebAudio();
+  const manager = createAudioManager({ AudioContextClass: FakeContext, createAudio: null, setTimer: () => 0, clearTimer: () => {} });
+  manager.unlock();
+  manager.setScene('game');
+  assert.equal(manager.play('pave'), true);
+  assert.equal(manager.state().music.active, null);
+});
+
 /** Highest pitch and voice count of one capture sound. */
 function capture(manager, log, intensity) {
   const before = log.oscillators.length;
   manager.play('capture', { intensity });
-  const oscs = log.oscillators.slice(before);
+  // The first oscillator is the "claimed" stamp thud; the arpeggio starts on the second.
+  const oscs = log.oscillators.slice(before + 1);
   return { voices: oscs.length, top: Math.max(...oscs.map((o) => o.frequency.events[0][1])), root: oscs[0].frequency.events[0][1] };
 }
 

@@ -62,13 +62,38 @@ export const ART = Object.freeze({
     { sprite: 'props:bench', spot: 'br' },
   ]),
 
-  /** Title screen foreground props. */
-  titleDecor: Object.freeze([
-    { sprite: 'props:tree-round', spot: 'l1' },
-    { sprite: 'props:streetlamp', spot: 'l2' },
-    { sprite: 'props:van-blue', spot: 'r1' },
-    { sprite: 'props:tree-pine', spot: 'r2' },
-    { sprite: 'props:fredericksburg-sign', spot: 'city' },
+  /**
+   * The downtown street on the start and title screens, left to right. `size` scales a piece
+   * against the street's building height; `from` hides it on narrower screens (px), so a phone
+   * shows the heart of downtown (City Hall in the middle) and a wide screen the whole street.
+   */
+  downtown: Object.freeze([
+    { sprite: 'buildings:corner-store', size: 0.78, from: 1280 },
+    { sprite: 'props:streetlamp', size: 0.62, prop: true, from: 1280 },
+    { sprite: 'buildings:rowhouses', size: 0.9, from: 1100 },
+    { sprite: 'buildings:apartments', size: 1.12, from: 900 },
+    { sprite: 'props:tree-round', size: 0.5, prop: true, from: 900 },
+    { sprite: 'buildings:cafe', size: 0.82, from: 700 },
+    { sprite: 'civic:theater', size: 1.06, from: 520 },
+    { sprite: 'props:streetlamp', size: 0.62, prop: true, from: 520 },
+    { sprite: 'buildings:office', size: 1 },
+    { sprite: 'civic:city-hall', size: 1.18 },
+    { sprite: 'buildings:diner', size: 0.74 },
+    { sprite: 'props:traffic-light', size: 0.62, prop: true, from: 520 },
+    { sprite: 'buildings:shop', size: 0.86, from: 520 },
+    { sprite: 'civic:museum', size: 1, from: 700 },
+    { sprite: 'props:tree-pine', size: 0.56, prop: true, from: 900 },
+    { sprite: 'buildings:market', size: 0.86, from: 900 },
+    { sprite: 'civic:library', size: 0.98, from: 1100 },
+    { sprite: 'props:bench', size: 0.3, prop: true, from: 1280 },
+    { sprite: 'buildings:duplex', size: 0.84, from: 1280 },
+  ]),
+  /** Traffic on the downtown street: the far lane drives left, the near lane right (parked with reduced motion). */
+  downtownTraffic: Object.freeze([
+    { sprite: 'props:car-red', lane: 'far', at: 30 },
+    { sprite: 'props:van-blue', lane: 'near', at: 8 },
+    { sprite: 'props:bike', lane: 'near', at: 45 },
+    { sprite: 'props:truck', lane: 'near', at: 72 },
   ]),
 });
 

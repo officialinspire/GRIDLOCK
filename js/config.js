@@ -20,6 +20,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   sfxVolume: 80, // 0–100
   ambience: true, // procedural tabletop/city background, game screen only
   ambienceVolume: 50, // 0–100
+  music: true, // recorded themes: "Cardboard City" (menus, pause) and "Paper Blocks" (in play)
+  musicVolume: 60, // 0–100
   confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
   haptics: true, // vibration feedback on touch devices that support it (no effect elsewhere)
   reducedMotion: false,

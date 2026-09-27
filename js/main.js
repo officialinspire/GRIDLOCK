@@ -3,8 +3,9 @@ import { hydrateSprites, createSprite } from './assets.js';
 import { ART } from './art.js';
 import { ECONOMY } from './config.js';
 import { formatCash } from './core/economy.js';
-import { bindNavigation, showScreen } from './ui/router.js';
-import { initSettingsView } from './ui/settingsView.js';
+import { bindNavigation } from './ui/router.js';
+import { initSettingsView, getSettings } from './ui/settingsView.js';
+import { initStartView } from './ui/startView.js';
 import { initSetupView, applyChallenge } from './ui/setupView.js';
 import { toast } from './ui/toast.js';
 import { readChallenge, withoutChallenge, formatSeed } from './core/challenge.js';
@@ -24,6 +25,31 @@ function fillEconomyCopy(root = document) {
   root.querySelectorAll('[data-econ]').forEach((el) => {
     const value = ECONOMY[el.dataset.econ];
     if (Number.isFinite(value)) el.textContent = formatCash(value);
+  });
+}
+
+/** Builds every `[data-downtown]` street: sidewalk buildings and props, the road and its traffic. */
+function buildDowntown(root = document) {
+  root.querySelectorAll('[data-downtown]').forEach((box) => {
+    const row = document.createElement('div');
+    row.className = 'downtown__row';
+    row.append(...ART.downtown.map(({ sprite, size, prop, from }) => {
+      const el = createSprite(sprite, { className: prop ? 'downtown__prop' : 'downtown__building' });
+      el.style.setProperty('--size', size);
+      if (from) el.dataset.from = from;
+      return el;
+    }));
+    const road = document.createElement('div');
+    road.className = 'downtown__road';
+    road.append(...ART.downtownTraffic.map(({ sprite, lane, at }) => {
+      const el = createSprite(sprite, { className: `downtown__car downtown__car--${lane}` });
+      el.style.setProperty('--at', `${at}%`);
+      el.style.setProperty('--at-n', at / 100); // where it is in its drive, when moving
+      return el;
+    }));
+    const sidewalk = document.createElement('div');
+    sidewalk.className = 'downtown__sidewalk';
+    box.replaceChildren(row, sidewalk, road);
   });
 }
 
@@ -61,6 +87,7 @@ function acceptChallengeLink() {
 function boot() {
   fillEconomyCopy();
   placeDecor();
+  buildDowntown();
   initAudio({ bus });
   initHaptics(loadSettings());
   initTouchGuard();
@@ -70,8 +97,11 @@ function boot() {
   initCareerView();
   initGameView();
   bindNavigation(document);
-  showScreen('title');
-  acceptChallengeLink();
+  // A new session opens on the start screen and the INSPIRE intro; a challenge link is announced
+  // once the main menu is showing.
+  let announced = false;
+  const start = initStartView({ getSettings, onMenu: () => { if (!announced) { announced = true; acceptChallengeLink(); } } });
+  start.show();
   // ?debug exposes the live game for automated tests and bug reproduction (never on by default).
   if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame, audio: () => audio.state(), tutorial: tutorialState };
   document.documentElement.classList.add('is-ready');

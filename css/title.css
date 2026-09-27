@@ -1,0 +1,430 @@
+/* ==========================================================================
+   Start screen, INSPIRE intro and the title menu: downtown Fredericksburg.
+   A papercraft street diorama (buildings and props from the game's own sprite
+   sheets, built by js/main.js buildDowntown) under a dusk sky, with the menu as
+   a little city block: a road with a dashed lane running round the blocks.
+   ========================================================================== */
+
+/* ---------- Shared scene: sky + downtown street ---------- */
+.screen--start,
+.screen--title {
+  --street: clamp(128px, 31vh, 300px); /* the whole street band */
+  --road: calc(var(--street) * 0.24);
+  --walk: clamp(8px, 1.6vh, 14px);
+  --bh: calc(var(--street) * 0.6); /* a building's base height on the street */
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    radial-gradient(34vmax 22vmax at 82% 16%, rgba(255, 214, 140, 0.42), transparent 70%),
+    linear-gradient(180deg, #1d2c55 0%, #3d4f86 30%, #b8697a 62%, #eb9e62 84%, #f5c679 100%);
+}
+/* Paper-cut clouds, outlined like the sprites. */
+.screen--start::before,
+.screen--title::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(closest-side, #f6dcc4 92%, transparent 94%) 9% 14% / 190px 54px no-repeat,
+    radial-gradient(closest-side, #f6dcc4 92%, transparent 94%) 13% 11% / 110px 64px no-repeat,
+    radial-gradient(closest-side, #efcdb4 92%, transparent 94%) 88% 30% / 230px 58px no-repeat,
+    radial-gradient(closest-side, #efcdb4 92%, transparent 94%) 84% 27% / 120px 70px no-repeat,
+    radial-gradient(closest-side, #e7c0a8 92%, transparent 94%) 52% 7% / 150px 40px no-repeat;
+  opacity: 0.72;
+  filter: drop-shadow(0 3px 0 rgba(29, 24, 18, 0.25));
+}
+/* Paper grain over the sky. */
+.screen--start::after,
+.screen--title::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.18;
+  background-image: repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 7px);
+}
+
+.downtown {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: var(--street);
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+/* The far skyline: a flat paper cut-out of towers behind the street. */
+.downtown::before {
+  content: '';
+  position: absolute;
+  left: -2%;
+  right: -2%;
+  bottom: calc(var(--road) + var(--walk));
+  height: calc(var(--bh) * 1.35);
+  background:
+    linear-gradient(#5b5a86, #5b5a86) 3% 100% / 5% 62% no-repeat,
+    linear-gradient(#54537d, #54537d) 9% 100% / 4% 84% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 15% 100% / 6% 52% no-repeat,
+    linear-gradient(#4f4e78, #4f4e78) 22% 100% / 3% 96% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 27% 100% / 7% 70% no-repeat,
+    linear-gradient(#54537d, #54537d) 36% 100% / 4% 88% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 43% 100% / 6% 60% no-repeat,
+    linear-gradient(#4f4e78, #4f4e78) 51% 100% / 3% 100% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 57% 100% / 7% 66% no-repeat,
+    linear-gradient(#54537d, #54537d) 66% 100% / 5% 90% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 73% 100% / 6% 56% no-repeat,
+    linear-gradient(#4f4e78, #4f4e78) 81% 100% / 4% 82% no-repeat,
+    linear-gradient(#5b5a86, #5b5a86) 88% 100% / 6% 64% no-repeat,
+    linear-gradient(#54537d, #54537d) 96% 100% / 5% 92% no-repeat;
+  opacity: 0.8;
+}
+.downtown__row {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--road) + var(--walk) - 2px);
+  display: flex;
+  align-items: flex-end;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.downtown__building,
+.downtown__prop {
+  height: calc(var(--bh) * var(--size, 1));
+  width: auto;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.35));
+}
+.downtown__building { margin-inline: calc(var(--bh) * -0.05); }
+.downtown__prop { position: relative; z-index: 1; margin-inline: calc(var(--bh) * -0.02); margin-bottom: -3px; }
+/* Narrower screens show the heart of downtown (City Hall in the middle). */
+.downtown [data-from] { display: none; }
+@media (min-width: 520px) { .downtown [data-from='520'] { display: inline-block; } }
+@media (min-width: 700px) { .downtown [data-from='700'] { display: inline-block; } }
+@media (min-width: 900px) { .downtown [data-from='900'] { display: inline-block; } }
+@media (min-width: 1100px) { .downtown [data-from='1100'] { display: inline-block; } }
+@media (min-width: 1280px) { .downtown [data-from='1280'] { display: inline-block; } }
+
+.downtown__sidewalk {
+  position: absolute;
+  inset: auto 0 var(--road) 0;
+  height: var(--walk);
+  border-top: 3px solid var(--ink);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 56px, rgba(29, 24, 18, 0.22) 56px 58px),
+    linear-gradient(#e7dbbd, #cdbd98);
+}
+.downtown__road {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: var(--road);
+  border-top: 3px solid var(--ink);
+  background:
+    /* dashed centre line */
+    repeating-linear-gradient(90deg, var(--lane) 0 30px, transparent 30px 58px) 0 50% / 100% 4px no-repeat,
+    /* crosswalk in front of City Hall */
+    repeating-linear-gradient(90deg, rgba(239, 226, 196, 0.85) 0 9px, transparent 9px 18px) 50% 100% / 108px 100% no-repeat,
+    linear-gradient(var(--asphalt), var(--asphalt-2));
+}
+.downtown__car {
+  position: absolute;
+  left: var(--at);
+  height: calc(var(--road) * 0.46);
+  width: auto;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.4));
+}
+.downtown__car--far { bottom: 50%; height: calc(var(--road) * 0.4); }
+.downtown__car--near { bottom: 4%; }
+/* Traffic drives slowly past: the far lane to the left, the near lane to the right. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-motion='reduced']) .downtown__car {
+    left: 0;
+    animation: drive-right 42s linear infinite;
+    animation-delay: calc(var(--at-n, 0) * -42s);
+  }
+  html:not([data-motion='reduced']) .downtown__car--far { animation-name: drive-left; animation-duration: 48s; }
+}
+@keyframes drive-right { from { transform: translateX(-30vw); } to { transform: translateX(110vw); } }
+@keyframes drive-left { from { transform: translateX(110vw); } to { transform: translateX(-30vw); } }
+
+/* ---------- Start screen ---------- */
+.screen--start {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: calc(var(--street) * 0.35);
+  cursor: pointer;
+}
+.start-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: clamp(10px, 2.2vh, 22px);
+  padding-bottom: calc(var(--street) * 0.55);
+  text-align: center;
+}
+.screen--start .title-logo { width: min(560px, 86vw, 50vh); }
+.start-tagline {
+  margin: 0;
+  padding: 6px 16px;
+  border: var(--outline) solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper-hi);
+  box-shadow: var(--drop-sm);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(0.95rem, 2.6vw, 1.2rem);
+  letter-spacing: 0.02em;
+  transform: rotate(-1deg);
+}
+.start-button { width: auto; min-width: min(320px, 80vw); }
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-motion='reduced']) .start-button { animation: start-pulse 1.8s ease-in-out infinite; }
+}
+@keyframes start-pulse { 50% { filter: brightness(1.08) drop-shadow(0 0 12px rgba(255, 214, 120, 0.85)); } }
+
+.inspire-byline {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--paper-hi);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-shadow: 0 2px 0 var(--ink);
+}
+.inspire-logo { display: block; width: clamp(96px, 22vw, 150px); height: auto; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.45)); }
+.inspire-byline--start { margin-top: clamp(4px, 1.5vh, 14px); font-size: 1.1rem; }
+.inspire-byline--start .inspire-logo { width: clamp(130px, 26vw, 190px); }
+
+/* ---------- INSPIRE intro ---------- */
+.screen--intro {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: #000;
+}
+.intro-video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.intro-skip {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  opacity: 0.85;
+}
+
+/* ---------- Title menu ---------- */
+.screen--title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
+  justify-items: center;
+  align-content: start;
+  gap: clamp(8px, 2vh, 20px);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: max(clamp(12px, 3vh, 36px), env(safe-area-inset-top));
+  padding-bottom: calc(var(--street) * 0.72);
+}
+.screen--title > :not(.downtown) { position: relative; z-index: 1; }
+.title-head { display: grid; justify-items: center; }
+.title-logo {
+  width: min(460px, 84vw, 40vh);
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.5));
+}
+.city-edition {
+  display: grid;
+  place-items: center;
+  width: min(250px, 58vw);
+  margin: clamp(-44px, -4.6vh, -24px) 0 0;
+  filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.45));
+}
+.city-edition span {
+  padding: 14% 8% 5%;
+  font-family: var(--font-display);
+  font-size: clamp(0.85rem, 3.2vw, 1.15rem);
+  letter-spacing: 0.035em;
+  text-align: center;
+  color: var(--paper-hi);
+  text-shadow: 0 2px 0 var(--ink);
+}
+.inspire-byline--menu { margin-top: 4px; }
+.inspire-byline--menu .inspire-logo { width: clamp(84px, 16vw, 120px); }
+
+/* The menu: a city block. Asphalt all round with a dashed lane, blocks for the choices. */
+.city-block {
+  display: grid;
+  gap: 12px;
+  width: min(420px, 100%);
+  padding: 22px 20px 18px;
+  border: var(--outline) solid var(--ink);
+  border-radius: 22px;
+  background: linear-gradient(var(--asphalt), var(--asphalt-2));
+  box-shadow: var(--drop);
+  outline: 3px dashed rgba(239, 226, 196, 0.8);
+  outline-offset: -11px;
+}
+.street-sign {
+  justify-self: center;
+  margin: -38px 0 -2px;
+  padding: 2px 16px 3px;
+  border: 3px solid #f6f1e2;
+  border-radius: 6px;
+  background: #2d7446;
+  box-shadow: 0 0 0 3px var(--ink), var(--drop-sm);
+  color: #f6f1e2;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+}
+.city-block .btn { justify-content: flex-start; }
+.city-block .btn .btn__icon { width: 1.4em; }
+.play-options { display: grid; gap: 10px; }
+.city-block .play-option { min-height: 74px; padding-block: 6px; font-size: 1.35rem; text-align: left; }
+.play-option__art { height: 54px; width: auto; margin: -4px 2px -4px -6px; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.3)); }
+.play-option__text { display: grid; gap: 1px; line-height: 1.1; min-width: 0; }
+.play-option__text small {
+  font-family: var(--font-body);
+  font-size: 0.55em;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  opacity: 0.8;
+}
+/* How To Play · Statistics · Settings: three small blocks in a row. */
+.menu-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.city-block .menu-row__btn {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: 58px;
+  padding: 6px 4px;
+  font-size: 0.85rem;
+  line-height: 1.1;
+  text-align: center;
+}
+.city-block .menu-row__btn .btn__icon { width: 1.6em; }
+
+.title-note {
+  position: absolute !important;
+  top: clamp(20px, 6vh, 64px);
+  right: clamp(16px, 4vw, 56px);
+  display: grid;
+  gap: 2px;
+  width: 180px;
+  transform: rotate(4deg);
+  font-size: 0.95rem;
+}
+.title-note strong { font-family: var(--font-display); font-weight: 400; font-size: 1.25rem; }
+.title-note__ver { margin-top: 6px; font-size: 0.8rem; color: var(--ink-soft); }
+
+/* The deal-in animation for the menu, as before (nothing loops after settling). */
+.screen--title:not([hidden]) .city-block { animation: paper-deal 460ms 200ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .title-logo,
+.screen--start:not([hidden]) .title-logo { animation: logo-drop 600ms var(--ease-pop) both; }
+.screen--title:not([hidden]) .city-edition { animation: sign-settle 520ms 160ms var(--ease-pop) both; }
+@keyframes sign-settle { from { opacity: 0; transform: translateY(-14px) rotate(4deg); } }
+@keyframes logo-drop { from { transform: translateY(-24px) scale(0.94); opacity: 0; } }
+
+/* The note only where it has room beside the menu. */
+@media (max-width: 1360px) {
+  .title-note { display: none; }
+}
+/* Tablets in portrait: a smaller logo keeps the street clear of the menu. */
+@media (min-width: 601px) and (max-width: 900px) {
+  .title-logo { width: min(400px, 64vw, 28vh); }
+  .city-edition { width: 210px; }
+}
+
+/* Wide, shorter screens (laptops, tablets in landscape): logo left, menu right, street below. */
+@media (min-width: 901px) and (max-height: 1000px) {
+  .screen--title {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-content: start;
+    align-items: center;
+    column-gap: clamp(24px, 4vw, 64px);
+    padding-top: max(clamp(16px, 6vh, 64px), env(safe-area-inset-top));
+    padding-bottom: calc(var(--street) * 0.55);
+  }
+  .title-head { justify-self: end; }
+  .title-logo { width: min(460px, 36vw, 46vh); }
+  .city-block { justify-self: start; }
+}
+@media (min-width: 901px) and (max-height: 760px) {
+  .screen--start, .screen--title { --street: clamp(120px, 26vh, 220px); }
+  .city-block { gap: 10px; padding: 20px 18px 16px; }
+  .city-block .play-option { min-height: 64px; }
+  .play-option__art { height: 46px; }
+  .play-options { gap: 8px; }
+}
+
+/* Phones: a shorter street, and room for the menu. */
+@media (max-width: 600px) {
+  .screen--start, .screen--title { --street: clamp(110px, 19vh, 160px); }
+  .screen--title { padding-bottom: calc(var(--street) * 0.9); gap: 22px; }
+  .title-logo { width: min(270px, 70vw, 24vh); }
+  .city-edition { width: min(170px, 44vw); margin-top: -30px; }
+  .city-edition span { font-size: 0.78rem; }
+  .inspire-byline--menu { margin-top: 0; font-size: 0.85rem; }
+  .inspire-byline--menu .inspire-logo { width: 88px; }
+  .screen--start .title-logo { width: min(340px, 84vw, 40vh); }
+  .start-tagline { font-size: 0.8rem; padding: 5px 12px; white-space: nowrap; }
+  .city-block { padding: 20px 14px 14px; outline-offset: -9px; }
+  .city-block .play-option { min-height: 64px; font-size: 1.25rem; }
+  .play-option__art { height: 44px; }
+}
+@media (max-width: 600px) and (max-height: 700px) {
+  .screen--start, .screen--title { --street: 96px; }
+  .title-logo { width: min(260px, 70vw, 26vh); }
+  .inspire-byline--menu { display: none; }
+}
+
+/* Phones held sideways: two columns, a slim street. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .screen--start, .screen--title { --street: 84px; }
+  .screen--title {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto;
+    align-items: center;
+    padding-top: max(30px, env(safe-area-inset-top));
+    padding-bottom: calc(var(--street) * 0.45);
+  }
+  .title-logo { width: min(300px, 36vw, 62vh); }
+  .city-edition { width: 150px; margin-top: -26px; }
+  .city-edition span { font-size: 0.72rem; }
+  .street-sign { margin-top: -32px; font-size: 0.9rem; }
+  .inspire-byline--menu .inspire-logo { width: 84px; }
+  .city-block { gap: 8px; padding: 18px 14px 12px; }
+  .city-block .btn--xl { min-height: 50px; font-size: 1.2rem; }
+  .city-block .play-option { min-height: 54px; }
+  .play-option__art { height: 36px; }
+  .city-block .menu-row__btn { min-height: 46px; }
+  .screen--start .title-logo { width: min(300px, 50vw, 36vh); }
+  .start-card { padding-bottom: calc(var(--street) * 0.6); gap: 6px; }
+  .inspire-byline--start { margin-top: 0; }
+  .inspire-byline--start .inspire-logo { width: 110px; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .screen--start::before, .screen--title::before { display: none; }
+}
+
+/* Toasts and the update prompt sit over the street on these screens, never over the menu. */
+body[data-active-screen='start'] .toast-stack,
+body[data-active-screen='title'] .toast-stack,
+body[data-active-screen='start'] .update-banner,
+body[data-active-screen='title'] .update-banner {
+  top: auto;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 10px);
+}

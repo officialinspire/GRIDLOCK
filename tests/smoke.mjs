@@ -44,6 +44,16 @@ async function dismissEvent(page) {
 const server = await startServer(0);
 const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await browserType.launch(launchOpts);
+// Most runs start as a player already past the start screen and INSPIRE intro this session
+// (as after a reload). `freshStart: true` opens a context on the start screen instead.
+{
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async ({ freshStart = false, ...options } = {}) => {
+    const context = await newContext(options);
+    if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
+    return context;
+  };
+}
 console.log(`Running smoke tests in ${browserName}`);
 await rm('test-results', { recursive: true, force: true });
 await mkdir('test-results', { recursive: true });
@@ -97,6 +107,8 @@ function watchForBrowserErrors(page) {
     if (optionalFont(url)) return;
     const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
     if (aborted && (navigations > (startedAt.get(request) ?? navigations) || loaded.has(url))) return;
+    // <audio>/<video> cancel their own streaming range requests when they pause, seek or loop.
+    if (aborted && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(url)) return;
     const entry = `requestfailed: ${url} (${request.failure()?.errorText ?? 'unknown'})`;
     errors.push(entry);
     if (aborted) abortedErrors.set(url, [...(abortedErrors.get(url) ?? []), entry]);
@@ -165,7 +177,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'Settings' }).click();
     await page.locator('label.setting-row', { hasText: 'Show block coordinates' }).click();
-    assert.equal(await page.locator('input[name="music"]').count(), 0);
+    assert.equal(await page.locator('input[name="music"]').count(), 1, 'the Music switch');
     await noHorizontalScroll(page, 'settings');
     await shot('3-settings');
     await page.reload({ waitUntil: 'networkidle' });
@@ -2224,6 +2236,127 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
     failures++;
     console.error(`✘ 3 people + 1 CPU: ${err.message}`);
     await page.screenshot({ path: 'test-results/three-plus-bot-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Start screen → INSPIRE intro → main menu (once per session), the INSPIRE logo, the downtown
+// street, music by scene (menu / gameplay / pause) and the media files. Desktop and phone.
+for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+  const context = await browser.newContext({
+    freshStart: true, viewport: { width: vp.width, height: vp.height },
+    ...(browserName === 'firefox' ? {} : { isMobile: vp.isMobile ?? false }), hasTouch: vp.hasTouch ?? false, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const screen = () => page.evaluate(() => document.body.dataset.activeScreen);
+  const music = () => page.evaluate(() => window.__GRIDLOCK__.audio().music);
+  /** The music theme once it has settled (dialog close events arrive a moment after the click). */
+  const theme = async (want) => {
+    await page.waitForFunction((w) => window.__GRIDLOCK__.audio().music.theme === w, want, { timeout: 3000 }).catch(() => {});
+    return (await music()).theme;
+  };
+  const logoLoaded = (where) => page.locator(`[data-screen="${where}"] .inspire-logo`).evaluate((img) => img.complete && img.naturalWidth > 0);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    assert.equal(await screen(), 'start', 'a new session opens on the start screen');
+    assert.equal(await page.isVisible('#start-button'), true);
+    assert.match(await page.textContent('#start-prompt'), vp.hasTouch ? /^Tap to start$/ : /press Enter to start/);
+    assert.equal(await logoLoaded('start'), true, 'INSPIRE logo on the start screen');
+    assert.ok(await page.locator('[data-screen="start"] .downtown__building').count() >= 3, 'the downtown street');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.audio().contextState), 'none', 'no sound before the first tap');
+    await noHorizontalScroll(page, `${vp.name} start`);
+    await page.screenshot({ path: `test-results/start-${vp.name}.png` });
+
+    // The first tap: the INSPIRE intro (its video may not play in a test browser: it then ends
+    // by itself), never any music under it; Skip ends it early.
+    await (vp.hasTouch ? page.locator('#start-button').tap() : page.click('#start-button'));
+    const during = await page.evaluate(() => [document.body.dataset.activeScreen, window.__GRIDLOCK__.audio().music.theme]);
+    // (A test browser without H.264 ends the intro at once, straight to the menu.)
+    if (during[0] === 'intro') assert.equal(during[1], null, 'no music during the intro');
+    else assert.equal(during[0], 'title');
+    assert.equal(await page.getAttribute('#intro-video', 'src'), 'assets/media/inspiresoftwareintro.mp4');
+    await page.waitForTimeout(600); // past the guard that keeps the start tap from skipping it
+    if (await screen() === 'intro') await page.click('#intro-skip');
+    await page.waitForFunction(() => document.body.dataset.activeScreen === 'title', null, { timeout: 16_000 });
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.setupPreset), 'solo', 'focus lands on Play Solo');
+    assert.equal(await logoLoaded('title'), true, 'INSPIRE logo on the main menu');
+    for (const name of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game']) {
+      const box = await page.getByRole('button', { name: new RegExp(`^${name.replace('/', '\\/')}`) }).boundingBox();
+      assert.ok(box.y >= 0 && box.y + box.height <= vp.height, `${name} is on screen`);
+    }
+    await noHorizontalScroll(page, `${vp.name} title`);
+    assert.equal(await theme('menu'), 'menu', 'the menu theme on the main menu');
+
+    // Music by scene: gameplay theme in play, the menu theme in the pause menu, and back.
+    await page.click('[data-setup-preset="solo"]');
+    await page.click('#setup-start');
+    assert.equal(await theme('game'), 'game');
+    await page.click('#game-menu-btn');
+    assert.equal(await theme('menu'), 'menu', 'pause menu: the menu theme');
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    assert.equal(await theme('game'), 'game');
+    const volumes = await page.evaluate(() => window.__GRIDLOCK__.audio().levels);
+    assert.ok(volumes.music > 0 && volumes.music < volumes.sfx, 'music sits under the effects');
+
+    // Music switch in Settings (saved), and a reload in the same session skips the start screen.
+    await page.click('#game-menu-btn');
+    await page.click('#pause-dialog [data-dialog-action="save-quit"]');
+    assert.equal(await screen(), 'title');
+    assert.equal(await theme('menu'), 'menu', 'back on the menu: the menu theme');
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await screen(), 'title', 'a reload in the same session goes straight to the menu');
+    await page.click('[data-screen="title"] [data-nav="settings"]');
+    assert.equal(await page.isChecked('#settings-form [name="music"]'), true);
+    await page.locator('#settings-form [name="music"]').evaluate((el) => el.closest('label').click());
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).music), false);
+    assert.equal(await theme(null), null, 'Music off');
+    assert.equal(await page.locator('#settings-form [name="musicVolume"]').isDisabled(), true);
+
+    // The media are served (and precached for offline play).
+    for (const file of ['assets/media/cardboard-city.mp3', 'assets/media/paper-blocks.mp3', 'assets/media/inspiresoftwareintro.mp4', 'assets/media/inspire.png']) {
+      const status = await page.evaluate((url) => fetch(url, { method: 'HEAD' }).then((r) => r.status), file);
+      assert.equal(status, 200, `${file} served`);
+    }
+    assert.deepEqual(errors, []);
+    console.log(`✔ ${vp.name}: start screen → INSPIRE intro → menu, INSPIRE logo, downtown, music by scene, Music setting`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ ${vp.name} start/intro/music: ${err.message}`);
+    await page.screenshot({ path: `test-results/start-${vp.name}-FAIL.png` }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Keyboard: Enter starts (and never also presses the menu button that gets focus); Escape skips the intro.
+{
+  const context = await browser.newContext({ freshStart: true, viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    if (await page.evaluate(() => document.body.dataset.activeScreen) === 'intro') await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.body.dataset.activeScreen === 'title', null, { timeout: 16_000 });
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => document.body.dataset.activeScreen), 'title', 'still on the menu: the start key did not press Play Solo');
+    assert.deepEqual(errors, []);
+    console.log('✔ keyboard: Enter starts, Escape skips the intro, no click-through');
+  } catch (err) {
+    failures++;
+    console.error(`✘ keyboard start: ${err.message}`);
   } finally {
     await context.close();
   }
