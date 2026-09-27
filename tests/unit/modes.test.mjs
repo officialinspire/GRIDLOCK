@@ -17,6 +17,9 @@ const memoryStorage = () => {
 /**
  * Recorded with the same driver against the code before rule presets existed (V1.1,
  * commit 7cbd186): the round each city event started and the final City Values.
+ * The driver only ever builds Residential, so these still hold after the V1.2 balance
+ * pass (which changed Park, Civic and Landmark income only): the preset system itself
+ * must not change a single roll or dollar.
  */
 const V11_GOLDEN = [
   { seed: 2024, n: 4, rounds: 13, events: ['6:housing-boom', '7:snowstorm', '8:beautification-grant', '11:heavy-rain', '12:power-outage'],
@@ -51,7 +54,7 @@ test('the mode and its rules are stored on the game', () => {
   assert.equal(createGame({ ...table(3), seed: 1 }).mode, 'standard', 'default');
 });
 
-test('STANDARD reproduces the V1.1 rules exactly (4-, 3- and 2-player games)', () => {
+test('STANDARD replays the recorded V1.1 games exactly (4-, 3- and 2-player games)', () => {
   for (const golden of V11_GOLDEN) {
     for (const mode of [undefined, 'standard']) {
       const run = playthrough(api, { ...table(golden.n), seed: golden.seed, mode });

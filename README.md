@@ -4,7 +4,23 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
+**V1.2:** installable offline play, a richer sound and haptics layer, a first-game tutorial, rule presets, career statistics and achievements, strategic forecasts, replayable cities with challenge links, and a simulation-backed balance pass (see the release notes below).
+
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.2 release notes
+
+- **Installable offline app (PWA):** a manifest and icons made from the game's art; a service worker that caches every game file under a content-hash version; full offline play, including autosave; updates install only when the player chooses, never mid-game; works under the GitHub Pages `/GRIDLOCK/` subpath.
+- **Audio:** an audio manager with master, effects and ambience volume and mute, distinct synthesized sounds, rising pitch on capture chains, procedural city ambience, and fades. Nothing plays before the first tap or keypress.
+- **Touch:** optional haptics, a guard against accidental double-tap purchases, larger tap targets, and finger-vs-mouse behaviour on touchscreen laptops.
+- **First-game tutorial:** eight skippable sticky-note tips shown in context, replayable from How To Play or Settings.
+- **Rule presets:** Standard, Classic (no events) and Urban Chaos (an event every round), for 2–4 players, kept by autosave.
+- **Career:** a Statistics screen with per-mayor records and 12 achievement badges; only genuinely completed matches count.
+- **Strategic forecasts:** the Build panel and inspector show cost, income, upkeep, net per turn, City Value change, event modifiers and the bonuses a build would activate, computed by running the real transaction on a copy of the game.
+- **Replayable cities:** a city seed on New Game, the seed shown in the pause menu and on the results screen, Replay Same City, and Copy Challenge Link (`?seed=&mode=&seats=`).
+- **Balance pass:** Park income $100 → $150, Civic $250 → $325, Landmark $700 → $850. Before this, upgrading a Park or Civic building to Level 3 lost money every turn, and Landmark paid back more slowly than Industrial at every level. See *Balance simulation* for the evidence. Residential, Commercial, Industrial, scoring and events are unchanged, and the recorded V1.1 games still replay exactly.
+- **Balance simulator:** `npm run simulate` plays hundreds of complete games through the real rules and reports game length, bankruptcies, builds, final spread, events, win rate by seat and capture chains.
+- **Accessibility audit** in the browser tests on every screen and dialog: every control has an accessible name, label references resolve, ids are unique, open dialogs are labelled, and nothing animates under reduced motion (the system preference or the in-app setting).
 
 ### V1.1 release notes
 
@@ -147,10 +163,10 @@ A captured block starts **Vacant, Level 0** (no income). On their own turn, the 
 | --- | --- | --- | --- | --- |
 | Residential | $1,000 | $300 | $1,500 / $600 | $2,000 / $900 |
 | Commercial | $1,500 | $500 | $2,250 / $1,000 | $3,000 / $1,500 |
-| Park | $800 | $100 | $1,200 / $200 | $1,600 / $300 |
-| Civic | $2,000 | $250 | $3,000 / $500 | $4,000 / $750 |
+| Park | $800 | $150 | $1,200 / $300 | $1,600 / $450 |
+| Civic | $2,000 | $325 | $3,000 / $650 | $4,000 / $975 |
 | Industrial | $1,750 | $600 | $2,625 / $1,200 | $3,500 / $1,800 |
-| Landmark | $3,000 | $700 | $4,500 / $1,400 | $6,000 / $2,100 |
+| Landmark | $3,000 | $850 | $4,500 / $1,700 | $6,000 / $2,550 |
 
 Only Level 1 is set per category (`ECONOMY.DEVELOPMENT.CATEGORIES`). Levels 2–3 come from multipliers in `ECONOMY.DEVELOPMENT.LEVELS` (cost ×1 / ×1.5 / ×2, income ×1 / ×2 / ×3), and `core/development.js` rejects any config that produces fractional dollars. The rules:
 - Only the owner can develop, and only on their turn.
@@ -193,7 +209,7 @@ Every preset works with Standard (4) or Custom (2–4) tables. The rules in play
 
 | Preset | Rules |
 | --- | --- |
-| **Standard** | The full rules described here, identical to V1.1: roads, captures, development, and paced city events (65% chance per round, at most two at once). |
+| **Standard** | The full rules described here (V1.1 rules with the V1.2 balance pass): roads, captures, development, and paced city events (65% chance per round, at most two at once). |
 | **Classic** | Roads, captures and development only. City events never happen (no draws and no "calm round" notes). |
 | **Urban Chaos** | A new city event every round from round 2, each lasting one round longer than usual, with up to three at once. |
 
@@ -258,6 +274,47 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
   - `ownershipProblems(game)` checks that every owner exists and every abandoned block is ownerless.
 
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
+
+## Balance simulation
+
+`npm run simulate -- [--games 600] [--seed 1] [--mode standard|classic|chaos|all] [--json]` (`tools/simulate.mjs`) plays complete games through the real rules engine and prints a report. It is deterministic: each game's seed drives both the city events and a separate random stream for every bot decision, so the same arguments always give the same numbers (`tests/unit/simulate.test.mjs` checks this, and checks that every simulated game is legal, complete and reconciles its ledger).
+
+Tables mix four scripted mayors and rotate them through every seating order:
+
+| Mayor | Roads | Money |
+| --- | --- | --- |
+| **planner** | Takes captures, avoids giving blocks away, and when forced, gives away the shortest chain | Builds or upgrades by forecast: the real transaction's net income per turn × turns left + its City Value change |
+| **casual** | Mostly safe roads, with the odd blunder | Builds a random affordable category on most captures; upgrades now and then |
+| **saver** | Same as the planner | Never builds |
+| **spender** | Same as the planner | Spends every dollar on the highest-income build or upgrade, keeping no reserve |
+
+**V1.2 results** (600 games per preset, seed 1, with the balance pass):
+
+| | Standard | Classic | Urban Chaos |
+| --- | --- | --- | --- |
+| Rounds per game | 16.7 (13–27) | 16.7 | 16.7 |
+| Games with a bankruptcy | 0% | 0% | 0% |
+| Events per game (per round) | 10.2 (0.65) | 0 | 15.7 (1.0) |
+| Planner builds: residential / commercial / park / civic / industrial / landmark | 23 / 9 / 19 / 4 / 20 / 26% | 21 / 10 / 8 / 4 / 29 / 29% | 22 / 8 / 28 / 5 / 13 / 24% |
+| Final City Value, mean (sd) | $30,492 ($12,604) | $30,563 ($12,629) | $30,483 ($12,592) |
+| Gap between first and last place, median | 54% | 53% | 54% |
+| Longest capture chain per game, median (max) | 13 (31) | 13 (31) | 13 (31) |
+
+**What changed, and why.** The only balance fix is to three incomes, because the per-level numbers showed traps:
+
+| Level step | Park before → after | Civic before → after | Landmark before → after |
+| --- | --- | --- | --- |
+| Extra income vs extra upkeep at Level 3 | +$100 vs $112 → +$150 vs $112 | +$250 vs $280 → +$325 vs $280 | +$700 vs $420 → +$850 vs $420 |
+| Turns for Level 1 to pay back its scoring discount | 4.5 → 2.1 | 4.5 → 2.7 | 1.5 → 1.2 (Industrial: 0.9) |
+
+Before the fix, Park and Civic Level 3 upgrades lost money every turn, and Level 2 took about 19 turns to pay back (a whole game is about 17 rounds). Landmark paid back more slowly than Industrial at every level, so the planner only chose it during a City Festival. Over 2,000 Standard games, the planner's Landmark share rose from 13% to 27% and Industrial fell from 32% to 19%. Win rates, spread, game length and bankruptcies did not move. A unit test now requires every build and upgrade step to earn more per turn than the upkeep it adds.
+
+**Known characteristics (not changed; each would need a rule decision):**
+
+- **Captures come late.** With sensible road play, 98% of blocks are claimed in the second half of the game (55% in the last quarter), and a captured block usually pays income only once. So development matters far less than capturing: the saver and the planner finish within about 2% of each other (over 2,000 Standard games, 2 players: planner 48.5% / saver 51.5% wins). Making development decisive would need a rule change, such as paying income as soon as a block is built, or scoring buildings at full cost. The simulator can measure either option before it's adopted.
+- **Turn order matters.** At a table of identical planners, the later seats are more often forced to open the first long chain. Win rates by seat over 2,000 Standard games: 4 players 25.5 / 33 / 24.8 / 16.8%; 3 players 38 / 42 / 20%; 2 players 53 / 47%. Seats 1–2 capture about 11 and 10 blocks per game, seats 3–4 about 7. This comes from the roads, not the money, so no economy number can fix it. Rotating the first player between games (for example on Play Again) would even it out over a series.
+- **Bankruptcy is rare.** Even the all-in spender never went bankrupt: income beats upkeep for every build, and most money is spent near the end. Distress and bankruptcy remain a safety net for unusual play (heavy Fire damage, lots of undeveloped land, $0 cash).
+- **Fire is uncommon** (about 1.5% of events). It needs developed targets, which mostly appear late, and it's skipped when none are eligible.
 
 ## Deploy to GitHub Pages
 
@@ -368,6 +425,7 @@ css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon,
 css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
 tools/build-pwa.mjs        Refreshes sw.js precache + version; --icons renders assets/icons/
+tools/simulate.mjs         Deterministic balance simulator (npm run simulate)
 assets/generated/          Build output (committed so GitHub Pages serves it)
 assets/icons/              App icons (192, 512, maskable 512, Apple touch 180) from the title logo
 assets/fonts/              Self-hosted WOFF2 fonts + their OFL licences
@@ -390,6 +448,7 @@ tests/
   unit/career.test.mjs     Genuine-match check (staged games rejected), totals, mayors, achievements, dedupe, storage, corruption
   unit/forecast.test.mjs   Forecasts = real transactions (every category, upgrades, events, bonuses, next turn's income/upkeep, 100+ mid-game positions)
   unit/challenge.test.mjs  Seed/link parsing, links never carry ?debug, Replay setup; same seed + mode + seats + moves = same events (every preset)
+  unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
@@ -440,6 +499,7 @@ npm run test:smoke:webkit
 npm run test:smoke:firefox
 npm run test:pwa               # offline/PWA check (BROWSER=chromium|webkit|firefox)
 npm run build:pwa              # after changing game files: refresh sw.js (CI checks it)
+npm run simulate               # balance report: hundreds of complete bot games (see Balance simulation)
 npm run build:icons            # re-render app icons from the logo sprite (needs Playwright)
 ```
 
@@ -452,4 +512,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. A replay run opens a challenge link (setup pre-filled, address bar cleaned, `?debug` kept), checks New Seed/Random/invalid seeds, plays an Urban Chaos city, checks the seed in the pause menu and results, copies the link (and the selectable-text fallback when the clipboard refuses), then Replay Same City with the same moves must roll the identical event sequence, Play Again must deal a new seed, and the link opened plainly must deal the same city. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. A replay run opens a challenge link (setup pre-filled, address bar cleaned, `?debug` kept), checks New Seed/Random/invalid seeds, plays an Urban Chaos city, checks the seed in the pause menu and results, copies the link (and the selectable-text fallback when the clipboard refuses), then Replay Same City with the same moves must roll the identical event sequence, Play Again must deal a new seed, and the link opened plainly must deal the same city. An accessibility audit visits every screen and the pause, capture, build and results dialogs with reduced motion on: every visible control must have an accessible name, every rendered `aria-labelledby`/`aria-describedby`/`for` reference must resolve, ids must be unique, open dialogs must be labelled, and nothing may be animating; the in-app Reduce Motion setting must also stop all animation and persist. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

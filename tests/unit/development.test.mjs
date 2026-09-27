@@ -31,14 +31,24 @@ test('Level 1 matches the category spec', () => {
   const spec = {
     residential: [1000, 300],
     commercial: [1500, 500],
-    park: [800, 100],
-    civic: [2000, 250],
+    park: [800, 150], // V1.2 balance pass: was 100 (Level 3 lost money every turn)
+    civic: [2000, 325], // V1.2: was 250 (same)
     industrial: [1750, 600],
-    landmark: [3000, 700],
+    landmark: [3000, 850], // V1.2: was 700 (paid back slower than Industrial at every level)
   };
   assert.deepEqual(Object.keys(TABLE).sort(), Object.keys(spec).sort());
   for (const [type, [cost, income]] of Object.entries(spec)) {
     assert.deepEqual(TABLE[type][1], { cost, income, invested: cost }, type);
+  }
+});
+
+test('no build or upgrade is a trap: each step earns more per turn than the upkeep it adds', () => {
+  for (const [type, rows] of Object.entries(TABLE)) {
+    for (let lv = 1; lv <= MAX_LEVEL; lv++) {
+      const extraIncome = rows[lv].income - rows[lv - 1].income;
+      const extraUpkeep = Math.round(rows[lv].cost * ECONOMY.FINANCE.UPKEEP_PERCENT / 100);
+      assert.ok(extraIncome > extraUpkeep, `${type} level ${lv}: +$${extraIncome} income vs +$${extraUpkeep} upkeep`);
+    }
   }
 });
 

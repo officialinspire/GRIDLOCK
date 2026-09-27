@@ -58,9 +58,26 @@ async function noHorizontalScroll(page, label) {
 function watchForBrowserErrors(page) {
   const errors = [];
   const optionalFont = (url) => /fonts\.(?:googleapis|gstatic)\.com/.test(url);
+  let navigations = 0;
+  const startedAt = new WeakMap();
+  const loaded = new Set();
+  const abortedErrors = new Map(); // url → error entries awaiting a successful load
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {
     const source = message.location().url ?? '';
+    // Firefox reports a load the page cancelled while the service worker was answering it as
+    // "A ServiceWorker intercepted the request and encountered an unexpected error": the same
+    // cancellation as NS_BINDING_ABORTED below, so it gets the same rule.
+    const swCancel = message.type() === 'error'
+      && message.text().match(/Failed to load ‘([^’]+)’\. A ServiceWorker intercepted the request and encountered an unexpected error/);
+    if (swCancel) {
+      const url = swCancel[1];
+      if (loaded.has(url)) return;
+      const entry = `console: ${message.text()}`;
+      errors.push(entry);
+      abortedErrors.set(url, [...(abortedErrors.get(url) ?? []), entry]);
+      return;
+    }
     if (message.type() === 'error' && !optionalFont(source)) errors.push(`console: ${message.text()}`);
     if (message.type() === 'warning' && /\[assets\]/.test(message.text())) errors.push(`asset warning: ${message.text()}`);
   });
@@ -71,10 +88,6 @@ function watchForBrowserErrors(page) {
   // Likewise, the browser may cancel an in-flight image a style no longer needs (e.g. on a screen
   // switch); Firefox reports these as NS_BINDING_ABORTED. Only a file that never loads is an asset
   // failure, so an abort is dropped once the same URL loads successfully (before or after).
-  let navigations = 0;
-  const startedAt = new WeakMap();
-  const loaded = new Set();
-  const abortedErrors = new Map(); // url → error entries awaiting a successful load
   page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) navigations++; });
   page.on('request', (request) => startedAt.set(request, navigations));
   page.on('requestfailed', (request) => {
@@ -1514,6 +1527,125 @@ const recordVibration = () => {
     failures++;
     console.error(`✘ replayable cities: ${err.message}`);
     await page.screenshot({ path: 'test-results/replay-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Accessibility audit (no extra dependencies): on every screen and dialog, each visible control
+// has an accessible name, every id reference resolves, ids are unique, and open dialogs are
+// labelled. Reduced motion (OS preference or the in-app setting) leaves nothing animating.
+{
+  const audit = (page, label) => page.evaluate((where) => {
+    const problems = [];
+    const visible = (el) => el.checkVisibility ? el.checkVisibility() : el.offsetParent !== null;
+    const text = (id) => document.getElementById(id)?.textContent.trim() ?? '';
+    const name = (el) => {
+      if (el.getAttribute('aria-labelledby')) return el.getAttribute('aria-labelledby').split(/\s+/).map(text).join(' ').trim();
+      if (el.getAttribute('aria-label')?.trim()) return el.getAttribute('aria-label').trim();
+      if (el.labels?.length) return [...el.labels].map((l) => l.textContent.trim()).join(' ').trim();
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) && el.type !== 'button' && el.type !== 'submit') return el.title?.trim() ?? '';
+      return (el.textContent.trim() || el.title?.trim() || el.querySelector('img[alt]')?.alt || el.value || '').trim();
+    };
+    const controls = document.querySelectorAll('button, a[href], [role="button"], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])');
+    for (const el of controls) {
+      if (!visible(el)) continue;
+      if (!name(el)) problems.push(`${where}: unnamed ${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${el.className ? `.${String(el.className).split(' ')[0]}` : ''}`);
+    }
+    const ids = new Map();
+    for (const el of document.querySelectorAll('[id]')) ids.set(el.id, (ids.get(el.id) ?? 0) + 1);
+    for (const [id, n] of ids) if (n > 1) problems.push(`${where}: duplicate id #${id}`);
+    for (const attr of ['aria-labelledby', 'aria-describedby', 'aria-controls', 'for']) {
+      for (const el of document.querySelectorAll(`[${attr}]`)) {
+        // Closed dialogs fill in their titles when opened; only what's rendered is exposed.
+        if (!(el.matches('dialog[open]') || (el.tagName !== 'DIALOG' && visible(el)))) continue;
+        for (const ref of el.getAttribute(attr).split(/\s+/).filter(Boolean)) {
+          if (!document.getElementById(ref)) problems.push(`${where}: ${attr}="${ref}" points nowhere`);
+        }
+      }
+    }
+    for (const dialog of document.querySelectorAll('dialog[open]')) {
+      const labelled = dialog.getAttribute('aria-label') || (dialog.getAttribute('aria-labelledby') && name(dialog));
+      if (!labelled) problems.push(`${where}: open dialog #${dialog.id} has no label`);
+    }
+    return problems;
+  }, label);
+  const stillMoving = (page) => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === 'running' && !(a.effect?.getTiming().duration === 0)).map((a) => a.animationName ?? a.transitionProperty ?? 'animation'));
+
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const problems = [];
+  const check = async (label) => {
+    problems.push(...await audit(page, label));
+    const moving = await stillMoving(page);
+    if (moving.length) problems.push(`${label}: animating under reduced motion (${moving.join(', ')})`);
+  };
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await check('title');
+    for (const [nav, label] of [['howto', 'how to play'], ['settings', 'settings'], ['stats', 'statistics']]) {
+      await page.click(`[data-screen="title"] [data-nav="${nav}"]`);
+      await check(label);
+      await page.click(`[data-screen="${nav}"] [data-nav="back"]`);
+    }
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await check('setup');
+    await page.click('#setup-start');
+    await check('game');
+    await page.click('#game-menu-btn');
+    await check('pause');
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    await page.click('#board [data-road="h-0-0"]');
+    await page.click('#board [data-road="v-0-0"]');
+    await page.click('#board [data-road="h-1-0"]');
+    await page.click('#board [data-road="v-0-1"]'); // P4 closes A1
+    await page.locator('#capture-choice-dialog').waitFor({ state: 'visible' });
+    await check('capture choice');
+    await page.click('[data-capture-choice="develop"]');
+    await check('build panel');
+    await page.locator('#build-dialog [data-build="residential"]').click();
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('./js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await page.click(`#board [data-road="${last}"]`);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await check('results');
+    assert.deepEqual(problems, [], 'accessibility problems');
+
+    // The in-app Reduced Motion setting works without the OS preference.
+    const full = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await full.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    const p2 = await full.newPage();
+    await p2.goto(base, { waitUntil: 'networkidle' });
+    await p2.click('[data-screen="title"] [data-nav="settings"]');
+    await p2.locator('label:has([name="reducedMotion"])').click();
+    assert.equal(await p2.evaluate(() => document.documentElement.dataset.motion), 'reduced');
+    await p2.click('[data-screen="settings"] [data-nav="back"]');
+    assert.deepEqual(await stillMoving(p2), [], 'nothing animates with the Reduced Motion setting on');
+    await p2.reload({ waitUntil: 'networkidle' });
+    assert.equal(await p2.evaluate(() => document.documentElement.dataset.motion), 'reduced', 'setting persists');
+    await full.close();
+    assert.deepEqual(errors, []);
+    console.log('✔ accessibility: named controls, valid references, labelled dialogs on every screen; reduced motion (OS + setting)');
+  } catch (err) {
+    failures++;
+    console.error(`✘ accessibility: ${err.message}`);
+    await page.screenshot({ path: 'test-results/a11y-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }

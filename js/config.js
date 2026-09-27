@@ -67,10 +67,10 @@ export const ECONOMY = Object.freeze({
     CATEGORIES: Object.freeze({
       residential: Object.freeze({ cost: 1000, income: 300 }),
       commercial: Object.freeze({ cost: 1500, income: 500 }),
-      park: Object.freeze({ cost: 800, income: 100 }),
-      civic: Object.freeze({ cost: 2000, income: 250 }),
+      park: Object.freeze({ cost: 800, income: 150 }),
+      civic: Object.freeze({ cost: 2000, income: 325 }),
       industrial: Object.freeze({ cost: 1750, income: 600 }),
-      landmark: Object.freeze({ cost: 3000, income: 700 }),
+      landmark: Object.freeze({ cost: 3000, income: 850 }),
     }),
 
     /**
