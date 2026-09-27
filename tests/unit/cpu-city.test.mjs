@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseCityAction, applyCityAction, CITY_REASONS } from '../../js/core/cpu/city.js';
 import { chooseRoad } from '../../js/core/cpu/roads.js';
-import { CPU } from '../../js/config.js';
+import { CPU, ECONOMY } from '../../js/config.js';
 import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, TURN_PHASES } from '../../js/core/game.js';
 import { getBlock, getBlockById, allRoadIds } from '../../js/core/board.js';
 import { applyDevelopment } from '../../js/core/development.js';
@@ -254,4 +254,58 @@ test('stronger difficulties build better cities: Hard and Normal out-score Easy'
   }
   assert.ok(totals.normal > totals.easy, `Normal $${totals.normal} v Easy $${totals.easy}`);
   assert.ok(totals.hard > totals.easy, `Hard $${totals.hard} v Easy $${totals.easy}`);
+});
+
+/* ---------------- redevelopment bidding ---------------- */
+
+/** A 3-seat table (1 human, 2 CPU) with an abandoned downtown Commercial that seat 3 walked away from. */
+function abandonedTable({ cash } = {}) {
+  const game = createGame({
+    seats: [{ seat: 1 }, { seat: 2, controller: 'cpu', difficulty: 'hard' }, { seat: 3, controller: 'cpu', difficulty: 'normal' }],
+    seed: 5, eventPool: [],
+  });
+  const b = getBlockById(game.board, 'r2c2');
+  applyDevelopment(b, 'commercial', 1);
+  Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 3 });
+  refreshBonuses(game.board);
+  if (cash != null) for (const p of game.players) p.cash = cash;
+  return game;
+}
+
+test('sealed bids: at least the reserve, in whole increments, within cash minus the reserve kept', async () => {
+  const { chooseRedevelopmentBid, cpuBids } = await import('../../js/core/cpu/city.js');
+  const { quoteRedevelopment } = await import('../../js/core/finance.js');
+  const game = abandonedTable();
+  const { reserve: price } = quoteRedevelopment(game, 'r2c2', 'restore');
+  const hard = chooseRedevelopmentBid(game, 2, 'r2c2', 'restore');
+  const normal = chooseRedevelopmentBid(game, 2, 'r2c2', 'restore', { difficulty: 'normal' });
+  for (const bid of [hard, normal]) {
+    assert.ok(bid >= price, 'meets the reserve price');
+    assert.equal((bid - price) % ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT, 0, 'whole increments');
+    assert.ok(bid <= getPlayer(game, 2).cash - CPU.RESERVE.hard);
+  }
+  assert.ok(hard >= normal, 'Hard bids closer to what the lot is worth');
+  assert.equal(chooseRedevelopmentBid(game, 3, 'r2c2', 'restore'), null, 'a former owner can\'t bid');
+  assert.equal(chooseRedevelopmentBid(abandonedTable({ cash: 2500 }), 2, 'r2c2', 'restore'), null, 'can\'t pay and keep its reserve');
+  assert.deepEqual(cpuBids(game, 'r2c2', 'restore').map((b) => b.seat), [2], 'only eligible CPU seats bid');
+  assert.equal(JSON.stringify(game), JSON.stringify(abandonedTable()), 'bidding changes nothing');
+});
+
+test('a CPU mayor opens bidding on a lot worth having, and the sealed bids settle it', async () => {
+  const game = abandonedTable();
+  placeRoad(game, 'h-0-0'); // seat 1 → the Hard bot's Manage City
+  assert.equal(currentPlayer(game).seat, 2);
+  const d = chooseCityAction(game);
+  assert.deepEqual([d.action, d.blockId, d.mode], ['redevelop', 'r2c2', 'restore']);
+  // A person outbids it: the highest sealed bid wins.
+  const outbid = structuredClone(game);
+  const r = applyCityAction(outbid, { ...d, humanBids: [{ seat: 1, bid: 9000 }] });
+  assert.equal(r.winnerSeat, 1);
+  // Nobody else bids: the bot wins at its own bid, paid through the real auction.
+  const cash = currentPlayer(game).cash;
+  const won = applyCityAction(game, d);
+  assert.equal(won.winnerSeat, 2);
+  assert.equal(getBlockById(game.board, 'r2c2').ownerSeat, 2);
+  assert.equal(currentPlayer(game).cash, cash - won.cost);
+  assert.ok(currentPlayer(game).cash >= CPU.RESERVE.hard);
 });

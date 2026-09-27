@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   reducedMotion: false,
   showCoords: false,
   quickHandoff: false,
+  cpuSpeed: 'normal', // how long CPU mayors pause before each move: relaxed | normal | fast
 });
 
 /**
@@ -145,6 +146,8 @@ export const ECONOMY = Object.freeze({
  * event effect the CPU weighs comes from the real economy through core/forecast.js.
  */
 export const CPU = Object.freeze({
+  /** Pause before each CPU move, by the cpuSpeed setting, so people can follow along (ms). */
+  THINK_MS: Object.freeze({ relaxed: 1100, normal: 650, fast: 220 }),
   /** Cash a CPU mayor keeps in hand after any purchase (a table can pass its own). */
   RESERVE: Object.freeze({ easy: 300, normal: 1000, hard: 1000 }),
   /** Easy: chance to develop a block it just captured (when something sensible is affordable)… */

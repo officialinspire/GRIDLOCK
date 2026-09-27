@@ -35,6 +35,14 @@ import { modifierText } from './forecastView.js';
 import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
+import { isCpu } from '../core/seats.js';
+import { chooseRoad } from '../core/cpu/roads.js';
+import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
+import { buildOnBlock, upgradeBlock } from '../core/development.js';
+import {
+  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers,
+} from '../core/finance.js';
+import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -44,6 +52,8 @@ let armHintShown = false;
 let game = null;
 let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
+let lastHuman = null; // seat of the last person to have the device (for handoffs)
+let cpuAuction = null; // { blockId, mode } while people bid in an auction a CPU mayor opened
 
 export const getGame = () => game;
 
@@ -145,14 +155,15 @@ function showResults() {
 
 function renderActions() {
   $('#action-results').hidden = !(game && game.phase === PHASES.ENDED);
+  const cpuTurn = isCpuTurn(game);
   const distress = Boolean(game && game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game)));
-  $('#action-finance').hidden = !distress;
+  $('#action-finance').hidden = !distress || cpuTurn;
   const build = $('#action-build');
-  const manageable = game && canManage(game, getSelectedBlock());
+  const manageable = game && !cpuTurn && canManage(game, getSelectedBlock());
   build.disabled = !manageable;
   build.title = manageable ? 'Develop the selected block' : 'Select one of your blocks to develop it';
   const pave = $('#action-pave');
-  pave.hidden = !(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY);
+  pave.hidden = !(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY) || cpuTurn;
   pave.disabled = distress;
 }
 
@@ -164,18 +175,20 @@ function render() {
   renderEventStrip(game);
   renderActions();
   updateTutorial();
+  kickCpu();
 }
 
 /** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
 function handleDevelopment(change) {
   const { bonusBefore } = change;
+  if (change.winnerSeat != null) cpuAuction = null; // people settled the CPU's auction in the panel
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
   // Sales/downgrades pay a refund; Level 2–3 is an upgrade; anything else is new construction.
   const kind = change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build';
   play(kind);
-  if (kind !== 'coins') buzz(kind);
+  if (kind !== 'coins' && !change.cpu) buzz(kind);
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
@@ -185,7 +198,8 @@ function handleDevelopment(change) {
 
 function showCaptureChoice() {
   const dialog = $('#capture-choice-dialog');
-  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP) {
+  // CPU mayors make this choice themselves (cpuStep); people get the dialog.
+  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
     if (dialog.open) dialog.close();
     render();
     return;
@@ -199,7 +213,18 @@ function showCaptureChoice() {
 }
 
 let handoffReady = null;
+/**
+ * The pass-the-device screen is for people: it shows only when control reaches a person other
+ * than the last one who played (never before or after a CPU seat, never in a one-person game).
+ * An all-human table therefore gets it on every change of turn, as always.
+ */
+function needsHandoff(next) {
+  const humans = game.players.filter((p) => !isCpu(p)).length;
+  return !isCpu(next) && humans >= 2 && next.seat !== lastHuman;
+}
+
 function showHandoff(player, onReady) {
+  lastHuman = player.seat;
   if (getSettings().quickHandoff) return onReady();
   const dialog = $('#handoff-dialog');
   dialog.style.setProperty('--player', player.hex);
@@ -211,6 +236,8 @@ function showHandoff(player, onReady) {
 }
 
 function leaveCapturedBlock(blockId) {
+  // People leaving an auction a CPU mayor opened are passing: the CPU bids decide it.
+  if (cpuAuction?.blockId === blockId) return settleCpuAuction();
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
   resolveCapture(game, blockId);
   autosave();
@@ -221,7 +248,7 @@ function handleBlockSelect(id) {
   renderInspector(id);
   renderActions();
   if (!id || !game) return;
-  if (openBuildPanel(game, id)) return;
+  if (!isCpuTurn() && openBuildPanel(game, id)) return;
   // Compact (portrait) layouts hide the side inspector: show the same details in a bottom sheet.
   if (isCompact()) {
     renderInspector(id, $('#info-body'));
@@ -307,6 +334,7 @@ const REJECT_MESSAGES = {
 /** Opens the distress panel for the current player, after any event card is dismissed. */
 function checkDistress() {
   if (!game || game.phase !== PHASES.PLAYING || !isInDistress(currentPlayer(game))) return;
+  if (isCpuTurn()) return; // CPU mayors sell or declare themselves (cpuStep)
   const eventCard = $('#event-dialog');
   if (eventCard.open) {
     eventCard.addEventListener('close', () => openDistressPanel(game), { once: true });
@@ -315,9 +343,14 @@ function checkDistress() {
   }
 }
 
-function handleRoad(id) {
+function handleRoad(id, { cpu = false } = {}) {
   if (!game) return;
   const mover = currentPlayer(game);
+  if (isCpu(mover) && !cpu) {
+    toast(`${mover.name} is playing. Your turn is coming.`, { duration: 1600 });
+    return;
+  }
+  if (!isCpu(mover)) lastHuman = mover.seat;
   const result = placeRoad(game, id);
 
   if (!result.ok) {
@@ -329,13 +362,13 @@ function handleRoad(id) {
     return;
   }
 
-  tutorialMove();
+  if (!cpu) tutorialMove();
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
   renderChain();
   play(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
-  buzz(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
+  if (!cpu) buzz(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
 
   if (n > 0) {
     flashFrame();
@@ -344,6 +377,7 @@ function handleRoad(id) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
+    stopCpu();
     $('#board-frame').classList.add('is-city-complete');
     // Career stats/achievements: counted only if this match was genuinely played to the end.
     recordFinishedMatch(game);
@@ -378,8 +412,8 @@ function handleRoad(id) {
     if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
       if (paid > 0 && !result.event?.started) play('coins');
       showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
-      tutorialMoment('income');
       const payee = getPlayer(game, result.turnIncome.seat);
+      if (!isCpu(payee)) tutorialMoment('income');
       const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
         repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
       toast(`${payee.name}: ${parts.join(', ')}`, {
@@ -389,8 +423,99 @@ function handleRoad(id) {
     checkDistress();
     bus.emit('game:move', result);
   };
-  if (result.turnIncome && result.turnIncome.seat !== mover.seat) showHandoff(currentPlayer(game), finishTransition);
-  else finishTransition();
+  const next = currentPlayer(game);
+  if (result.turnIncome && result.turnIncome.seat !== mover.seat && needsHandoff(next)) showHandoff(next, finishTransition);
+  else {
+    if (!isCpu(next)) lastHuman = next.seat;
+    finishTransition();
+  }
+}
+
+/* ---------------- CPU turns ---------------- */
+
+const bonusTotal = (seat) => game.board.blocks.filter((b) => b.ownerSeat === seat).reduce((s, b) => s + bonusIncome(b), 0);
+
+/** Settles an auction a CPU mayor opened: CPU sealed bids plus whatever people entered (none if they left). */
+function settleCpuAuction(humanBids = []) {
+  if (!cpuAuction || !game) return;
+  const { blockId, mode } = cpuAuction;
+  cpuAuction = null;
+  const result = resolveRedevelopmentAuction(game, blockId, mode, [...cpuBids(game, blockId, mode), ...humanBids]);
+  if (result.ok) {
+    toast(`${getPlayer(game, result.winnerSeat).name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
+    play('coins');
+  }
+  autosave();
+  render();
+}
+
+/**
+ * One CPU step: a decision from core/cpu, played through the same handlers and core actions
+ * a person's clicks use (placeRoad via handleRoad, buildOnBlock/upgradeBlock via
+ * handleDevelopment, resolveCapture, downgrade/sale, bankruptcy, the redevelopment auction).
+ */
+function cpuStep(g) {
+  const me = currentPlayer(g);
+  if (g.turnPhase === TURN_PHASES.PAVE_ROAD || g.turnPhase === TURN_PHASES.BONUS_ROAD) {
+    const d = chooseRoad(g);
+    if (d.road) handleRoad(d.road, { cpu: true });
+    return;
+  }
+  const d = chooseCityAction(g);
+  const label = (id) => getBlockById(g.board, id).label;
+  switch (d.action) {
+    case 'pave':
+      if (startPaving(g)) {
+        autosave();
+        render();
+      }
+      return;
+    case 'build':
+    case 'upgrade': {
+      const bonusBefore = bonusTotal(me.seat);
+      const result = d.action === 'build' ? buildOnBlock(g, d.blockId, d.type) : upgradeBlock(g, d.blockId);
+      if (!result.ok) return render();
+      toast(`${me.name} ${d.action === 'build' ? 'builds' : 'upgrades to'} ${describeDevelopment(getBlockById(g.board, result.block))} on ${label(result.block)} · −${formatCash(result.cost)}`, { tone: 'success' });
+      handleDevelopment({ ...result, bonusBefore, cpu: true });
+      return;
+    }
+    case 'vacant':
+      toast(`${me.name} leaves ${label(d.blockId)} vacant`);
+      leaveCapturedBlock(d.blockId);
+      return;
+    case 'downgrade':
+    case 'sell': {
+      const result = (d.action === 'sell' ? sellDevelopment : downgradeBlock)(g, d.blockId);
+      if (result.ok) toast(`${me.name} ${d.action === 'sell' ? 'sells' : 'downgrades'} ${label(d.blockId)} to pay debts · +${formatCash(result.refund)}`, { tone: 'warn' });
+      autosave();
+      render();
+      return;
+    }
+    case 'bankruptcy': {
+      const result = declareBankruptcy(g);
+      if (result.ok) toast(`${me.name} declares bankruptcy: ${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned`, { tone: 'warn', duration: 3200 });
+      autosave();
+      render();
+      return;
+    }
+    case 'redevelop': {
+      cpuAuction = { blockId: d.blockId, mode: d.mode };
+      const block = getBlockById(g.board, d.blockId);
+      const people = eligibleRedevelopers(g, block).filter((p) => !isCpu(p));
+      toast(`${me.name} opens bidding on abandoned Block ${block.label}`);
+      // People at the table may bid (sealed, in the auction panel); otherwise it settles at once.
+      if (people.length && openBuildPanel(g, d.blockId)) return;
+      settleCpuAuction();
+      return;
+    }
+    default:
+      render();
+  }
+}
+
+/** The CPU may act only when nothing else needs the table. */
+function cpuCanAct() {
+  return Boolean(game) && document.body.dataset.activeScreen === 'game' && !document.querySelector('dialog[open]');
 }
 
 function startGame(setup) {
@@ -401,11 +526,14 @@ function startGame(setup) {
   disarm();
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
+  stopCpu();
+  cpuAuction = null;
   lastSetup = setup;
   clearActiveGame();
   tutorialNewGame();
   // setup.seed (from the seed box, a challenge link or Replay Same City) deals a specific city; none = random.
   game = createGame(setup);
+  lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
   $('#board-frame').classList.remove('is-city-complete');
   chain = 0;
   renderChain();
@@ -417,6 +545,8 @@ function startGame(setup) {
 }
 
 function leaveForTitle() {
+  stopCpu();
+  cpuAuction = null;
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
@@ -443,8 +573,11 @@ function continueGame(saved = loadActiveGame()) {
   clearToasts();
   disarm();
   clearSelection();
+  stopCpu();
+  cpuAuction = null;
   game = saved.game;
   lastSetup = saved.setup;
+  lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
   chain = 0;
   renderChain();
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
@@ -549,6 +682,16 @@ export function initGameView() {
     ready?.();
   });
   initDialogs();
+  initCpuDriver({
+    getGame: () => game,
+    canAct: cpuCanAct,
+    step: cpuStep,
+    getSettings,
+    setSpeed: (cpuSpeed) => updateSettings({ cpuSpeed }),
+  });
+  bus.on('screen:shown', () => kickCpu());
+  // However people close an auction a CPU opened (Leave it, backdrop, Escape), it still settles.
+  $('#build-dialog').addEventListener('close', () => settleCpuAuction());
   initTutorial({ getGame: () => game });
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });

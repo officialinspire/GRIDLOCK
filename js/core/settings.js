@@ -5,8 +5,10 @@ const KEY = 'gridlock.settings.v1';
 
 export const BOOLEAN_SETTINGS = Object.freeze(['sound', 'ambience', 'confirmTaps', 'haptics', 'reducedMotion', 'showCoords', 'quickHandoff']);
 export const VOLUME_SETTINGS = Object.freeze(['masterVolume', 'sfxVolume', 'ambienceVolume']);
+/** Settings that take one of a fixed set of values. */
+export const CHOICE_SETTINGS = Object.freeze({ cpuSpeed: Object.freeze(['relaxed', 'normal', 'fast']) });
 
-/** Fills gaps with defaults (older saves keep working), keeps booleans, clamps volumes to whole 0–100. */
+/** Fills gaps with defaults (older saves keep working), keeps booleans, clamps volumes to whole 0–100, keeps known choices. */
 export function normalizeSettings(raw) {
   const out = { ...DEFAULT_SETTINGS };
   if (!raw || typeof raw !== 'object') return out;
@@ -16,6 +18,9 @@ export function normalizeSettings(raw) {
   for (const key of VOLUME_SETTINGS) {
     const value = typeof raw[key] === 'string' && raw[key].trim() !== '' ? Number(raw[key]) : raw[key];
     if (typeof value === 'number' && Number.isFinite(value)) out[key] = Math.round(Math.min(100, Math.max(0, value)));
+  }
+  for (const [key, choices] of Object.entries(CHOICE_SETTINGS)) {
+    if (choices.includes(raw[key])) out[key] = raw[key];
   }
   return out;
 }

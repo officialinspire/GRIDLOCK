@@ -5,8 +5,9 @@
  * Status: 'new' (never started) → 'active' (first New Game, or Replay) →
  * 'done' (every tip seen) or 'skipped'. Only 'done'/'skipped' stop the tips.
  */
-import { PHASES, TURN_PHASES, roadsBuilt } from './game.js';
+import { PHASES, TURN_PHASES, roadsBuilt, currentPlayer } from './game.js';
 import { builtSides, totalRoads } from './board.js';
+import { isCpu } from './seats.js';
 
 export const TUTORIAL_KEY = 'gridlock.tutorial.v1';
 
@@ -83,6 +84,7 @@ export function tipForGame(state, game) {
   if (!isRunning(state) || !game) return null;
   const unseen = (id) => !state.seen.includes(id);
   if (game.phase === PHASES.ENDED) return null; // the results screen raises 'scoring' as a moment
+  if (isCpu(currentPlayer(game))) return null; // tips are for people: CPU turns show none
   const phase = game.turnPhase;
   const choosing = phase === TURN_PHASES.MANAGE_CITY || phase === TURN_PHASES.PAVE_ROAD;
   if (unseen('manage') && phase === TURN_PHASES.MANAGE_CITY) return 'manage';

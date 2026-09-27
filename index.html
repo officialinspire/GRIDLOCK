@@ -239,6 +239,14 @@
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
             <input type="checkbox" class="toggle" name="quickHandoff">
           </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>CPU mayor speed</span>
+            <select class="select" name="cpuSpeed">
+              <option value="relaxed">Relaxed</option>
+              <option value="normal">Normal</option>
+              <option value="fast">Fast</option>
+            </select>
+          </label>
         </fieldset>
 
         <fieldset>
@@ -371,6 +379,16 @@
           <span class="btn__icon" data-sprite="icons:road"></span><span>Pave Road</span>
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
+        <!-- Shown during CPU turns (js/ui/cpuDriver.js). -->
+        <div class="cpu-status" id="cpu-status" hidden>
+          <p class="cpu-status__text" role="status" aria-live="polite"><span id="cpu-status-name">Mayor Bot</span> is thinking<span class="cpu-status__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></p>
+          <button type="button" class="btn btn--sm" id="cpu-faster" aria-pressed="false">
+            <span class="btn__icon" data-sprite="icons:clock"></span><span>Faster</span>
+          </button>
+          <button type="button" class="btn btn--sm" id="cpu-skip">
+            <span class="btn__icon" data-sprite="icons:play"></span><span>Skip</span>
+          </button>
+        </div>
         <button class="btn btn--danger" id="action-finance" hidden>
           <span class="btn__icon" data-sprite="icons:coins"></span><span>Resolve Debt</span>
         </button>

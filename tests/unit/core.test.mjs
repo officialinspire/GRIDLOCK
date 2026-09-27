@@ -118,3 +118,9 @@ test('event bus delivers, unsubscribes and isolates handler errors', () => {
   console.error = origError;
   assert.deepEqual(seen, [1]);
 });
+
+test('CPU speed setting: relaxed | normal | fast, anything else falls back to normal', () => {
+  assert.equal(normalizeSettings(null).cpuSpeed, 'normal');
+  for (const speed of ['relaxed', 'normal', 'fast']) assert.equal(normalizeSettings({ cpuSpeed: speed }).cpuSpeed, speed);
+  for (const bad of ['warp', 7, null, '']) assert.equal(normalizeSettings({ cpuSpeed: bad }).cpuSpeed, 'normal');
+});

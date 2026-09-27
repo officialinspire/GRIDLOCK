@@ -1755,6 +1755,268 @@ const recordVibration = () => {
   }
 }
 
+// CPU seats in the real turn loop: Solo (1 human + 3 CPU) and a Mixed table.
+{
+  const newContext = (settings) => browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' }).then(async (context) => {
+    await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    await context.addInitScript((initial) => {
+      if (!sessionStorage.getItem('gl-test-init')) {
+        sessionStorage.setItem('gl-test-init', '1');
+        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+        localStorage.setItem('gridlock.settings.v1', JSON.stringify(initial));
+      }
+      // Record every dialog that opens, to prove which screens were (not) shown.
+      window.__opened = [];
+      const showModal = HTMLDialogElement.prototype.showModal;
+      HTMLDialogElement.prototype.showModal = function () { window.__opened.push(this.id); return showModal.call(this); };
+    }, { confirmTaps: false, quickHandoff: false, ...settings });
+    return context;
+  });
+  const state = (page) => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    const me = g.players[g.turnIndex];
+    return { seat: me.seat, cpu: me.controller === 'cpu', phase: g.turnPhase, ended: g.phase === 'ended',
+      roads: Object.keys(g.board.roads).length, log: g.log.length, cash: me.cash };
+  });
+  /** A person's move: clear any dialog in the way, then pave the road a Normal CPU would pick. */
+  async function humanStep(page) {
+    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+      ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
+      if (await page.locator(`${sel}[open]`).count()) return page.click(click);
+    }
+    if (await page.locator('#finance-dialog[open]').count()) {
+      const out = page.locator('#finance-dialog').locator('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]').first();
+      return out.click();
+    }
+    const road = await page.evaluate(async () => {
+      const { chooseRoad } = await import('./js/core/cpu/roads.js');
+      const g = window.__GRIDLOCK__.getGame();
+      return g.phase === 'playing' && g.players[g.turnIndex].controller !== 'cpu' ? chooseRoad(g, { difficulty: 'normal' }).road : null;
+    });
+    if (road) await page.click(`#board [data-road="${road}"]`);
+  }
+  /** Plays until `done`: people move via humanStep; CPU turns run themselves (Skip speeds them up). */
+  async function playUntil(page, done, { skip = true, limit = 600 } = {}) {
+    for (let i = 0; i < limit; i++) {
+      const s = await state(page);
+      if (await done(s)) return s;
+      if (s.cpu && !s.ended && !(await page.locator('dialog[open]').count())) {
+        if (skip && await page.isVisible('#cpu-skip')) await page.click('#cpu-skip').catch(() => {});
+        await page.waitForTimeout(40);
+      } else await humanStep(page);
+    }
+    throw new Error('playUntil: gave up');
+  }
+
+  // --- Solo ---------------------------------------------------------------
+  const context = await newContext({ cpuSpeed: 'relaxed' });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.locator('.table-option', { hasText: 'Solo' }).click();
+    await page.fill('#setup-seed', '4242'); // a fixed city, so every run sees the same events
+    await page.click('#setup-start');
+    assert.deepEqual(await state(page).then((s) => [s.seat, s.cpu]), [1, false], 'the human starts');
+    assert.equal(await page.isVisible('#cpu-status'), false);
+
+    await page.click('#board [data-road="h-0-0"]');
+    // A CPU turn: thinking feedback, no human controls, board clicks refused.
+    assert.equal(await page.isVisible('#cpu-status'), true);
+    assert.equal(await page.textContent('#cpu-status-name'), 'Mayor Bot 1');
+    assert.match(await page.textContent('#cpu-status'), /Mayor Bot 1 is thinking/);
+    assert.equal(await page.isVisible('#action-pave'), false);
+    await page.click('#board [data-road="h-6-5"]');
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().board.roads['h-6-5']), 1, 'a person can\'t move for a bot');
+    assert.match(await page.textContent('#toasts'), /Mayor Bot 1 is playing/);
+
+    // Pause stops pending CPU actions; resuming continues them.
+    await page.click('#game-menu-btn');
+    const paused = await state(page);
+    await page.waitForTimeout(1600);
+    assert.deepEqual(await state(page), paused, 'nothing happens while paused');
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+
+    // Faster: the speed control switches the setting and is pressed.
+    await page.click('#cpu-faster');
+    assert.equal(await page.getAttribute('#cpu-faster', 'aria-pressed'), 'true');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).cpuSpeed), 'fast');
+
+    // The three bots play themselves and hand back to the human, with no handoff screen.
+    // (A city event card waits for a person to read it; the bots wait too.)
+    await playUntil(page, (s) => !s.cpu, { skip: false });
+    assert.equal(await page.isVisible('#cpu-status'), false);
+    const cpuRoads = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road' && e.seat !== 1).length);
+    assert.ok(cpuRoads >= 3, 'each bot paved');
+
+    // Reload in the middle of a CPU turn: Continue resumes from the autosave, no step repeated.
+    await playUntil(page, (s) => s.cpu, { skip: false });
+    await page.waitForTimeout(300);
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    const resumed = await state(page);
+    assert.equal(resumed.roads, Object.keys(saved.board.roads).length, 'resumes exactly where the save left off');
+    assert.equal(resumed.log, saved.log.length);
+    await playUntil(page, (s) => !s.cpu, { skip: false });
+    const roadsLog = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road').map((e) => e.road));
+    assert.equal(new Set(roadsLog).size, roadsLog.length, 'no road played twice');
+    assert.equal(roadsLog.length, await page.evaluate(() => Object.keys(window.__GRIDLOCK__.getGame().board.roads).length));
+
+    // Play the whole city out (Skip on CPU turns).
+    const end = await playUntil(page, (s) => s.ended);
+    assert.equal(end.ended, true);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#results-dialog .result-card__cpu').count(), 3);
+    const opened = await page.evaluate(() => window.__opened);
+    assert.ok(!opened.includes('handoff-dialog'), 'Solo never shows the handoff screen');
+    // Ended games stop every CPU timer: nothing moves afterwards.
+    const final = await state(page);
+    await page.waitForTimeout(1200);
+    assert.deepEqual(await state(page), final);
+    assert.equal(await page.isVisible('#cpu-status'), false);
+    assert.deepEqual(errors, []);
+    console.log('✔ CPU Solo: bots play themselves, thinking feedback, no handoff, pause, faster/skip, reload resume, game end');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU Solo: ${err.message}`);
+    await page.screenshot({ path: 'test-results/cpu-solo-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+
+  // --- Mixed: Human, CPU, Human, CPU ------------------------------------------
+  const mixedContext = await newContext({ cpuSpeed: 'fast' });
+  const mixed = await mixedContext.newPage();
+  const mixedErrors = watchForBrowserErrors(mixed);
+  try {
+    await mixed.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await mixed.getByRole('button', { name: 'New Game' }).click();
+    await mixed.locator('.table-option', { hasText: 'Mixed' }).click();
+    for (const [seat, controller] of [[2, 'cpu'], [4, 'cpu']]) {
+      await mixed.locator(`.seat-card[data-seat="${seat}"] [name="controller-${seat}"][value="${controller}"]`).check();
+    }
+    await mixed.locator('.seat-card[data-seat="4"] [name="difficulty"]').selectOption('hard');
+    await mixed.fill('#setup-seed', '777');
+    await mixed.click('#setup-start');
+    const handoffs = () => mixed.evaluate(() => window.__opened.filter((id) => id === 'handoff-dialog').length);
+
+    // Human 1 → CPU 2 → handoff to Human 3 (none before or after the bot).
+    await mixed.click('#board [data-road="h-0-0"]');
+    assert.equal(await handoffs(), 0, 'no handoff before a CPU seat');
+    await mixed.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await mixed.textContent('#handoff-title'), 'Pass to Player 3');
+    assert.equal(await handoffs(), 1);
+    await mixed.click('#handoff-ready');
+
+    // Stage a debt for the Hard bot (seat 4): its turn must sell its way out through the real APIs.
+    await mixed.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r3c3');
+      b.ownerSeat = 4;
+      applyDevelopment(b, 'residential', 1);
+      refreshBonuses(g.board);
+      g.players.find((p) => p.seat === 4).cash = -200;
+    });
+    await humanStep(mixed); // Human 3 paves → CPU 4 starts in debt
+    await mixed.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await mixed.textContent('#handoff-title'), 'Pass to Player 1');
+    const cpu4 = await mixed.evaluate(() => {
+      const g = window.__GRIDLOCK__.getGame();
+      return { cash: g.players.find((p) => p.seat === 4).cash, sold: g.log.some((e) => (e.type === 'downgrade' || e.type === 'sale') && e.seat === 4),
+        paved: g.log.some((e) => e.type === 'road' && e.seat === 4) };
+    });
+    assert.ok(cpu4.sold, 'the bot sold to clear its debt');
+    assert.ok(cpu4.cash >= 0 && cpu4.paved, 'then played on');
+    assert.equal(await mixed.locator('#finance-dialog[open]').count(), 0, 'no debt panel for a bot');
+    await mixed.click('#handoff-ready');
+
+    // Redevelopment bidding: Human 1 opens an auction; the bots bid sealed.
+    await mixed.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r5c5');
+      applyDevelopment(b, 'industrial', 1);
+      Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 2 });
+      refreshBonuses(g.board);
+      g.players.find((p) => p.seat === 4).cash = 9000; // well funded again after its debt
+    });
+    if (await mixed.locator('#event-dialog[open]').count()) await mixed.click('#event-continue');
+    await mixed.click('#board [data-block="r5c5"]');
+    const auction = mixed.locator('#build-dialog [data-auction-mode="restore"]');
+    await auction.waitFor();
+    assert.deepEqual(await auction.locator('[data-cpu-bidder]').evaluateAll((els) => els.map((e) => e.dataset.cpuBidder)), ['4'],
+      'Hard bot bids sealed (the Easy bot abandoned it, so it can\'t)');
+    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /Sealed bid/);
+    await auction.locator('[name="bid-1"]').fill('');
+    await auction.locator('[name="bid-3"]').fill('');
+    await auction.locator('[data-auction="restore"]').click();
+    assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
+    assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
+
+    // Play the rest through.
+    await playUntil(mixed, (s) => s.ended);
+    await mixed.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await mixed.locator('#results-dialog .result-card__cpu').count(), 2);
+    assert.deepEqual(mixedErrors, []);
+    console.log('✔ CPU Mixed: handoff only between different people, bot debt + sealed redevelopment bids, full game');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU Mixed: ${err.message}`);
+    await mixed.screenshot({ path: 'test-results/cpu-mixed-FAIL.png' }).catch(() => {});
+  } finally {
+    await mixedContext.close();
+  }
+
+  // --- A CPU mayor opens bidding on an abandoned block; people may bid, or pass by leaving ---
+  const auctionContext = await newContext({ cpuSpeed: 'fast' });
+  const bidPage = await auctionContext.newPage();
+  const bidErrors = watchForBrowserErrors(bidPage);
+  try {
+    await bidPage.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await bidPage.getByRole('button', { name: 'New Game' }).click();
+    await bidPage.check('[name="gameType"][value="custom"]');
+    await bidPage.locator('label[for="seat-4-join"]').click();
+    await bidPage.locator('.table-option', { hasText: 'Mixed' }).click();
+    await bidPage.locator('.seat-card[data-seat="2"] [name="controller-2"][value="cpu"]').check();
+    await bidPage.locator('.seat-card[data-seat="2"] [name="difficulty"]').selectOption('hard');
+    await bidPage.fill('#setup-seed', '99');
+    await bidPage.click('#setup-start');
+    // An abandoned downtown Commercial that Player 3 walked away from (so Player 1 may bid, 3 may not).
+    await bidPage.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r2c2');
+      applyDevelopment(b, 'commercial', 1);
+      Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 3 });
+      refreshBonuses(g.board);
+    });
+    await bidPage.click('#board [data-road="h-0-0"]'); // Player 1 paves → the Hard bot's turn
+    await bidPage.locator('#build-dialog [data-auction-mode="restore"]').waitFor({ timeout: 15_000 });
+    assert.match(await bidPage.textContent('#toasts'), /Mayor Bot 1 opens bidding on abandoned Block C3/);
+    assert.equal(await bidPage.locator('#build-dialog [data-cpu-bidder="2"]').count() > 0, true, 'the bot\'s own bid is sealed');
+    assert.deepEqual(await state(bidPage).then((x) => x.roads), 1, 'the bot waits while people can bid');
+    await bidPage.click('#build-dialog [data-action="close"]'); // Player 1 passes
+    await bidPage.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    const lot = await bidPage.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r2c2'));
+    assert.deepEqual([lot.ownerSeat, lot.abandoned], [2, false], 'the bot won its own auction');
+    assert.equal(await bidPage.textContent('#handoff-title'), 'Pass to Player 3', 'then finished its turn');
+    assert.deepEqual(bidErrors, []);
+    console.log('✔ CPU opens redevelopment bidding: people can bid, leaving passes, the bot plays on');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU opens bidding: ${err.message}`);
+    await bidPage.screenshot({ path: 'test-results/cpu-auction-FAIL.png' }).catch(() => {});
+  } finally {
+    await auctionContext.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

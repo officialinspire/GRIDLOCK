@@ -9,6 +9,7 @@
  *   { action: 'vacant', blockId }        leave a just-captured block empty (Capture / Develop)
  *   { action: 'downgrade' | 'sell', blockId }   raise cash while in debt
  *   { action: 'bankruptcy' }             only when selling everything can't cover the debt
+ *   { action: 'redevelop', blockId, mode }   open a sealed-bid auction for an abandoned block
  *   { action: 'pave' }                   done managing: go pave a road
  *   { action: null, error }              nothing to decide now
  * Every decision also carries `reason` and, where relevant, `cost`, `score`, `net` (per turn)
@@ -35,11 +36,15 @@
  * Randomness (Easy's choices, ties) comes from the CPU's own stream, never the game RNG.
  */
 import { CPU, CITY_EVENTS, ECONOMY } from '../../config.js';
-import { currentPlayer, playerStats, resolveCapture, startPaving, TURN_PHASES, PHASES } from '../game.js';
+import { isCpu } from '../seats.js';
+import { currentPlayer, getPlayer, playerStats, resolveCapture, startPaving, TURN_PHASES, PHASES } from '../game.js';
 import { blocksOwnedBy, getBlockById, neighbors } from '../board.js';
 import { buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL } from '../development.js';
 import { CATEGORY_ORDER } from '../buildings.js';
-import { distressStatus, declareBankruptcy, quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment } from '../finance.js';
+import {
+  distressStatus, declareBankruptcy, quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment,
+  quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES,
+} from '../finance.js';
 import { forecastDevelopment, blockDetails } from '../forecast.js';
 import { scorePlayer } from '../scoring.js';
 import { eventRules } from '../modes.js';
@@ -235,6 +240,83 @@ function chooseDebtAction(game, level, rand) {
   return { action: best.action, blockId: best.blockId, reason: CITY_REASONS.DEBT, refund: best.refund };
 }
 
+/* ---------------- redevelopment (abandoned blocks) ---------------- */
+
+/**
+ * What winning `blockId` at its reserve price is worth to `seat`: the real auction run on a
+ * copy with only that bid, read back as (net income per turn × turns left + City Value change).
+ * Returns null when the seat can't take part.
+ */
+function redevelopmentSurplus(game, seat, blockId, mode, turns) {
+  const q = quoteRedevelopment(game, blockId, mode);
+  if (!q.ok) return null;
+  const sim = structuredClone(slim(game));
+  const before = getPlayer(sim, seat);
+  const statsBefore = playerStats(sim, before);
+  const valueBefore = scorePlayer(sim, before).cityValue;
+  if (!resolveRedevelopmentAuction(sim, blockId, mode, [{ seat, bid: q.reserve }]).ok) return null;
+  const after = getPlayer(sim, seat);
+  const statsAfter = playerStats(sim, after);
+  const net = (statsAfter.income - statsAfter.upkeep) - (statsBefore.income - statsBefore.upkeep);
+  return { reserve: q.reserve, surplus: net * turns + scorePlayer(sim, after).cityValue - valueBefore };
+}
+
+/** How much of its surplus a CPU mayor will bid above the reserve price. */
+const BID_SHARE = { easy: 0, normal: 0.5, hard: 0.8 };
+
+/**
+ * A CPU seat's sealed bid for an abandoned block in a redevelopment auction, or null to pass.
+ * Bids never exceed what the mayor can pay while keeping its cash reserve, and are whole
+ * multiples of the minimum increment above the reserve price (as the auction requires).
+ */
+export function chooseRedevelopmentBid(game, seat, blockId, mode, { difficulty, reserve } = {}) {
+  const player = getPlayer(game, seat);
+  const block = getBlockById(game.board, blockId);
+  if (!player || !block || !eligibleRedevelopers(game, block).some((p) => p.seat === seat)) return null;
+  const level = difficulty ?? player.difficulty ?? 'normal';
+  const keep = reserve ?? CPU.RESERVE[level] ?? CPU.RESERVE.normal;
+  const value = redevelopmentSurplus(game, seat, blockId, mode, expectedTurnsLeft(game, { lookAhead: level === 'hard' }));
+  if (!value) return null;
+  const budget = player.cash - keep;
+  if (budget < value.reserve) return null;
+  if (level === 'easy') {
+    const rand = stream(mix(defaultCpuSeed(game), game.log.length, seat, blockId.length, mode.length));
+    return rand() < 0.5 ? value.reserve : null;
+  }
+  if (value.surplus <= 0) return null;
+  const step = ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT;
+  const most = Math.min(budget, value.reserve + value.surplus * BID_SHARE[level]);
+  return value.reserve + Math.floor((most - value.reserve) / step) * step;
+}
+
+/** Sealed bids from every eligible CPU seat (humans bid through the auction panel). */
+export function cpuBids(game, blockId, mode) {
+  const block = getBlockById(game.board, blockId);
+  if (!block) return [];
+  return eligibleRedevelopers(game, block).filter(isCpu)
+    .map((p) => ({ seat: p.seat, bid: chooseRedevelopmentBid(game, p.seat, blockId, mode) }))
+    .filter((b) => b.bid != null);
+}
+
+/** Normal/Hard, Manage City: the abandoned block most worth opening an auction for, if any. */
+function chooseRedevelopment(game, level, reserve) {
+  if (level === 'easy') return null;
+  const me = currentPlayer(game);
+  const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
+  let best = null;
+  for (const block of game.board.blocks.filter((b) => b.abandoned && b.ownerSeat == null)) {
+    for (const mode of [ACQUIRE_MODES.RESTORE, ACQUIRE_MODES.REBUILD]) {
+      const value = redevelopmentSurplus(game, me.seat, block.id, mode, turns);
+      if (!value || value.surplus <= 0 || me.cash - value.reserve < reserve) continue;
+      if (!eligibleRedevelopers(game, block).some((p) => p.seat === me.seat)) continue;
+      if (!best || value.surplus > best.score) {
+        best = { action: 'redevelop', blockId: block.id, mode, reason: CITY_REASONS.DEVELOP, cost: value.reserve, score: value.surplus };
+      }
+    }
+  }
+  return best;
+}
+
 /* ---------------- entry points ---------------- */
 
 /**
@@ -259,6 +341,8 @@ export function chooseCityAction(game, { difficulty, seed, reserve } = {}) {
   if (me.cash < 0) return chooseDebtAction(game, level, rand);
   const owned = blocksOwnedBy(game.board, me.seat).map((b) => b.id);
   const { pick, reason } = choosePurchase(game, level, owned, rand, keep, { capture: false });
+  const redevelop = chooseRedevelopment(game, level, keep);
+  if (redevelop && (!pick || redevelop.score > (pick.score ?? 0))) return redevelop;
   return pick ?? { action: 'pave', reason };
 }
 
@@ -277,6 +361,9 @@ export function applyCityAction(game, decision) {
     case 'downgrade': return downgradeBlock(game, decision.blockId);
     case 'sell': return sellDevelopment(game, decision.blockId);
     case 'bankruptcy': return declareBankruptcy(game);
+    // Every eligible CPU seat bids; people add theirs as decision.humanBids (the auction panel).
+    case 'redevelop': return resolveRedevelopmentAuction(game, decision.blockId, decision.mode,
+      [...cpuBids(game, decision.blockId, decision.mode), ...(decision.humanBids ?? [])]);
     case 'pave': return { ok: startPaving(game) };
     default: return { ok: false, error: decision?.error ?? 'no-action' };
   }
