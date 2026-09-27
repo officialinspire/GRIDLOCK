@@ -39,6 +39,14 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
   - Phones held sideways show compact cards (cash, blocks, income), so all four fit.
   - The empty *Tap a block* hint hides on short screens.
   - New Game's section headings are paper tabs instead of being cut by the panel frame.
+- **Desktop fits one screen** (`css/desktop.css`, for landscape windows wider than 900px). Real browser windows are short: a 1366×768 laptop leaves about 650px.
+  - **Game:** the side cards shrink on short windows (cash, then blocks and income) instead of pushing the board under the action bar. The action bar is one slim line, the district key sits beside the board, and toasts appear bottom-left over empty table.
+  - **Build panel:** all six building choices in one row.
+  - **Results:** four player cards across, stats, distinctions, the seed and all actions on one screen.
+  - **New Game:** game type, city seed and Start on the left, Players and Rules beside them, the four seats below. Start is always on screen.
+  - **Settings:** two columns.
+  - **How To Play and Statistics:** tighter cards. These reference pages still scroll on short windows.
+  - A smoke test checks 1366×650 and 1920×940: the game, Settings, the build panel and the results fit with no scrolling, New Game's Start button is on screen, and the board is square and clear of the action bar.
 - **Offline:** the music and intro are precached too (about 5.9 MB). The service worker answers media byte-range requests from the cache, which Safari requires to play audio and video offline.
 
 ### V1.2 release notes
@@ -623,7 +631,8 @@ dev/sprites.html           Sprite atlas: every registered crop, for checking coo
 js/art.js                  Semantic art roles (what views ask for)
 css/title.css              Start screen, intro and the downtown main menu (sky, street, city-block menu)
 css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon
-css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
+css/mobile.css             Touch hardening + compact phone/tablet layout
+css/desktop.css            Desktop / landscape tablet: one-screen game, dialogs, New Game, Settings (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
 tools/build-pwa.mjs        Refreshes sw.js precache + version; --icons renders assets/icons/
 tools/simulate.mjs         Deterministic balance simulator (npm run simulate)
