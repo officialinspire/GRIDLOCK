@@ -155,6 +155,11 @@ async function loadServiceWorker({ network = true, existingCaches = [] } = {}) {
     URL,
     Set,
     Request: class { constructor(url, init = {}) { this.url = url; this.cache = init.cache; this.method = 'GET'; } },
+    Response: class {
+      constructor(body, init = {}) { Object.assign(this, { body, status: init.status ?? 200, ok: (init.status ?? 200) < 300, type: 'default' }); }
+      clone() { return this; }
+      static error() { return { type: 'error', ok: false, status: 0, clone() { return this; } }; }
+    },
     caches: {
       open: async (name) => { if (!stores.has(name)) stores.set(name, new FakeCache()); return stores.get(name); },
       keys: async () => [...stores.keys()],
@@ -171,7 +176,7 @@ async function loadServiceWorker({ network = true, existingCaches = [] } = {}) {
     await waited;
     return responded;
   };
-  const request = (url, mode = 'no-cors') => ({ url, method: 'GET', mode });
+  const request = (url, mode = 'no-cors', { aborted = false } = {}) => ({ url, method: 'GET', mode, signal: { aborted } });
   return { listeners, stores, fetched, state, run, request };
 }
 
@@ -224,6 +229,28 @@ test('service worker: other in-scope files are network-first with an offline cop
   assert.equal((await run('fetch', { request: request(png) })).body, `network:${png}`);
   state.online = false;
   assert.equal((await run('fetch', { request: request(png) })).url, png, 'offline copy after one online visit');
+});
+
+test('service worker: a request the page cancelled never fails the response', async () => {
+  const { state, run, request } = await loadServiceWorker();
+  state.online = false; // the fetch rejects, as it does when the page aborts it
+  // Not yet precached (still installing) and cancelled by the page: an empty reply, no rejection.
+  const precached = await run('fetch', { request: request(`${SCOPE}assets/generated/ui/btn-cream.png`, 'no-cors', { aborted: true }) });
+  assert.equal(precached.status, 204);
+  const other = await run('fetch', { request: request(`${SCOPE}effects.png`, 'no-cors', { aborted: true }) });
+  assert.equal(other.status, 204);
+});
+
+test('service worker: a real network failure is a network error, not a crash', async () => {
+  const { state, run, request } = await loadServiceWorker();
+  state.online = false;
+  const missing = await run('fetch', { request: request(`${SCOPE}effects.png`) });
+  assert.equal(missing.type, 'error', 'offline and never fetched: the page sees a network error');
+  const shell = await run('fetch', { request: request(SCOPE, 'navigate') });
+  assert.equal(shell.type, 'error', 'nothing installed yet and offline');
+  state.online = true;
+  const fresh = await run('fetch', { request: request(`${SCOPE}css/game.css`) });
+  assert.equal(fresh.body, `network:${SCOPE}css/game.css`, 'precached file not cached yet → network');
 });
 
 test('service worker: leaves other origins, other paths and non-GET requests alone', async () => {

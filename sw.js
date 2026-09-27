@@ -132,18 +132,35 @@ async function fromPrecache(url) {
   return (await caches.open(PRECACHE_CACHE)).match(url);
 }
 
+/**
+ * fetch() for the page's request that never rejects the FetchEvent: a request the page has
+ * cancelled (e.g. an image a style no longer needs) gets an empty reply nobody is waiting for,
+ * and a real network failure becomes the same network error the page would see without us.
+ */
+async function fetchForPage(request) {
+  try {
+    return await fetch(request);
+  } catch {
+    if (request.signal?.aborted) return new Response(null, { status: 204, statusText: 'Cancelled' });
+    return Response.error();
+  }
+}
+
+/** Precached copy, or the network if it isn't in the cache (e.g. still installing). */
+async function precachedOrNetwork(url, request) {
+  return (await fromPrecache(url)) ?? fetchForPage(request);
+}
+
 /** Network first, keeping a copy for offline use. */
 async function networkFirst(request) {
   const cache = await caches.open(RUNTIME_CACHE);
-  try {
-    const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
+  const response = await fetchForPage(request);
+  if (response.ok && response.status !== 204) {
+    await cache.put(request, response.clone()).catch(() => {});
     return response;
-  } catch (err) {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    throw err;
   }
+  if (response.type === 'error') return (await cache.match(request)) ?? response;
+  return response;
 }
 
 self.addEventListener('fetch', (event) => {
@@ -156,13 +173,13 @@ self.addEventListener('fetch', (event) => {
   const isShell = request.mode === 'navigate'
     && (url.pathname === SCOPE.pathname || url.href.split(/[?#]/)[0] === INDEX_URL);
   if (isShell) {
-    event.respondWith(fromPrecache(INDEX_URL).then((cached) => cached ?? fetch(request)));
+    event.respondWith(precachedOrNetwork(INDEX_URL, request));
     return;
   }
 
   const bare = url.origin + url.pathname;
   if (PRECACHED.has(bare)) {
-    event.respondWith(fromPrecache(bare).then((cached) => cached ?? fetch(request)));
+    event.respondWith(precachedOrNetwork(bare, request));
     return;
   }
   event.respondWith(networkFirst(request));
