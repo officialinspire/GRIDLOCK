@@ -8,6 +8,8 @@ import { ART } from '../art.js';
 import { formatCash } from '../core/economy.js';
 import { TIEBREAKERS } from '../core/scoring.js';
 import { modeName } from '../core/modes.js';
+import { challengeUrl, formatSeed } from '../core/challenge.js';
+import { toast } from './toast.js';
 
 const ordinal = (n) => ({ 1: '1st', 2: '2nd', 3: '3rd' }[n] ?? `${n}th`);
 
@@ -121,8 +123,37 @@ function countCityValues(dialog) {
 export function showResults(game) {
   renderResults(game);
   $('#results-mode').textContent = `${modeName(game)} rules · ${game.players.length} players · ${game.round} rounds`;
+  $('#results-seed').textContent = formatSeed(game.seed);
+  $('#share-fallback').hidden = true;
   const dialog = $('#results-dialog');
   if (!dialog.open) dialog.showModal();
   requestAnimationFrame(() => countCityValues(dialog));
   dialog.querySelector('[data-results-action="rematch"]').focus();
+}
+
+/** Link that deals this city again: seed, rules and seats only (never ?debug or names). */
+export const gameChallengeUrl = (game, pageHref = window.location.href) =>
+  challengeUrl({ seed: game.seed, mode: game.mode, seats: game.players }, pageHref);
+
+/**
+ * Copies the challenge link. Where the Clipboard API is missing, blocked or refused,
+ * the link appears in a selected read-only box instead, so it can still be copied by hand.
+ */
+export async function copyChallengeLink(game) {
+  const link = gameChallengeUrl(game);
+  const fallback = $('#share-fallback');
+  const input = $('#share-link');
+  input.value = link;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+    await navigator.clipboard.writeText(link);
+    fallback.hidden = true;
+    toast('Challenge link copied', { tone: 'success' });
+    return true;
+  } catch {
+    fallback.hidden = false;
+    input.focus();
+    input.select();
+    return false;
+  }
 }

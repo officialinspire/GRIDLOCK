@@ -285,6 +285,21 @@
           <legend>Rules</legend>
         </fieldset>
         <div class="setup__players" id="setup-players"></div>
+        <!-- Seed: blank = a random city; a number (or a challenge link) deals a specific one. -->
+        <fieldset class="paper setup__seed" id="setup-seed-box">
+          <legend>City seed</legend>
+          <p class="setup__challenge" id="setup-challenge" hidden></p>
+          <div class="seed-row">
+            <label class="visually-hidden" for="setup-seed">City seed</label>
+            <input class="text-input seed-row__input" id="setup-seed" name="seed" type="text" inputmode="numeric"
+              maxlength="11" placeholder="Random city" spellcheck="false" aria-describedby="setup-seed-hint">
+            <button type="button" class="btn btn--sm" id="setup-seed-new">
+              <span class="btn__icon" data-sprite="icons:swap"></span><span>New Seed</span>
+            </button>
+            <button type="button" class="btn btn--sm" id="setup-seed-clear">Random</button>
+          </div>
+          <p class="setup__seed-hint" id="setup-seed-hint">Leave blank for a surprise city. The same seed, rules and seats roll the same city events for the same moves.</p>
+        </fieldset>
 
         <div class="setup__footer paper">
           <p class="setup__summary" id="setup-summary" aria-live="polite"></p>
@@ -418,6 +433,22 @@
           <h4 id="awards-heading" class="results__awards-title">City Distinctions</h4>
           <ul class="awards" id="results-awards"></ul>
         </section>
+        <section class="results__share" aria-labelledby="share-heading">
+          <h4 id="share-heading" class="results__awards-title">Challenge a friend</h4>
+          <p class="results__seed">City seed <strong class="seed-value" id="results-seed"></strong></p>
+          <div class="results__share-actions">
+            <button class="btn" data-results-action="replay">
+              <span class="btn__icon" data-sprite="icons:undo"></span><span>Replay Same City</span>
+            </button>
+            <button class="btn" data-results-action="copy-link">
+              <span class="btn__icon" data-sprite="icons:map"></span><span>Copy Challenge Link</span>
+            </button>
+          </div>
+          <div class="share-fallback" id="share-fallback" hidden>
+            <label for="share-link">Copying isn't available here. Select the link and copy it:</label>
+            <input class="text-input share-fallback__input" id="share-link" type="text" readonly>
+          </div>
+        </section>
         <div class="results__actions">
           <button class="btn btn--gold" data-results-action="rematch">
             <span class="btn__icon" data-sprite="icons:restart"></span><span>Play Again</span>
@@ -434,6 +465,7 @@
       <dialog class="modal paper" id="pause-dialog" aria-labelledby="pause-heading">
         <h3 id="pause-heading" class="modal__title">Paused</h3>
         <p class="modal__sub" id="pause-mode"></p>
+        <p class="modal__seed">City seed <strong class="seed-value" id="pause-seed"></strong></p>
         <div class="modal__actions">
           <button class="btn btn--gold" value="resume" data-dialog-action="resume">
             <span class="btn__icon" data-sprite="icons:play"></span><span>Resume</span>

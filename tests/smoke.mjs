@@ -1390,6 +1390,135 @@ const recordVibration = () => {
   }
 }
 
+// Replayable cities: challenge links pre-fill setup, the seed shows in pause/results,
+// Replay Same City rolls the same events for the same moves, and copying falls back to a text box.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const road = (id) => page.locator(`#board [data-road="${id}"]`);
+  // Horizontal roads never close a block, so every run makes exactly the same moves.
+  const MOVES = ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'h-2-0', 'h-2-1', 'h-2-2', 'h-3-0', 'h-3-1', 'h-3-2', 'h-4-0', 'h-4-1', 'h-4-2'];
+  const playMoves = async () => {
+    for (const id of MOVES) {
+      await road(id).click();
+      await dismissEvent(page);
+    }
+    return page.evaluate(() => JSON.stringify(window.__GRIDLOCK__.getGame().events.history));
+  };
+  const finishCity = () => page.evaluate(async () => {
+    const { allRoadIds } = await import('./js/core/board.js');
+    const g = window.__GRIDLOCK__.getGame();
+    g.eventPool = [];
+    const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+    ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+    for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+    return ids.at(-1);
+  });
+  try {
+    await page.goto(`${base}?seed=31337&mode=chaos&seats=134&debug`, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).search, '?debug', 'challenge parameters leave the address bar; ?debug stays');
+    assert.match(await page.textContent('#toasts'), /Challenge city 31337 · Urban Chaos rules/);
+    await page.getByRole('button', { name: 'New Game' }).click();
+    assert.equal(await page.inputValue('#setup-seed'), '31337', 'seed pre-filled');
+    assert.equal(await page.isChecked('[name="mode"][value="chaos"]'), true, 'mode pre-selected');
+    assert.equal(await page.isChecked('[name="gameType"][value="custom"]'), true);
+    assert.deepEqual(await page.locator('.seat-card:not(.is-out)').evaluateAll((els) => els.map((e) => e.dataset.seat)), ['1', '3', '4']);
+    assert.match(await page.textContent('#setup-challenge'), /Challenge city 31337 · Urban Chaos rules · 3 players/);
+    assert.match(await page.textContent('#setup-summary'), /Custom Game · 3 players · .* · Urban Chaos rules · seed 31337/);
+
+    // New Seed / Random / invalid input.
+    await page.click('#setup-seed-new');
+    const rolled = await page.inputValue('#setup-seed');
+    assert.match(rolled, /^\d+$/);
+    assert.notEqual(rolled, '31337');
+    await page.fill('#setup-seed', 'abc');
+    assert.equal(await page.isDisabled('#setup-start'), true, 'an invalid seed blocks Start');
+    assert.match(await page.textContent('#setup-summary'), /whole number/);
+    await page.click('#setup-seed-clear');
+    assert.equal(await page.inputValue('#setup-seed'), '');
+    assert.equal(await page.isDisabled('#setup-start'), false, 'blank = random city');
+    await page.fill('#setup-seed', '31337');
+    await noHorizontalScroll(page, 'setup with seed');
+    await page.click('#setup-start');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), 31337);
+
+    const firstRun = await playMoves();
+    assert.ok(JSON.parse(firstRun).length >= 3, 'Urban Chaos rolled events to compare');
+    await page.click('#game-menu-btn');
+    assert.equal(await page.textContent('#pause-seed'), '31337', 'seed visible when paused');
+    assert.ok(!(await page.textContent('#pause-dialog')).includes('debug'));
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+
+    await road(await finishCity()).click();
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#results-seed'), '31337', 'seed visible on results');
+
+    // Copy Challenge Link: clipboard works → toast; clipboard refused → selectable text.
+    await page.evaluate(() => {
+      window.__copied = [];
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { window.__copied.push(t); } } });
+    });
+    await page.click('[data-results-action="copy-link"]');
+    await page.waitForFunction(() => window.__copied.length === 1);
+    const link = new URL(await page.evaluate(() => window.__copied[0]));
+    assert.equal(link.search, '?seed=31337&mode=chaos&seats=134', 'link carries seed, mode and seats');
+    assert.equal(link.origin + link.pathname, base);
+    assert.equal(await page.isVisible('#results-dialog'), true, 'copying keeps the results open');
+    assert.equal(await page.isVisible('#share-fallback'), false);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) } });
+    });
+    await page.click('[data-results-action="copy-link"]');
+    await page.locator('#share-fallback').waitFor({ state: 'visible' });
+    assert.equal(await page.inputValue('#share-link'), link.href);
+    assert.equal(await page.evaluate(() => {
+      const el = document.getElementById('share-link');
+      return document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length;
+    }), true, 'fallback link is focused and selected');
+    await noHorizontalScroll(page, 'results with share fallback');
+    await page.screenshot({ path: 'test-results/replay-results.png' });
+
+    // Replay Same City: same seed, rules and table; the same moves roll the same events.
+    await page.click('[data-results-action="replay"]');
+    assert.deepEqual(await page.evaluate(() => {
+      const g = window.__GRIDLOCK__.getGame();
+      return [g.seed, g.mode, g.players.map((p) => p.seat).join(''), g.events.history.length];
+    }), [31337, 'chaos', '134', 0]);
+    assert.equal(await playMoves(), firstRun, 'identical event sequence on replay');
+
+    // Play Again deals a new city with the same table.
+    await road(await finishCity()).click();
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.click('[data-results-action="rematch"]');
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), 31337, 'Play Again = a fresh seed');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().mode), 'chaos');
+
+    // A friend opening the link (no ?debug) deals the same city too.
+    await page.goto(link.href, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).search, '');
+    await page.getByRole('button', { name: 'New Game' }).click();
+    assert.equal(await page.inputValue('#setup-seed'), '31337');
+    await page.click('#setup-start');
+    assert.equal(await page.evaluate(() => typeof window.__GRIDLOCK__), 'undefined', 'no debug hook on a challenge link');
+    assert.deepEqual(errors, []);
+    console.log('✔ replayable cities: challenge link → setup, seed in pause/results, copy + fallback, same events on replay');
+  } catch (err) {
+    failures++;
+    console.error(`✘ replayable cities: ${err.message}`);
+    await page.screenshot({ path: 'test-results/replay-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

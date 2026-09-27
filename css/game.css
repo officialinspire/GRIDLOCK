@@ -1629,3 +1629,16 @@ html[data-coords='on'] .block__coord { display: block; }
 .inspector__event { cursor: help; font-size: 0.8em; }
 .inspector__event.is-up { color: var(--green); }
 .inspector__event.is-down { color: var(--red-deep); }
+
+/* Seeds and challenge links */
+.seed-value { font-variant-numeric: tabular-nums; user-select: all; -webkit-user-select: all; }
+.modal__seed { margin: -6px 0 12px; text-align: center; font-weight: 700; color: var(--ink-soft); }
+.results__share { display: grid; gap: 8px; justify-items: center; text-align: center; }
+.results__seed { margin: 0; font-weight: 800; }
+.results__share-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; }
+.results__share-actions .btn { flex: 1 1 180px; max-width: 260px; }
+.share-fallback { display: grid; gap: 4px; width: 100%; max-width: 520px; font-size: 0.9rem; font-weight: 700; }
+.share-fallback__input { font-size: 0.9rem; user-select: all; -webkit-user-select: all; }
+@media (max-width: 560px) {
+  .results__share-actions .btn { flex-basis: 100%; max-width: none; }
+}

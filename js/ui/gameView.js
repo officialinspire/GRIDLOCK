@@ -21,7 +21,8 @@ import {
   renderBoard, initBoardView, clearSelection, rejectRoad, getSelectedBlock, disarm,
 } from './boardView.js';
 import { renderHud } from './hud.js';
-import { showResults as openResults } from './resultsView.js';
+import { showResults as openResults, copyChallengeLink } from './resultsView.js';
+import { formatSeed, replaySetup } from '../core/challenge.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { audio, play } from './audio.js';
@@ -392,13 +393,6 @@ function handleRoad(id) {
   else finishTransition();
 }
 
-/** Optional ?seed=123 in the URL makes city events reproducible (handy for bug reports). */
-function seedFromUrl() {
-  const raw = new URLSearchParams(window.location.search).get('seed');
-  const n = raw == null ? NaN : Number(raw);
-  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
-}
-
 function startGame(setup) {
   // Reset every piece of per-game UI state before the new game object exists.
   closeBuildPanel();
@@ -410,8 +404,8 @@ function startGame(setup) {
   lastSetup = setup;
   clearActiveGame();
   tutorialNewGame();
-  const seed = seedFromUrl();
-  game = createGame(seed === undefined ? setup : { ...setup, seed });
+  // setup.seed (from the seed box, a challenge link or Replay Same City) deals a specific city; none = random.
+  game = createGame(setup);
   $('#board-frame').classList.remove('is-city-complete');
   chain = 0;
   renderChain();
@@ -483,6 +477,7 @@ function initDialogs() {
   const pause = $('#pause-dialog');
   $('#game-menu-btn').addEventListener('click', () => {
     $('#pause-mode').textContent = game ? `${modeName(game)} rules · Round ${game.round}` : '';
+    $('#pause-seed').textContent = game ? formatSeed(game.seed) : '';
     pause.showModal();
     audio.setPaused(true);
   });
@@ -503,8 +498,11 @@ function initDialogs() {
   results.addEventListener('click', (e) => {
     const action = e.target.closest('[data-results-action]')?.dataset.resultsAction;
     if (!action) return;
+    if (action === 'copy-link') return void copyChallengeLink(game);
     results.close();
-    if (action === 'rematch') startGame(lastSetup);
+    // Play Again: same table and rules, a fresh city. Replay Same City: the same seed too.
+    if (action === 'rematch') startGame({ ...lastSetup, seed: undefined });
+    if (action === 'replay') startGame(replaySetup(game, lastSetup));
     if (action === 'title') leaveForTitle();
   });
   const abandon = $('#abandon-dialog');
