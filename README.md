@@ -57,6 +57,14 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 Settings (saved on the device): sound on/off, master/effects/ambience volume, city ambience, tap twice to pave, haptics (touch devices with vibration), **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
 
+### First-game tutorial
+
+A player's first **New Game** shows short tips as each rule comes up, on taped sticky notes next to the control they explain: **Manage City**, **Pave Road**, **completing a block** (when one has three roads), **Develop Now / Leave Vacant**, the **bonus road**, **income & upkeep**, **city events**, and **winning/scoring** (at the halfway point or on the results screen).
+
+- One note at a time, never modal and never stealing focus: the game stays fully playable underneath, and a note clears itself once you act (tips inside a dialog go when it closes).
+- Every note has **Got it** and **Skip tutorial**. Skipping or finishing all eight tips is saved on the device, so later games stay tip-free.
+- **Replay Tutorial** (at the end of How To Play, or under Settings → Help) starts it over: in the current game if one is in progress, otherwise in the next New Game.
+
 ### Sound
 
 All audio is synthesised in the browser with Web Audio (no sound files), and gameplay never depends on it: everything a sound signals is also shown on screen.
@@ -284,6 +292,7 @@ js/
     finance.js             Distress, selling/downgrading, bankruptcy, abandoned-block redevelopment
     settings.js            Persisted settings (localStorage, fails safe)
     persistence.js         Versioned active-game save, migration, validation and reset
+    tutorial.js            First-game tips: steps, when each applies, saved progress (skip/done)
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
@@ -299,6 +308,7 @@ js/
     audio.js               Audio manager: synthesised effects, procedural ambience, volume buses, fades
     haptics.js             Optional vibration patterns (touch devices with the Vibration API only)
     touchGuard.js          Ignores tap-through taps on freshly opened/closed dialogs (touch only)
+    tutorial.js            First-game coach marks (sticky notes) + Replay Tutorial
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -324,6 +334,7 @@ tests/
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds, chain escalation, volumes/fades, ambience scenes, settings
   unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions
+  unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
   smoke.mjs                Playwright smoke test across 5 viewports
   pwa.mjs                  Offline/PWA browser check under a /GRIDLOCK/ subpath
@@ -384,4 +395,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

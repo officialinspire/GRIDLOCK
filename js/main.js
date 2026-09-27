@@ -11,6 +11,7 @@ import { initPwa } from './pwa.js';
 import { audio, initAudio } from './ui/audio.js';
 import { initHaptics } from './ui/haptics.js';
 import { initTouchGuard } from './ui/touchGuard.js';
+import { tutorialState } from './ui/tutorial.js';
 import { loadSettings } from './core/settings.js';
 import { bus } from './core/bus.js';
 
@@ -47,7 +48,7 @@ function boot() {
   bindNavigation(document);
   showScreen('title');
   // ?debug exposes the live game for automated tests and bug reproduction (never on by default).
-  if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame, audio: () => audio.state() };
+  if (new URLSearchParams(window.location.search).has('debug')) window.__GRIDLOCK__ = { getGame, audio: () => audio.state(), tutorial: tutorialState };
   document.documentElement.classList.add('is-ready');
   initPwa({ beforeReload: saveGameNow });
 }

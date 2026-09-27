@@ -209,6 +209,43 @@
 .toast--leaving { opacity: 0; transform: translateY(-8px); transition: all 300ms ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.9); } }
 
+/* ---------- First-game tutorial coach marks (js/ui/tutorial.js) ---------- */
+/* A taped sticky note beside the control it explains; non-modal, so play continues underneath. */
+.coach-mark {
+  position: fixed;
+  z-index: 55;
+  width: min(300px, calc(100vw - 24px));
+  padding: 16px 14px 12px;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  transform: rotate(-0.6deg);
+  animation: coach-in var(--t-med) var(--ease-pop);
+}
+.coach-mark__count { margin: 0 0 2px; font-size: 0.75rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+.coach-mark__body { margin: 0; }
+.coach-mark__title { font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; }
+.coach-mark__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+/* Paper arrow pointing at the target. */
+.coach-mark::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--arrow-x, 50%) - 9px);
+  width: 16px;
+  height: 16px;
+  background: #f5d96b;
+  border: var(--outline) solid var(--ink);
+  border-top: 0;
+  border-left: 0;
+}
+.coach-mark[data-side='above']::after { bottom: -10px; transform: rotate(45deg); }
+.coach-mark[data-side='below']::after { top: -10px; transform: rotate(225deg); }
+/* Inside a dialog (Develop Now, city event, results): a note at the top, no arrow. */
+.coach-mark--inline { position: relative; z-index: auto; width: auto; margin: 6px 0 14px; transform: none; }
+.coach-mark--inline::after { display: none; }
+@keyframes coach-in { from { opacity: 0; transform: translateY(6px) rotate(-0.6deg); } }
+
+.setting-row--action { cursor: default; }
+
 /* ---------- Offline app update prompt (js/pwa.js) ---------- */
 .update-banner {
   position: fixed;

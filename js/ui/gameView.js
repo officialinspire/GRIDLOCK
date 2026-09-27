@@ -26,6 +26,7 @@ import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { audio, play } from './audio.js';
 import { buzz } from './haptics.js';
+import { initTutorial, updateTutorial, tutorialMoment, tutorialMove, tutorialNewGame } from './tutorial.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
@@ -122,6 +123,7 @@ function showResults() {
     return;
   }
   openResults(game);
+  tutorialMoment('scoring');
 }
 
 function renderActions() {
@@ -144,6 +146,7 @@ function render() {
   renderInspector(getSelectedBlock());
   renderEventStrip(game);
   renderActions();
+  updateTutorial();
 }
 
 /** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
@@ -174,6 +177,7 @@ function showCaptureChoice() {
   $('#capture-choice-copy').textContent = `Block ${block.label} is yours. Develop it now, or leave it vacant and continue to your bonus road.`;
   if (!dialog.open) dialog.showModal();
   dialog.querySelector('[data-capture-choice="develop"]').focus();
+  tutorialMoment('develop');
   render();
 }
 
@@ -308,6 +312,7 @@ function handleRoad(id) {
     return;
   }
 
+  tutorialMove();
   const n = result.captured.length;
   chain = result.extraTurn ? chain + n : 0;
   render();
@@ -342,6 +347,7 @@ function handleRoad(id) {
       play('event', { kind: getEventDef(result.event.started.id)?.kind });
       buzz('event');
       showEventCard(game, result.event.started, result.event.expired);
+      tutorialMoment('events');
     } else if (result.event?.expired.length) {
       toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
     } else if (result.event?.calm) {
@@ -353,6 +359,7 @@ function handleRoad(id) {
     if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
       if (paid > 0 && !result.event?.started) play('coins');
       showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
+      tutorialMoment('income');
       const payee = getPlayer(game, result.turnIncome.seat);
       const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
         repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
@@ -384,6 +391,7 @@ function startGame(setup) {
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   lastSetup = setup;
   clearActiveGame();
+  tutorialNewGame();
   const seed = seedFromUrl();
   game = createGame(seed === undefined ? setup : { ...setup, seed });
   $('#board-frame').classList.remove('is-city-complete');
@@ -524,6 +532,7 @@ export function initGameView() {
     ready?.();
   });
   initDialogs();
+  initTutorial({ getGame: () => game });
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });
   bus.on('game:start', startGame);

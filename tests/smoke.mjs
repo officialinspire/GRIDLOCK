@@ -122,7 +122,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -143,7 +143,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 9);
+    assert.equal(await page.locator('.howto-card').count(), 10);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -295,7 +295,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -360,7 +360,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -392,7 +392,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -444,7 +444,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -484,7 +484,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: browserName !== 'firefox', hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -553,7 +553,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -586,7 +586,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -624,7 +624,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -768,7 +768,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true }));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -923,6 +923,7 @@ const recordVibration = () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   await context.addInitScript(recordVibration);
+  await context.addInitScript(() => localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -950,6 +951,159 @@ const recordVibration = () => {
     failures++;
     console.error(`✘ desktop/touch laptop: ${err.message}`);
     await page.screenshot({ path: 'test-results/touch-laptop-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// First-game tutorial: all eight tips appear in context during real play, never block it, and completion persists.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const road = (id) => page.locator(`#board [data-road="${id}"]`);
+  const tip = (id) => page.locator(`.coach-mark[data-step="${id}"]`);
+  const saved = () => page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.tutorial.v1')));
+  const seen = async () => (await page.evaluate(() => window.__GRIDLOCK__.tutorial())).seen;
+  try {
+    await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    // 1. Manage City: shown at once, and the game stays fully playable around it.
+    await tip('manage').waitFor();
+    assert.match(await tip('manage').textContent(), /Tip 1 of 8.*Manage City/s);
+    assert.equal(await page.locator('.coach-mark').count(), 1, 'one note at a time');
+    await page.click('#action-pave'); // acting moves the tutorial on
+    // 2. Pave Road.
+    await tip('pave').waitFor();
+    await tip('pave').getByRole('button', { name: 'Got it' }).click();
+    assert.equal(await page.locator('.coach-mark').count(), 0);
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await road(id).click();
+    // 3. Completing a block: points at A1, the block with three roads.
+    await tip('complete').waitFor();
+    const note = await tip('complete').boundingBox();
+    const block = await page.locator('[data-block="r0c0"]').boundingBox();
+    assert.ok(Math.abs(note.y - (block.y + block.height)) < 60 || Math.abs(note.y + note.height - block.y) < 60, 'note sits by the block');
+    await road('v-0-1').click(); // never blocks: pave straight through
+    // 4. Develop Now / Leave Vacant: inside the capture dialog.
+    await page.locator('#capture-choice-dialog .coach-mark[data-step="develop"]').waitFor();
+    await page.click('[data-capture-choice="develop"]');
+    await page.locator('#build-dialog [data-build="residential"]').click();
+    // 5. Bonus road.
+    await tip('bonus').waitFor();
+    await road('h-6-5').click();
+    // 7. City event (the seeded Fire), inside its card.
+    await page.locator('#event-dialog .coach-mark[data-step="events"]').waitFor();
+    await page.click('#event-continue');
+    // 6. Income & upkeep: at Player 4's next turn start.
+    for (const id of ['h-6-4', 'h-6-3', 'h-6-2']) await road(id).click();
+    await tip('income').waitFor();
+    assert.deepEqual(await seen(), ['manage', 'pave', 'complete', 'develop', 'bonus', 'events']);
+    // 8. Winning/scoring: on the results screen.
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlock } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board);
+      ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      const b = getBlock(g.board, 5, 5);
+      if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await road(last).click();
+    const scoring = page.locator('#results-dialog .coach-mark[data-step="scoring"]');
+    await scoring.waitFor();
+    assert.match(await scoring.textContent(), /Tip 8 of 8.*City Value/s);
+    await scoring.getByRole('button', { name: 'Got it' }).click();
+    assert.match(await page.textContent('#toasts'), /Tutorial complete/);
+    assert.deepEqual(await saved(), { status: 'done', seen: ['manage', 'pave', 'complete', 'develop', 'bonus', 'income', 'events', 'scoring'] });
+    await page.screenshot({ path: 'test-results/tutorial-complete.png' });
+
+    // Completion persists: the next game has no tips.
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    await road('h-0-0').click();
+    assert.equal(await page.locator('.coach-mark').count(), 0, 'no tips after completing the tutorial');
+    assert.deepEqual(errors, []);
+    console.log('✔ tutorial: all 8 tips in context, never blocking, completion persists');
+  } catch (err) {
+    failures++;
+    console.error(`✘ tutorial (complete): ${err.message}`);
+    await page.screenshot({ path: 'test-results/tutorial-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Tutorial skip persists; Replay Tutorial from How To Play (next game) and Settings (current game).
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const status = async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.tutorial.v1'))))?.status;
+  const startNewGame = async () => {
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+  };
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await startNewGame();
+    await page.locator('.coach-mark[data-step="manage"]').waitFor();
+    await noHorizontalScroll(page, 'tutorial note on a phone');
+    await page.locator('.coach-mark').getByRole('button', { name: 'Skip tutorial' }).click();
+    assert.equal(await page.locator('.coach-mark').count(), 0, 'skip removes the note');
+    assert.match(await page.textContent('#toasts'), /Tutorial skipped/);
+    assert.equal(await status(), 'skipped');
+
+    // Skip persists across reloads and new games.
+    await page.reload({ waitUntil: 'networkidle' });
+    await startNewGame();
+    await page.click('#board [data-road="h-0-0"]');
+    assert.equal(await page.locator('.coach-mark').count(), 0, 'no tips after skipping');
+    assert.equal(await status(), 'skipped');
+
+    // Replay from How To Play: tips return in the next game.
+    await page.click('#game-menu-btn');
+    await page.click('#pause-dialog [data-dialog-action="save-quit"]');
+    await page.getByRole('button', { name: 'How To Play' }).click();
+    await page.locator('[data-screen="howto"] [data-replay-tutorial]').click();
+    assert.match(await page.textContent('#toasts'), /next game/);
+    assert.equal(await status(), 'active');
+    await page.locator('[data-screen="howto"] [data-nav="back"]').click();
+    await startNewGame();
+    await page.locator('.coach-mark[data-step="manage"]').waitFor();
+    await page.locator('.coach-mark').getByRole('button', { name: 'Skip tutorial' }).click();
+
+    // Replay from Settings mid-game: tips start in this game.
+    await page.locator('[data-screen="game"] [data-nav="settings"]').click();
+    await page.locator('[data-screen="settings"] [data-replay-tutorial]').click();
+    assert.match(await page.textContent('#toasts'), /as you play/);
+    await page.locator('[data-screen="settings"] [data-nav="back"]').click();
+    await page.locator('.coach-mark[data-step="manage"]').waitFor();
+    assert.equal(await status(), 'active');
+    assert.deepEqual(errors, []);
+    console.log('✔ tutorial: skip persists; replay from How To Play and Settings');
+  } catch (err) {
+    failures++;
+    console.error(`✘ tutorial (skip/replay): ${err.message}`);
+    await page.screenshot({ path: 'test-results/tutorial-skip-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }
