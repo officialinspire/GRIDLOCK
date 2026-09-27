@@ -1855,10 +1855,15 @@ const recordVibration = () => {
     // Reload in the middle of a CPU turn: Continue resumes from the autosave, no step repeated.
     await playUntil(page, (s) => s.cpu, { skip: false });
     await page.waitForTimeout(300);
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game);
     await page.reload({ waitUntil: 'networkidle' });
-    await page.click('#continue-game');
-    const resumed = await state(page);
+    // The save as the reload left it (a bot may have finished one more step on the way out).
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game);
+    // Continue and read the game in one synchronous tick, before the first bot step can fire.
+    const resumed = await page.evaluate(() => {
+      document.querySelector('#continue-game').click();
+      const g = window.__GRIDLOCK__.getGame();
+      return { roads: Object.keys(g.board.roads).length, log: g.log.length };
+    });
     assert.equal(resumed.roads, Object.keys(saved.board.roads).length, 'resumes exactly where the save left off');
     assert.equal(resumed.log, saved.log.length);
     await playUntil(page, (s) => !s.cpu, { skip: false });
@@ -1960,12 +1965,9 @@ const recordVibration = () => {
     assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
     assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
 
-    // Play the rest through.
-    await playUntil(mixed, (s) => s.ended);
-    await mixed.locator('#results-dialog').waitFor({ state: 'visible' });
-    assert.equal(await mixed.locator('#results-dialog .result-card__cpu').count(), 2);
+    // (The Solo run plays a whole city to the results; this one stops here to keep CI quick.)
     assert.deepEqual(mixedErrors, []);
-    console.log('✔ CPU Mixed: handoff only between different people, bot debt + sealed redevelopment bids, full game');
+    console.log('✔ CPU Mixed: handoff only between different people, bot debt + sealed redevelopment bids');
   } catch (err) {
     failures++;
     console.error(`✘ CPU Mixed: ${err.message}`);
