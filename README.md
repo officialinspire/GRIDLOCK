@@ -4,7 +4,35 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
+**V1.2:** installable offline play, a richer sound and haptics layer, a first-game tutorial, rule presets, career statistics and achievements, strategic forecasts, replayable cities with challenge links, and a simulation-backed balance pass (see the release notes below).
+
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.2 release notes
+
+- **Installable offline app (PWA):** a manifest and icons made from the game's art; a service worker that caches every game file under a content-hash version; full offline play, including autosave; updates install only when the player chooses, never mid-game; works under the GitHub Pages `/GRIDLOCK/` subpath.
+- **Audio:** an audio manager with master, effects and ambience volume and mute, distinct synthesized sounds, rising pitch on capture chains, procedural city ambience, and fades. Nothing plays before the first tap or keypress.
+- **Touch:** optional haptics, a guard against accidental double-tap purchases, larger tap targets, and finger-vs-mouse behaviour on touchscreen laptops.
+- **Play options on the title screen:** **Play Solo** (you against three Normal Mayor Bots), **Local Multiplayer** (2–4 people on one device) and **Custom / Mixed Game** (people and bots, your way), each opening New Game with the right table.
+- **First-game tutorial:** skippable sticky-note tips shown in context (eight, plus a ninth on CPU turns when bots are at the table), replayable from How To Play or Settings.
+- **Rule presets:** Standard, Classic (no events) and Urban Chaos (an event every round), for 2–4 players, kept by autosave.
+- **Career:** a Statistics screen with per-mayor records and 12 achievement badges; only genuinely completed matches count.
+- **Strategic forecasts:** the Build panel and inspector show cost, income, upkeep, net per turn, City Value change, event modifiers and the bonuses a build would activate, computed by running the real transaction on a copy of the game.
+- **Deeper CPU play and personalities:** Hard reads the city's events: it waits out surcharges, uses discounts and boosts only while they last, builds civic shelter when emergencies are likely, and guards against downturns. Hard bids strategically in contested auctions and chooses between restoring a ruin and clearing it. CPU mayors are Builders, Tycoons, Planners or Expansionists: assigned automatically, or chosen in Mixed setup, and shown on the HUD, inspector and results.
+- **CPU turns in play:** CPU seats play their own turns (Manage City, roads, captures, bonus chains, debt, sealed redevelopment bids) through the same actions as people. They pause briefly to "think", say what they're about to do and highlight the road or block, light up their player card, lock the board, and offer Pause, Speed up and Skip. They, wait for the pause menu and for dialogs, resume safely after a reload, and show the handoff screen only when a different person takes over.
+- **CPU city strategy:** `chooseCityAction()` decides builds, upgrades, leaving land vacant, keeping a configurable cash reserve, and selling or downgrading in debt. It scores everything with the real forecasts: Easy picks sensibly, Normal weighs income, upkeep, bonuses, reserve and events, and Hard adds event duration, civic shelter, district completion, return per dollar and bankruptcy risk.
+- **CPU road engine:** `chooseRoad()` with Easy, Normal and Hard play: captures, safe roads, cheapest sacrifices, and for Hard chain look-ahead, value weighting and double-dealing. Pure and deterministic; it never touches the game's random generator.
+- **Human and CPU seats:** each seat is Human or CPU (Easy/Normal/Hard), with Solo, Local Friends and Mixed presets on New Game and "Mayor Bot" default names. Seat types are kept through autosave, Continue, Play Again, Replay and the results screen. The rules are unchanged and human-only games play exactly as before.
+- **Replayable cities:** a city seed on New Game, the seed shown in the pause menu and on the results screen, Replay Same City, and Copy Challenge Link (`?seed=&mode=&seats=`).
+- **Balance pass:** Park income $100 → $150, Civic $250 → $325, Landmark $700 → $850. Before this, upgrading a Park or Civic building to Level 3 lost money every turn, and Landmark paid back more slowly than Industrial at every level. See *Balance simulation* for the evidence. Residential, Commercial, Industrial, scoring and events are unchanged, and the recorded V1.1 games still replay exactly.
+- **Balance simulator:** `npm run simulate` plays hundreds of complete games through the real rules and reports game length, bankruptcies, builds, final spread, events, win rate by seat and capture chains.
+- **CPU simulator and AI hardening:** `npm run simulate:cpu` plays thousands of all-CPU games with the real CPU engine (no DOM, about 0.25 s a game) and reports win rates by difficulty, seat order, road choices, chains, builds, bankruptcy, redevelopment, cash and City Value, game length, illegal CPU actions and stalls. Across 1,800 games in all three modes: no illegal actions, no stalls, and Hard > Normal > Easy at every table size. Fixes from it:
+  - Hard now plays out the endgame at 3–4 player tables. Hard vs Normal at four players went from level (25% / 25%) to 28% / 22%, and from 47% / 47% to 52% / 44% in three-way games.
+  - A Hard bot no longer double-deals at a bigger table, where the chain it gives away goes to a third mayor.
+  - A bot no longer opens a redevelopment auction it won't bid in. That auction settled with no bids and the bot asked again forever.
+  - The turn driver has a no-progress safety net.
+  - The remaining CPU tuning constants moved to `CPU` in `config.js`.
+- **Accessibility audit** in the browser tests on every screen and dialog: every control has an accessible name, label references resolve, ids are unique, open dialogs are labelled, and nothing animates under reduced motion (the system preference or the in-app setting).
 
 ### V1.1 release notes
 
@@ -30,7 +58,106 @@ ES modules don't load from `file://`, so open the game through a local server.
 
 ## How to play
 
-**Setup:** Standard Game seats exactly four mayors. Custom Game allows 2–4 seats. Optionally name each mayor; everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty Custom seats. Then pick the **rules** (see [Rule presets](#rule-presets)); the setup screen describes each one before you start.
+**Setup:** Standard Game seats exactly four mayors. Custom Game allows 2–4 seats. Choose who plays (see [Human and CPU seats](#human-and-cpu-seats)). Optionally name each mayor; everyone starts with **$12,000**. Play always goes in seat order (P1 → P2 → P3 → P4), skipping empty Custom seats. Then pick the **rules** (see [Rule presets](#rule-presets)); the setup screen describes each one before you start.
+
+### Human and CPU seats
+
+Every seat is either **Human** or **CPU** (with an **Easy**, **Normal** or **Hard** difficulty). The title screen offers three ways to play, each opening New Game with a table preset already chosen (the heading says which):
+
+| Title button | Opens New Game with |
+| --- | --- |
+| **Play Solo** | Standard Game, Solo: Player 1 Human, Players 2–4 CPU on Normal (personalities automatic) |
+| **Local Multiplayer** | Local Friends: every seat Human, as in earlier versions |
+| **Custom / Mixed Game** | Custom Game (2–4 seats), Mixed: choose Human or CPU, difficulty and personality per seat |
+
+The preset can still be changed on New Game. The three presets:
+
+| Preset | Seats |
+| --- | --- |
+| **Solo** | You plus computer mayors: the first joined seat is Human, the rest CPU (1 Human + 3 CPU in a Standard Game) |
+| **Local Friends** (default) | Every joined seat is Human: the classic pass-the-device game |
+| **Mixed** | Choose Human or CPU for each seat |
+
+CPU seats that aren't given a name are called **Mayor Bot 1**, **Mayor Bot 2** and so on, numbered in seat order. Standard Game is still exactly 4 seats and Custom 2–4, with CPU seats counting toward the total. At least one seat must be Human. The seat types show as a **CPU** tag on the player cards and the results screen. They're kept by autosave and Continue Game, Play Again and Replay Same City. Saves from before seat types existed load as all-Human tables.
+
+A seat's type is table information only: `createGame` stores `controller` (`"human"` / `"cpu"`) and `difficulty` (`null` / `"easy"` / `"normal"` / `"hard"`) on each player, and no rule reads them. A game with only Human seats plays exactly as before. CPU seats play their own turns (see [CPU turns](#cpu-turns)), using [CPU road decisions](#cpu-road-decisions) and the [CPU city strategy](#cpu-city-strategy). Career statistics and achievements count only the Human seats. Validation, presets and bot names live in `js/core/seats.js`.
+
+### CPU turns
+
+When it's a CPU seat's turn the game plays it: Manage City (builds and upgrades, or nothing), Pave Road, each Capture / Develop choice, bonus-road chains, selling or bankruptcy when in debt, and redevelopment bidding. It does one step at a time after a short thinking pause, and a **"Mayor Bot 1 is thinking…"** strip appears under the turn prompt.
+
+- **What the bot is doing:** the active bot's player card glows, and the strip adds a short line about the planned step ("Building a Commercial on C3", "Claiming B2 & B3", "Paving a risky road", "In debt: selling C3"…). The road or block it is about to use gets a dashed outline. The step is planned when the thinking pause starts and runs only if nothing has changed.
+- **Board locked:** while a bot plays, the board shows no hover preview and doesn't arm roads; a tap or click on it is politely refused with a toast.
+
+- **Same moves as people:** every step is one decision from `js/core/cpu/` played through the same handlers a person's click uses (`placeRoad`, `buildOnBlock`/`upgradeBlock`, `resolveCapture`, `downgradeBlock`/`sellDevelopment`, `declareBankruptcy`, `resolveRedevelopmentAuction`, `startPaving`). Nothing edits the board or cash directly, and the usual toasts, sounds and event cards appear. A bot's moves don't vibrate your phone or trigger rule tips (only the tutorial's *CPU turns* note).
+- **Speed:** Settings → *CPU mayor speed* sets the thinking pause (Relaxed 1.1 s, Normal 0.65 s, Fast 0.22 s; `CPU.THINK_MS`). The strip has **Pause** (opens the pause menu, which stops the bots), **Speed up** (switches to Fast; pressed while on) and **Skip**, which plays the remaining CPU steps at once until a person has control again.
+- **Handoffs:** the pass-the-device screen appears only when control reaches a person other than the last person who played. A Solo game never shows it; Human A → CPU → Human B shows it once, for B. An all-human table gets it on every turn change, as always.
+- **Waiting its turn:** the bots never act while anything else needs the table: the pause menu, an event card, a handoff, an auction people are bidding in, or another screen. Pausing drops a pending step, and resuming re-plans it. People's clicks on the board during a bot's turn are politely refused.
+- **Reloads and game end:** the game autosaves after every step. Each scheduled step is tied to the exact state it was planned for and is dropped if anything changed, so a reload mid-turn resumes from the last completed step without repeating a move. Ending a game, leaving for the title screen or starting a new game stops all CPU timers.
+- **Redevelopment:** CPU mayors bid in every auction with **sealed** bids (shown as "Sealed bid", revealed only by the result), valued by running the real auction on a copy (`chooseRedevelopmentBid`). A CPU can also open bidding on an abandoned block during its Manage City. If people are eligible, the auction panel opens for their bids, and leaving it counts as passing.
+
+The driver is `js/ui/cpuDriver.js`. The CPU steps live in `cpuStep()` in `js/ui/gameView.js`.
+
+### CPU road decisions
+
+`chooseRoad(game, { difficulty, seed })` in `js/core/cpu/roads.js` answers one question: which road should the current seat pave? It returns a decision (`{ road, reason, captures, score, difficulty, candidates }`) and changes nothing; the caller plays it with `placeRoad()`. Legality comes from the game's own `validateRoad()` and board geometry from `board.js`. Look-ahead runs on a copy of the paved roads.
+
+| Difficulty | How it picks a road |
+| --- | --- |
+| **Easy** | Takes a capture if there is one. Otherwise a random legal road, usually (70%) rethinking a road that would leave a three-sided block, so it now and then hands one over |
+| **Normal** | Best capture first, counting double captures and the chain behind a capture. Otherwise a safe road (one that gives nobody a block). If none is left, the road that gives the next mayor the fewest blocks. Picks randomly among equally good roads |
+| **Hard** | Everything Normal does, plus look-ahead. It plays out its own capture run, the next mayor's reply (they take what's offered, then close safely or sacrifice as little as they can) and its own follow-up, weighing blocks by what they're worth (land value + capture reward). So it sacrifices a suburb block before a downtown one and avoids handing over chains. At two players it will **double-deal**: stop two blocks short of the end of a chain, so the opponent must open the next, longer one. At three or four players, once no safe roads are left, it plays the whole endgame out: every mayor takes what it's offered and then gives away as little as it can. It picks the sacrifice that sends the long chains its way (`CPU.HARD_ENDGAME_ROLLOUT`). This is look-ahead against sensible play, not perfect play: it assumes rivals never double-deal, and it doesn't steer who runs out of safe roads first |
+
+**Fairness and determinism:** the engine sees only what a player at the table sees. It never reads `game.rngState` or the event pool and never draws from the game's random generator, so asking it for a move can't predict or change city events (a test plays the same game with and without consulting it and gets identical events). Its choices between equally good roads come from its own seeded stream: pass `seed`, or it derives one from the public city seed, the seat and how many roads are down. The same position and seed always give the same road.
+
+Whole-game win rates are in [CPU simulation](#cpu-simulation). Hard decides in about a millisecond typically. Its worst case (a four-player endgame play-out) is under 30 ms on a desktop. Each position is played out once per decision, and roads that open the same chain share one play-out.
+
+### CPU city strategy
+
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, and "pave" (done managing). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave".
+
+It has no economy formulas of its own:
+- Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
+- Debt options use `quoteDowngrade()`/`quoteSale()` plus the real `downgradeBlock()`/`sellDevelopment()` on a copy, read back with `playerStats()`/`scorePlayer()`.
+- It never chooses a purchase the quote says is unaffordable, and it always keeps a **cash reserve**: `CPU.RESERVE` in `config.js` ($300 Easy, $1,000 Normal/Hard), or the `reserve` option.
+
+| Difficulty | Building | Cash kept after a purchase | In debt |
+| --- | --- | --- | --- |
+| **Easy** | Builds something sensible (any affordable option that raises net income) on 75% of captures; builds or upgrades in Manage City 35% of the time | Reserve | Random downgrades |
+| **Normal** | The best net income per turn × turns left + City Value change: adjacency bonuses, upkeep and today's event prices and income are all in the forecast. Leaves land vacant when nothing pays back before the city is finished | Reserve + next turn's upkeep and repair bills | Gives up the least net income per dollar raised |
+| **Hard** | The same judged harder: active events count only for the rounds they have left, civic shelter is worth 15% of the neighbouring income it protects, a build that leaves a district one block short counts half the bonus it would bring, and it needs a return of at least 5% per dollar | Reserve + next turn's charges even if income were halved, plus a possible Fire repair | Least (income lost over the turns left + City Value lost) per dollar of debt covered |
+
+All three declare bankruptcy only when selling everything couldn't cover the debt (the rules allow nothing else). The tuning constants live in `CPU` in `config.js`. In 30 all-CPU Standard games with the three difficulties at each table (seats rotated), average City Value was $23.6k for Easy, $38.5k for Normal and $40.8k for Hard; there were no bankruptcies, and all six categories got built.
+
+**Reading the city's events (Hard).** Income from anything bought now is first paid at the owner's *next* turn start, so Hard counts an event's boost or penalty only for the paydays it will actually cover. An event ending this round adds nothing.
+- **Surcharges:** upkeep follows the price actually paid, so a surcharge costs every turn after too. When a Housing Boom's surcharge ends this round and waiting one turn is worth more, Hard holds off (reason `wait-for-price`); Normal pays it.
+- **Discounts and boosts:** a Beautification Grant or a Recession discount is worth exactly what it saves, including the lower upkeep. Hard values a Park more during a grant, but not as if the doubled income lasted all game.
+- **Civic shelter:** it's weighted by how likely emergencies are: none in Classic, more in Urban Chaos, half as much again while an emergency is on.
+- **Downturns (Recession, Snowstorm):** Hard keeps enough extra cash to cover what the lean rounds will cost beyond its income, and buys nothing that would leave its net income negative.
+
+**Redevelopment strategy.** A lot's value to a mayor is the real auction run on a copy. "Clear & rebuild" also counts the best building the mayor could put there on its next turn, so a bot restores a valuable ruin (a Level 3 Landmark at 40% of its cost) but clears a cheap one to build something better. Bids never go above what the lot is worth to the bot, and Hard also keeps next turn's bills in hand:
+
+| Difficulty | Sealed bid |
+| --- | --- |
+| Easy | The reserve price, half the time |
+| Normal | The reserve price plus half of what the lot is worth to it |
+| Hard | Just the reserve price when no eligible rival can afford it. Otherwise one step above the richest rival's cash, since nobody can bid more than they have (cash is on the HUD), capped at 80% of the lot's surplus |
+
+### CPU personalities
+
+Every CPU mayor also has a **personality**. Personalities change priorities, never knowledge or rules:
+
+| Personality | Leans towards |
+| --- | --- |
+| **Builder** | Development: Residential (×1.2), upgrades (×1.25) and completing districts (×1.35); keeps a slightly smaller reserve |
+| **Tycoon** | Income: Commercial and Industrial (×1.25), Landmarks (×1.1); cares less for parks and civic buildings |
+| **Planner** | Parks and civic buildings (×1.35), civic shelter (×1.35) and mixed-use neighbourhoods; keeps a bigger reserve |
+| **Expansionist** | Territory: abandoned land (×1.3 on opening auctions and on how much of a lot's value it bids), follow-up captures in its road look-ahead (×1.3: at two players it double-deals more readily); keeps a smaller reserve |
+
+- **Weights, not rules:** a weight only scales an option the mayor already values positively from the real forecasts, so a personality can reorder good choices but never makes a bad one attractive. Easy's random picks lean the same way. The weights live in `CPU.PERSONALITIES`.
+- **Assignment:** bots get a personality automatically, fixed by the city seed (so Replay Same City and challenge links seat the same bots), with no two bots at a table sharing one. In **Mixed** setup each CPU seat can instead pick one (default *Auto*). Solo bots are always automatic.
+- **Where it shows:** the difficulty and personality appear under a bot's name on its player card, in the inspector's Owner line and on the results screen ("CPU · Hard · Tycoon").
+- **Difficulty still matters more:** with the same personality on both sides, Hard took 76–77% of the combined City Value against Easy in head-to-head games, for every personality. Two Hard bots with different personalities split about 50–59%, mostly seat luck. A unit test checks the first for all four personalities.
 
 **Your turn**
 1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
@@ -71,10 +198,10 @@ The record is stored separately from the active-game save (`gridlock.career.v1`)
 
 ### First-game tutorial
 
-A player's first **New Game** shows short tips as each rule comes up, on taped sticky notes next to the control they explain: **Manage City**, **Pave Road**, **completing a block** (when one has three roads), **Develop Now / Leave Vacant**, the **bonus road**, **income & upkeep**, **city events**, and **winning/scoring** (at the halfway point or on the results screen).
+A player's first **New Game** shows short tips as each rule comes up, on taped sticky notes next to the control they explain: **Manage City**, **Pave Road**, **completing a block** (when one has three roads), **Develop Now / Leave Vacant**, the **bonus road**, **income & upkeep**, **city events**, **CPU turns** (only when bots are at the table: the note points at the thinking strip), and **winning/scoring** (at the halfway point or on the results screen).
 
 - One note at a time, never modal and never stealing focus: the game stays fully playable underneath, and a note clears itself once you act (tips inside a dialog go when it closes).
-- Every note has **Got it** and **Skip tutorial**. Skipping or finishing all eight tips is saved on the device, so later games stay tip-free.
+- Every note has **Got it** and **Skip tutorial**. Skipping or finishing all the tips (eight at an all-human table, nine with bots; the count reads "Tip 3 of 9") is saved on the device, so later games stay tip-free.
 - **Replay Tutorial** (at the end of How To Play, or under Settings → Help) starts it over: in the current game if one is in progress, otherwise in the next New Game.
 
 ### Sound
@@ -147,10 +274,10 @@ A captured block starts **Vacant, Level 0** (no income). On their own turn, the 
 | --- | --- | --- | --- | --- |
 | Residential | $1,000 | $300 | $1,500 / $600 | $2,000 / $900 |
 | Commercial | $1,500 | $500 | $2,250 / $1,000 | $3,000 / $1,500 |
-| Park | $800 | $100 | $1,200 / $200 | $1,600 / $300 |
-| Civic | $2,000 | $250 | $3,000 / $500 | $4,000 / $750 |
+| Park | $800 | $150 | $1,200 / $300 | $1,600 / $450 |
+| Civic | $2,000 | $325 | $3,000 / $650 | $4,000 / $975 |
 | Industrial | $1,750 | $600 | $2,625 / $1,200 | $3,500 / $1,800 |
-| Landmark | $3,000 | $700 | $4,500 / $1,400 | $6,000 / $2,100 |
+| Landmark | $3,000 | $850 | $4,500 / $1,700 | $6,000 / $2,550 |
 
 Only Level 1 is set per category (`ECONOMY.DEVELOPMENT.CATEGORIES`). Levels 2–3 come from multipliers in `ECONOMY.DEVELOPMENT.LEVELS` (cost ×1 / ×1.5 / ×2, income ×1 / ×2 / ×3), and `core/development.js` rejects any config that produces fractional dollars. The rules:
 - Only the owner can develop, and only on their turn.
@@ -193,11 +320,23 @@ Every preset works with Standard (4) or Custom (2–4) tables. The rules in play
 
 | Preset | Rules |
 | --- | --- |
-| **Standard** | The full rules described here, identical to V1.1: roads, captures, development, and paced city events (65% chance per round, at most two at once). |
+| **Standard** | The full rules described here (V1.1 rules with the V1.2 balance pass): roads, captures, development, and paced city events (65% chance per round, at most two at once). |
 | **Classic** | Roads, captures and development only. City events never happen (no draws and no "calm round" notes). |
 | **Urban Chaos** | A new city event every round from round 2, each lasting one round longer than usual, with up to three at once. |
 
 Presets are plain configuration (`GAME_MODES` in `js/config.js`). `createGame({ mode })` copies the preset's rules onto the game as `game.rules`, and the event engine reads only that; there are no mode checks elsewhere in the rules or UI. Saves from before presets existed load as Standard.
+
+### Replay a city & challenge links
+
+Every city is dealt from a seed: a whole number from 0 to 4294967295 that drives all of its city-event rolls.
+
+- **Pick a city before starting.** New Game has a **City seed** box. Leave it blank for a random city, type a seed, or tap **New Seed** to roll one. **Random** clears it again.
+- **See the seed.** The seed is shown in the pause menu and on the results screen.
+- **Replay Same City** (results screen) deals the same city again: same seed, rules, seats and mayor names. **Play Again** keeps the table and rules but deals a new city.
+- **Copy Challenge Link** copies a link like `…/GRIDLOCK/?seed=31337&mode=chaos&seats=134`. It holds the seed, the rule preset and the seats at the table (which is everything the event rolls depend on), and nothing else. If the browser won't allow copying, the link appears in a selected text box to copy by hand.
+- **Opening a challenge link** fills in New Game with that seed, preset and seats, and shows a "Challenge city" note. Then the challenge parameters are removed from the address bar, so reloading or bookmarking the page doesn't lock you to that city. A link with only `?seed=` still works; an invalid seed is ignored with a notice.
+
+The same seed, rules and seats give the same event rolls for the same moves. Events can still differ if the players move differently, because targets depend on the board. The logic lives in `js/core/challenge.js` (pure, unit tested).
 
 ### City events
 
@@ -220,7 +359,7 @@ How it stays safe (`core/events.js`):
 - **No duplicates:** re-drawing an active event refreshes its duration instead of adding a second copy. Overlapping different events multiply, clamped to ×0–×2.
 - **Calm pacing:** `ROUND_PROBABILITY` controls whether a round draws anything and `MAX_ACTIVE` caps simultaneous events.
 - **Civic mitigation:** emergencies skip any block inside a civic protection radius (`isProtected`). This is checked live, so building a civic mid-event helps immediately.
-- **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Add `?seed=123` to the URL to replay a game's events. Fire is capped and spread out: at most 2 targets, 1 per player.
+- **Reproducible randomness:** draws use a seeded PRNG stored in the game (`game.seed` / `game.rngState`). Use a city seed or a challenge link to replay a game's events (see *Replay a city & challenge links*). Fire is capped and spread out: at most 2 targets, 1 per player.
 - **Prices and value:** cost events change the actual price paid. That amount becomes the level's invested cost basis and is used by upkeep, refunds, property City Value and final scoring. A separate list-price market value is retained only as optional information.
 
 In the UI, a papercraft event card lists the affected blocks, anything shielded, and the duration. Active events show as pills under the top bar (tap one to reopen its card). Affected blocks get a red, green or blue outline based on the final combined multiplier across all events (not whichever modifier is listed first). The details panel lists each event on a block, the HUD income shows ▲/▼ with a tooltip, and the Build panel shows adjusted prices.
@@ -246,6 +385,91 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
   - `ownershipProblems(game)` checks that every owner exists and every abandoned block is ownerless.
 
 Money safety: every balance change goes through `credit()`/`debit()` in `core/economy.js`. They only accept finite, non-negative whole-dollar amounts, refuse to overdraw, detect corrupted balances, and record every change in `game.ledger`. Turn income and property value read the `income`/`value` stored on each block.
+
+## Balance simulation
+
+`npm run simulate -- [--games 600] [--seed 1] [--mode standard|classic|chaos|all] [--json]` (`tools/simulate.mjs`) plays complete games through the real rules engine and prints a report. It is deterministic: each game's seed drives both the city events and a separate random stream for every bot decision, so the same arguments always give the same numbers (`tests/unit/simulate.test.mjs` checks this, and checks that every simulated game is legal, complete and reconciles its ledger).
+
+Tables mix four scripted mayors and rotate them through every seating order:
+
+| Mayor | Roads | Money |
+| --- | --- | --- |
+| **planner** | Takes captures, avoids giving blocks away, and when forced, gives away the shortest chain | Builds or upgrades by forecast: the real transaction's net income per turn × turns left + its City Value change |
+| **casual** | Mostly safe roads, with the odd blunder | Builds a random affordable category on most captures; upgrades now and then |
+| **saver** | Same as the planner | Never builds |
+| **spender** | Same as the planner | Spends every dollar on the highest-income build or upgrade, keeping no reserve |
+
+**V1.2 results** (600 games per preset, seed 1, with the balance pass):
+
+| | Standard | Classic | Urban Chaos |
+| --- | --- | --- | --- |
+| Rounds per game | 16.7 (13–27) | 16.7 | 16.7 |
+| Games with a bankruptcy | 0% | 0% | 0% |
+| Events per game (per round) | 10.2 (0.65) | 0 | 15.7 (1.0) |
+| Planner builds: residential / commercial / park / civic / industrial / landmark | 23 / 9 / 19 / 4 / 20 / 26% | 21 / 10 / 8 / 4 / 29 / 29% | 22 / 8 / 28 / 5 / 13 / 24% |
+| Final City Value, mean (sd) | $30,492 ($12,604) | $30,563 ($12,629) | $30,483 ($12,592) |
+| Gap between first and last place, median | 54% | 53% | 54% |
+| Longest capture chain per game, median (max) | 13 (31) | 13 (31) | 13 (31) |
+
+**What changed, and why.** The only balance fix is to three incomes, because the per-level numbers showed traps:
+
+| Level step | Park before → after | Civic before → after | Landmark before → after |
+| --- | --- | --- | --- |
+| Extra income vs extra upkeep at Level 3 | +$100 vs $112 → +$150 vs $112 | +$250 vs $280 → +$325 vs $280 | +$700 vs $420 → +$850 vs $420 |
+| Turns for Level 1 to pay back its scoring discount | 4.5 → 2.1 | 4.5 → 2.7 | 1.5 → 1.2 (Industrial: 0.9) |
+
+Before the fix, Park and Civic Level 3 upgrades lost money every turn, and Level 2 took about 19 turns to pay back (a whole game is about 17 rounds). Landmark paid back more slowly than Industrial at every level, so the planner only chose it during a City Festival. Over 2,000 Standard games, the planner's Landmark share rose from 13% to 27% and Industrial fell from 32% to 19%. Win rates, spread, game length and bankruptcies did not move. A unit test now requires every build and upgrade step to earn more per turn than the upkeep it adds.
+
+**Known characteristics (not changed; each would need a rule decision):**
+
+- **Captures come late.** With sensible road play, 98% of blocks are claimed in the second half of the game (55% in the last quarter), and a captured block usually pays income only once. So development matters far less than capturing: the saver and the planner finish within about 2% of each other (over 2,000 Standard games, 2 players: planner 48.5% / saver 51.5% wins). Making development decisive would need a rule change, such as paying income as soon as a block is built, or scoring buildings at full cost. The simulator can measure either option before it's adopted.
+- **Turn order matters.** At a table of identical planners, the later seats are more often forced to open the first long chain. Win rates by seat over 2,000 Standard games: 4 players 25.5 / 33 / 24.8 / 16.8%; 3 players 38 / 42 / 20%; 2 players 53 / 47%. Seats 1–2 capture about 11 and 10 blocks per game, seats 3–4 about 7. This comes from the roads, not the money, so no economy number can fix it. Rotating the first player between games (for example on Play Again) would even it out over a series.
+- **Bankruptcy is rare.** Even the all-in spender never went bankrupt: income beats upkeep for every build, and most money is spent near the end. Distress and bankruptcy remain a safety net for unusual play (heavy Fire damage, lots of undeveloped land, $0 cash).
+- **Fire is uncommon** (about 1.5% of events). It needs developed targets, which mostly appear late, and it's skipped when none are eligible.
+
+## CPU simulation
+
+`npm run simulate:cpu -- [--games 600] [--seed 1] [--mode standard|classic|chaos|all] [--tables a,b] [--json]` (`tools/cpu-simulate.mjs`) plays all-CPU games through the real rules engine. It uses the same CPU decisions the game uses (`chooseRoad`, `chooseCityAction`, `applyCityAction`), one step at a time exactly as the turn loop plays them, with no DOM, timers or animation. It takes about 0.25 s per game, or about 0.6 s at an all-Hard four-player table. It is deterministic: the same arguments give the same report.
+
+Tables cycle through every seating order:
+- head-to-head (Easy v Normal, Normal v Hard, Easy v Hard, two of each at four seats);
+- a three-way Easy/Normal/Hard game;
+- identical mayors, to measure seat order;
+- the four personalities (all Hard);
+- a **debt shock** stress table. One mayor's cash is set deep into debt mid-game, which drives distress, bankruptcy and redevelopment auctions. Careful bots almost never reach these on their own.
+
+**Robustness.** Every decision is checked:
+- An **illegal** action is one the rules engine refuses.
+- A **stall** is a step that changes nothing three times running, or a game still going after 5,000 steps. Either stops the game and is reported, never looped.
+- `tests/unit/cpu-simulate.test.mjs` runs a small sweep on every `npm test`. It checks determinism, and that there are no illegal actions, stalls or unfinished games. It also checks that the debt shock ends in bankruptcy and redevelopment.
+- The simulator exits with an error on any illegal action, stall or unfinished game. CI runs 104 games in each mode (every table, 8 times) after the unit tests.
+- In the game itself, the CPU driver falls back to "finish managing and pave", or "leave the capture vacant", if a step ever changes nothing twice.
+
+**V1.2 results** (600 games per mode, seed 1; "win" is the share of seats that won, ties shared):
+
+| | Standard | Classic | Urban Chaos |
+| --- | --- | --- | --- |
+| Illegal CPU actions / stalls / unfinished | 0 / 0 / 0 (104,021 decisions) | 0 / 0 / 0 | 0 / 0 / 0 |
+| Easy v Normal, 2 players | 2% / 98% | 2% / 98% | 2% / 98% |
+| Normal v Hard, 2 players | 13% / 87% | 11% / 89% | 15% / 85% |
+| Easy / Normal / Hard, three-way | 4% / 44% / 52% | 2% / 46% / 52% | 7% / 44% / 50% |
+| Normal v Hard, 2 of each at 4 players | 22% / 28% | 21% / 29% | 22% / 28% |
+| Easy v Normal, 2 of each at 4 players | 19% / 32% | 19% / 32% | 17% / 33% |
+| Final City Value, Easy / Normal / Hard (mean) | $25.1k / $34.0k / $34.6k | $25.3k / $34.2k / $35.1k | $25.1k / $34.0k / $34.5k |
+| Final cash, Easy / Normal / Hard (mean) | $6.6k / $6.6k / $12.1k | $6.7k / $6.3k / $12.6k | $6.7k / $6.7k / $10.9k |
+| Blocks per seat, Easy / Normal / Hard | 8.2 / 12.1 / 12.0 | same | same |
+| Rounds per game, mean (max) | 17.5 (27) | 17.5 (27) | 17.5 (27) |
+| Longest capture chain per game, median (max) | 13 (32) | 13 (32) | 13 (32) |
+| Redevelopment auctions (opened / won) | 12 / 12 | 11 / 11 | 11 / 11 (2 cleared and rebuilt) |
+
+**Reading it:**
+- **Difficulty order holds everywhere.** Hard > Normal > Easy in every mode and at every table size. Two-player games are the most one-sided (in dots-and-boxes one control of the endgame decides it). At four seats the ranking holds, but the margins are human-sized.
+- **Hard is not perfect.** It sees no hidden information and assumes sensible rivals. Its 2-player edge comes from classic double-dealing, which a person who knows the trick can use against it.
+- **Hard builds less and saves more, and that is correct.** Nearly all captures come in the second half, when a new building rarely pays back its 25% scoring discount. To check, games were branched at 443 of Hard's "leave it vacant" calls and played both ways. Building instead lost that mayor about $320 on average and helped only 8–15% of the time.
+- **Personalities** (960 all-Hard games, every seating order): Builder 28%, Tycoon 25%, Expansionist 24%, Planner 23% wins. Average City Value is within 2.5%, so difficulty matters far more than personality.
+- **Builds by difficulty:** Easy spreads its builds evenly across categories. Normal and Hard favour Landmark, Park, Residential and Industrial. Civic is chosen mainly as shelter: 2% of Hard's builds in Standard, 8% in Urban Chaos, none in Classic.
+- **Bankruptcy** is rare without a shock. Careful bots keep a reserve, and income beats upkeep for every build. The debt-shock table ends in bankruptcy about two times in three. The bots then sell or declare legally, and the abandoned land is always redeveloped by the end.
+- **Seat order.** At a table of *identical* sensible bots, which seat inherits the long late chains is fixed by dots-and-boxes parity. Four Normal bots win by seat 33 / 52 / 13 / 2%; four Hard bots 48 / 24 / 7 / 22%. With varied play the effect disappears: four Easy bots win 20 / 24 / 28 / 28%, within noise. The rules give no seat an edge; mirror-matched bots do. Mixed tables in the simulator (and in Solo, a person against bots) don't show it. See also *Known characteristics* above.
 
 ## Deploy to GitHub Pages
 
@@ -328,12 +552,17 @@ js/
     persistence.js         Versioned active-game save, migration, validation and reset
     tutorial.js            First-game tips: steps, when each applies, saved progress (skip/done)
     modes.js               Rule presets (GAME_MODES) resolved into the rules a game carries
+    seats.js               Seat controllers (human / cpu + difficulty): validation, table presets, bot names
+    cpu/roads.js           CPU road choice (Easy / Normal / Hard): pure, deterministic, decision only
+    cpu/city.js            CPU Manage City + Capture/Develop: build, upgrade, vacant, reserve, debt, events, redevelopment, personalities (forecast-based)
+    cpu/random.js          The CPU's own seeded stream (never the game RNG)
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
     bus.js                 Pub/sub between core and UI
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
-    setupView.js           4-seat new game form
+    cpuDriver.js           Runs CPU turns: thinking pause + intent line, Pause/Speed up/Skip, waits for dialogs/pause, stale-step guard
+    setupView.js           New game form: seats, Human/CPU presets + difficulty, rules, city seed
     boardView.js           Board renderer (intersections, road slots, blocks)
     hud.js                 Player cards, round & turn banner
     gameView.js            Game controller (moves, capture feedback, results, pause)
@@ -356,6 +585,8 @@ css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon,
 css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
 tools/build-pwa.mjs        Refreshes sw.js precache + version; --icons renders assets/icons/
+tools/simulate.mjs         Deterministic balance simulator (npm run simulate)
+tools/cpu-simulate.mjs     All-CPU simulator with the real CPU engine: win rates, robustness (npm run simulate:cpu)
 assets/generated/          Build output (committed so GitHub Pages serves it)
 assets/icons/              App icons (192, 512, maskable 512, Apple touch 180) from the title logo
 assets/fonts/              Self-hosted WOFF2 fonts + their OFL licences
@@ -377,6 +608,13 @@ tests/
                            has one every round (≤3 at once), determinism, 2–4 players, save/restore, old saves
   unit/career.test.mjs     Genuine-match check (staged games rejected), totals, mayors, achievements, dedupe, storage, corruption
   unit/forecast.test.mjs   Forecasts = real transactions (every category, upgrades, events, bonuses, next turn's income/upkeep, 100+ mid-game positions)
+  unit/challenge.test.mjs  Seed/link parsing, links never carry ?debug, Replay setup; same seed + mode + seats + moves = same events (every preset)
+  unit/seats.test.mjs      Seat validation (Standard/Custom, controllers, difficulty, a human seat), presets, bot names, human-only games unchanged, mixed tables, save/Continue/rematch/replay, career counts humans
+  unit/cpu-roads.test.mjs  CPU roads on staged positions: captures, doubles/chains, safe roads, sacrifices, value-weighting, double-deal; purity, determinism, event RNG untouched; whole CPU games; Hard ≥ Normal > Easy
+  unit/cpu-city.test.mjs   CPU city decisions on staged positions: affordability, configurable reserve, endgame restraint, district and event and civic judgement, upgrades, debt and bankruptcy; auctions a bot opens always settle (any cash level); purity; whole CPU games; Normal/Hard > Easy
+  unit/cpu-strategy.test.mjs  Events (wait out a surcharge, grants, civic exposure, downturns), contested bids, restore vs rebuild, personalities (reserve, bids, Easy's picks, build mix), double-deal at two players but not three, difficulty > personality
+  unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
+  unit/cpu-simulate.test.mjs  All-CPU sweep: deterministic, no illegal actions/stalls/unfinished games; debt shock → bankruptcy → redevelopment; runaway detection
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
@@ -427,6 +665,8 @@ npm run test:smoke:webkit
 npm run test:smoke:firefox
 npm run test:pwa               # offline/PWA check (BROWSER=chromium|webkit|firefox)
 npm run build:pwa              # after changing game files: refresh sw.js (CI checks it)
+npm run simulate               # balance report: hundreds of complete bot games (see Balance simulation)
+npm run simulate:cpu           # CPU report: all-CPU games with the real CPU engine (see CPU simulation)
 npm run build:icons            # re-render app icons from the logo sprite (needs Playwright)
 ```
 
@@ -439,4 +679,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. A replay run opens a challenge link (setup pre-filled, address bar cleaned, `?debug` kept), checks New Seed/Random/invalid seeds, plays an Urban Chaos city, checks the seed in the pause menu and results, copies the link (and the selectable-text fallback when the clipboard refuses), then Replay Same City with the same moves must roll the identical event sequence, Play Again must deal a new seed, and the link opened plainly must deal the same city. A play-options run (desktop and phone) checks the three title buttons fit above the fold, what each opens (Local Multiplayer all Human; Custom / Mixed a Custom Game with Mixed seats; Play Solo Player 1 Human + three Normal CPUs), then plays a first Solo game: the tutorial counts nine tips and shows the CPU note, the active bot's card glows, the strip states its intent, the board is locked and refuses a click, Pause from the strip stops the bots, Speed up is pressed and saved, and control returns to the human with no leftover highlight. A seat-controller run checks the Solo / Local Friends / Mixed presets (Local Friends by default, with locked all-Human seats as before), CPU difficulty and bot names, the no-Human-seat and Custom seat-count validation, the CPU tags in game and on the results screen, and that the table survives reload + Continue, Play Again and Replay Same City. Three CPU runs play real games: Solo (the bots play themselves with the thinking strip and a refused board click; pause stops them; Speed up and Skip work; a reload mid-bot-turn resumes with no repeated road; the whole city is played out with no handoff screen, and nothing moves after the end), Mixed Human/CPU/Human/CPU (the handoff appears only when a different person takes over, a Hard bot in debt sells its way out, and a person-opened auction gets a sealed bot bid that wins), and a bot opening bidding itself (people may bid, leaving passes, and the bot then finishes its turn). A 3-people + 1-bot run on a phone with reduced motion and haptics checks that handoffs appear only between people (never before or after the bot, except when a different person takes over), that the bot's moves never vibrate the phone, that nothing animates, and that sound stays unlocked around the bot's turn. An accessibility audit visits every screen and the pause, capture, build and results dialogs with reduced motion on: every visible control must have an accessible name, every rendered `aria-labelledby`/`aria-describedby`/`for` reference must resolve, ids must be unique, open dialogs must be labelled, and nothing may be animating; the in-app Reduce Motion setting must also stop all animation and persist. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

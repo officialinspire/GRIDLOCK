@@ -8,6 +8,9 @@ import { ART } from '../art.js';
 import { formatCash } from '../core/economy.js';
 import { TIEBREAKERS } from '../core/scoring.js';
 import { modeName } from '../core/modes.js';
+import { challengeUrl, formatSeed } from '../core/challenge.js';
+import { controllerLabel } from '../core/seats.js';
+import { toast } from './toast.js';
 
 const ordinal = (n) => ({ 1: '1st', 2: '2nd', 3: '3rd' }[n] ?? `${n}th`);
 
@@ -15,18 +18,19 @@ function stat(label, value, cls = '') {
   return [h('dt', {}, label), h('dd', { class: cls }, value)];
 }
 
-function playerCard(row, awardsBySeat, isWinner, index) {
+function playerCard(row, awardsBySeat, isWinner, index, cpu) {
   const hi = row.highest;
   return h('li', {
     class: `result-card result-card--${row.color}${isWinner ? ' is-winner' : ''}`,
     dataset: { seat: row.seat, rank: row.rank, cityValue: row.cityValue },
     style: { animationDelay: `${160 + index * 120}ms` },
-    'aria-label': `${ordinal(row.rank)}: ${row.name}, City Value ${formatCash(row.cityValue)}`,
+    'aria-label': `${ordinal(row.rank)}: ${row.name}${cpu ? ` (${cpu})` : ''}, City Value ${formatCash(row.cityValue)}`,
   },
     h('div', { class: 'result-card__head' },
       h('span', { class: 'result-card__rank' }, ordinal(row.rank)),
       createSprite(ART.owner.chip(row.seat), { className: 'result-card__token' }),
       h('span', { class: 'result-card__name' }, row.name),
+      cpu && h('span', { class: 'result-card__cpu', title: cpu }, cpu),
       isWinner && createSprite('icons:crown', { className: 'result-card__crown', label: 'Winner' }),
     ),
     h('p', { class: 'result-card__value' },
@@ -68,7 +72,8 @@ export function renderResults(game) {
     awardsBySeat.get(seat).push(a);
   }
 
-  $('#results-list').replaceChildren(...res.rows.map((row, index) => playerCard(row, awardsBySeat, winners.has(row.seat), index)));
+  $('#results-list').replaceChildren(...res.rows.map((row, index) => playerCard(row, awardsBySeat, winners.has(row.seat), index,
+    controllerLabel(game.players.find((p) => p.seat === row.seat)))));
   $('#results-awards').replaceChildren(...(res.distinctions.length
     ? res.distinctions.map((a) => h('li', { class: 'award', dataset: { award: a.id } },
       createSprite(a.icon, { className: 'award__icon' }),
@@ -121,8 +126,37 @@ function countCityValues(dialog) {
 export function showResults(game) {
   renderResults(game);
   $('#results-mode').textContent = `${modeName(game)} rules · ${game.players.length} players · ${game.round} rounds`;
+  $('#results-seed').textContent = formatSeed(game.seed);
+  $('#share-fallback').hidden = true;
   const dialog = $('#results-dialog');
   if (!dialog.open) dialog.showModal();
   requestAnimationFrame(() => countCityValues(dialog));
   dialog.querySelector('[data-results-action="rematch"]').focus();
+}
+
+/** Link that deals this city again: seed, rules and seats only (never ?debug or names). */
+export const gameChallengeUrl = (game, pageHref = window.location.href) =>
+  challengeUrl({ seed: game.seed, mode: game.mode, seats: game.players }, pageHref);
+
+/**
+ * Copies the challenge link. Where the Clipboard API is missing, blocked or refused,
+ * the link appears in a selected read-only box instead, so it can still be copied by hand.
+ */
+export async function copyChallengeLink(game) {
+  const link = gameChallengeUrl(game);
+  const fallback = $('#share-fallback');
+  const input = $('#share-link');
+  input.value = link;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+    await navigator.clipboard.writeText(link);
+    fallback.hidden = true;
+    toast('Challenge link copied', { tone: 'success' });
+    return true;
+  } catch {
+    fallback.hidden = false;
+    input.focus();
+    input.select();
+    return false;
+  }
 }

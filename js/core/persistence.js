@@ -6,6 +6,7 @@ import { DISTRICTS, blockId, isValidRoad } from './board.js';
 import { CATEGORY_ORDER } from './buildings.js';
 import { refreshBonuses } from './bonuses.js';
 import { getMode, resolveRules } from './modes.js';
+import { controllerOf } from './seats.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
 export const SAVE_VERSION = 1;
@@ -71,7 +72,8 @@ function validGame(game) {
     if (!plainObject(player) || !integer(player.seat) || player.seat < 1 || player.seat > MAX_PLAYERS
       || seats.has(player.seat) || !integer(player.cash) || typeof player.name !== 'string'
       || typeof player.color !== 'string' || typeof player.symbol !== 'string' || typeof player.hex !== 'string'
-      || !integer(player.bankruptcies) || !integer(player.lastEconomicRound)) return false;
+      || !integer(player.bankruptcies) || !integer(player.lastEconomicRound)
+      || !controllerOf(player)) return false;
     seats.add(player.seat);
   }
   if (!plainObject(game.board) || game.board.rows !== BOARD_ROWS || game.board.cols !== BOARD_COLS
@@ -111,7 +113,9 @@ function setupFrom(game, setup) {
   return {
     gameType: setup?.gameType === 'standard' && game.players.length === MAX_PLAYERS ? 'standard' : 'custom',
     mode: game.mode,
-    seats: game.players.map(({ seat, name }) => ({ seat, name })),
+    seats: game.players.map(({ seat, name, controller, difficulty, personality }) => ({
+      seat, name, controller, difficulty, ...(controller === 'cpu' && { personality: personality ?? null }),
+    })),
   };
 }
 
@@ -153,6 +157,12 @@ export function loadActiveGame(storage = globalThis.localStorage) {
       });
       delete migrated.game.eventProbability;
       delete migrated.game.maxActiveEvents;
+    }
+    // Saves from before seat controllers existed were all-human tables.
+    if (Array.isArray(migrated?.game?.players)) {
+      for (const player of migrated.game.players) {
+        if (plainObject(player) && player.controller === undefined) Object.assign(player, { controller: 'human', difficulty: null });
+      }
     }
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.

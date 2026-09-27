@@ -1629,3 +1629,69 @@ html[data-coords='on'] .block__coord { display: block; }
 .inspector__event { cursor: help; font-size: 0.8em; }
 .inspector__event.is-up { color: var(--green); }
 .inspector__event.is-down { color: var(--red-deep); }
+
+/* Seeds and challenge links */
+.seed-value { font-variant-numeric: tabular-nums; user-select: all; -webkit-user-select: all; }
+.modal__seed { margin: -6px 0 12px; text-align: center; font-weight: 700; color: var(--ink-soft); }
+.results__share { display: grid; gap: 8px; justify-items: center; text-align: center; }
+.results__seed { margin: 0; font-weight: 800; }
+.results__share-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; width: 100%; }
+.results__share-actions .btn { flex: 1 1 180px; max-width: 260px; }
+.share-fallback { display: grid; gap: 4px; width: 100%; max-width: 520px; font-size: 0.9rem; font-weight: 700; }
+.share-fallback__input { font-size: 0.9rem; user-select: all; -webkit-user-select: all; }
+@media (max-width: 560px) {
+  .results__share-actions .btn { flex-basis: 100%; max-width: none; }
+}
+
+/* CPU seats: a small paper tag next to the mayor's name */
+.player-card__cpu,
+.result-card__cpu {
+  flex: none;
+  padding: 1px 7px;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--paper-hi);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+
+/* CPU turns: a quiet "thinking" strip with speed controls */
+.cpu-status {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: -4px 0 0;
+}
+.cpu-status[hidden] { display: none; }
+.cpu-status__text { margin: 0; font-weight: 900; color: var(--ink-soft); }
+.cpu-status__dots span { animation: cpu-dot 1.2s infinite both; }
+.cpu-status__dots span:nth-child(2) { animation-delay: 0.2s; }
+.cpu-status__dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cpu-dot { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+.cpu-status .btn { flex: 0 0 auto; min-height: 44px; }
+#cpu-faster[aria-pressed='true'] { background-color: #fdf0c4; }
+.auction-bid--cpu { margin: 0; font-weight: 800; }
+.auction-bid__sealed { justify-self: end; font-style: italic; color: var(--ink-soft); }
+.player-card__bot { margin: -2px 0 2px; font-size: 0.75rem; font-weight: 800; color: var(--ink-soft); }
+.inspector__bot { font-weight: 700; color: var(--ink-soft); }
+
+/* CPU turns: the active bot's card glows, the board waits, the planned road/block is marked. */
+.player-card.is-thinking {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--seat, var(--gold)) 55%, transparent), var(--drop-sm);
+  animation: bot-glow 1.6s ease-in-out infinite;
+}
+@keyframes bot-glow {
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--seat, var(--gold)) 30%, transparent), var(--drop-sm); }
+}
+.board-frame.is-cpu-turn .road:not(.is-built) { cursor: wait; }
+.cpu-intent { outline: 4px dashed var(--ink); outline-offset: 2px; border-radius: 6px; }
+[data-road].cpu-intent { outline-offset: 0; }
+.cpu-status__lines { display: grid; gap: 0; text-align: center; }
+.cpu-status__intent { margin: 0; font-size: 0.9rem; font-weight: 800; }
+.cpu-status__intent[hidden] { display: none; }

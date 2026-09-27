@@ -9,8 +9,8 @@ import { toast } from './toast.js';
 import { bus } from '../core/bus.js';
 import { PHASES } from '../core/game.js';
 import {
-  TUTORIAL_STEPS, STEP_IDS, loadTutorial, saveTutorial, onNewGame, markSeen, skipTutorial, replayTutorial,
-  tipForGame, almostCompleteBlock, isRunning,
+  TUTORIAL_STEPS, loadTutorial, saveTutorial, onNewGame, markSeen, skipTutorial, replayTutorial,
+  tipForGame, almostCompleteBlock, isRunning, stepsFor,
 } from '../core/tutorial.js';
 
 let state = loadTutorial();
@@ -31,6 +31,7 @@ const TARGETS = {
   bonus: () => $('#turn-prompt'),
   income: () => visible($('#economy-summary')) ?? document.querySelector('.player-card.is-active'),
   events: () => $('#event-dialog'),
+  cpu: () => visible($('#cpu-status')),
   scoring: (game) => (game?.phase === PHASES.ENDED ? $('#results-dialog') : document.querySelector('.round-badge')),
 };
 
@@ -63,7 +64,7 @@ function hide(seen) {
   const dialog = el.parentElement?.closest('dialog[open]');
   el.remove();
   if (dialog) dialog.scrollTop = 0; // the note sat above the dialog's heading
-  if (seen) persist(markSeen(state, id));
+  if (seen) persist(markSeen(state, id, stepsFor(getGame())));
 }
 
 function show(id, { moment = false } = {}) {
@@ -72,8 +73,9 @@ function show(id, { moment = false } = {}) {
   if (!target) return false;
   hide(false);
   const step = TUTORIAL_STEPS.find((s) => s.id === id);
+  const steps = stepsFor(game); // numbered among the tips that apply at this table
   const el = h('aside', { class: 'coach-mark sticky-note', 'aria-label': 'Tutorial tip', dataset: { step: id } },
-    h('p', { class: 'coach-mark__count' }, `Tip ${STEP_IDS.indexOf(id) + 1} of ${STEP_IDS.length}`),
+    h('p', { class: 'coach-mark__count' }, `Tip ${steps.indexOf(id) + 1} of ${steps.length}`),
     h('p', { class: 'coach-mark__body', role: 'status' },
       h('strong', { class: 'coach-mark__title' }, step.title), ' ', step.text),
     h('div', { class: 'coach-mark__actions' },

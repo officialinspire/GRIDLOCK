@@ -18,6 +18,7 @@ import { blockImpacts } from '../core/events.js';
 import { getPlayer, currentPlayer, PHASES, TURN_PHASES } from '../core/game.js';
 import { isInDistress } from '../core/economy.js';
 import { getSettings } from './settingsView.js';
+import { isCpu } from '../core/seats.js';
 
 let selectedId = null;
 let seenMove = null;
@@ -186,7 +187,8 @@ export function renderBoard(game) {
   const playing = game.phase === PHASES.PLAYING;
   const turnColor = playing ? currentPlayer(game).color : null;
   frame.dataset.turn = turnColor ?? 'none';
-  el.classList.toggle('is-locked', !playing || isInDistress(currentPlayer(game)));
+  // Locked: no road previews or taps to arm (game over, debt to settle, or a CPU mayor's turn).
+  el.classList.toggle('is-locked', !playing || isInDistress(currentPlayer(game)) || isCpu(currentPlayer(game)));
 
   const cells = [];
   for (let R = 0; R <= board.rows * 2; R++) {

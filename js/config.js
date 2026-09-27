@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   reducedMotion: false,
   showCoords: false,
   quickHandoff: false,
+  cpuSpeed: 'normal', // how long CPU mayors pause before each move: relaxed | normal | fast
 });
 
 /**
@@ -67,10 +68,10 @@ export const ECONOMY = Object.freeze({
     CATEGORIES: Object.freeze({
       residential: Object.freeze({ cost: 1000, income: 300 }),
       commercial: Object.freeze({ cost: 1500, income: 500 }),
-      park: Object.freeze({ cost: 800, income: 100 }),
-      civic: Object.freeze({ cost: 2000, income: 250 }),
+      park: Object.freeze({ cost: 800, income: 150 }),
+      civic: Object.freeze({ cost: 2000, income: 325 }),
       industrial: Object.freeze({ cost: 1750, income: 600 }),
-      landmark: Object.freeze({ cost: 3000, income: 700 }),
+      landmark: Object.freeze({ cost: 3000, income: 850 }),
     }),
 
     /**
@@ -137,6 +138,82 @@ export const ECONOMY = Object.freeze({
      * Marks protected blocks so emergencies can be mitigated; no direct income effect.
      */
     CIVIC_PROTECTION: Object.freeze({ radiusByLevel: Object.freeze({ 1: 1, 2: 1, 3: 2 }), sameOwnerOnly: true }),
+  }),
+});
+
+/**
+ * CPU mayor strategy (core/cpu/city.js). Tuning only: every price, income, upkeep, bonus and
+ * event effect the CPU weighs comes from the real economy through core/forecast.js.
+ */
+export const CPU = Object.freeze({
+  /** Pause before each CPU move, by the cpuSpeed setting, so people can follow along (ms). */
+  THINK_MS: Object.freeze({ relaxed: 1100, normal: 650, fast: 220 }),
+  /** Cash a CPU mayor keeps in hand after any purchase (a table can pass its own). */
+  RESERVE: Object.freeze({ easy: 300, normal: 1000, hard: 1000 }),
+  /** Easy: chance to develop a block it just captured (when something sensible is affordable)… */
+  EASY_BUILD_CHANCE: 0.75,
+  /** …and, in Manage City, to build on or upgrade one of its blocks. */
+  EASY_MANAGE_CHANCE: 0.35,
+  /** Easy: chance it rethinks a road that would leave a three-sided block (else it plays it). */
+  EASY_CAUTION: 0.7,
+  /**
+   * Hard roads: how much of the captures it expects back after the next mayor's reply counts,
+   * by table size (in full at two players; others move in between at bigger tables)…
+   */
+  HARD_FOLLOW_UP: Object.freeze({ 2: 1, 3: 0.5, 4: 0.5 }),
+  /** …and the largest table at which it will decline the last two blocks of a run to keep control. */
+  HARD_DOUBLE_DEAL_MAX_PLAYERS: 4,
+  /**
+   * Hard roads, endgame at three or more players (no safe roads left): play the remaining chains
+   * out, every mayor taking what it's offered and giving away as little as it can, to see which
+   * sacrifice sends the long chains its way. Off: one reply ahead, as at two players.
+   */
+  HARD_ENDGAME_ROLLOUT: true,
+  /** …starting once this few safe roads are left (0: only when none are). */
+  HARD_ROLLOUT_SAFE_ROADS: 0,
+  /** Hard: minimum expected return per dollar spent before it commits cash. */
+  HARD_MIN_ROI: 0.05,
+  /** Hard: its cash floor covers next turn's charges as if income fell by this share… */
+  HARD_INCOME_CUT: 0.5,
+  /** …plus this share of a Fire repair bill when a Fire could hit one of its buildings. */
+  HARD_FIRE_BUFFER: 1,
+  /** Hard: value per turn of civic shelter, as a share of the income it protects from emergencies. */
+  CIVIC_SHELTER_VALUE: 0.15,
+  /** Hard: share of a district bonus it counts for a build that leaves the district one block short. */
+  DISTRICT_POTENTIAL: 0.5,
+  /**
+   * CPU personalities: priorities, never extra knowledge or different rules. Each weight
+   * multiplies how much the mayor cares about something it has already valued from the real
+   * forecasts, and stays modest (0.85–1.35) so difficulty always matters more than personality.
+   *   categories    weight on a build/upgrade's value by category
+   *   upgrade       weight on upgrading an existing building
+   *   district      weight on district-completion value (Hard)
+   *   shelter       weight on civic shelter value (Hard)
+   *   redevelop     weight on buying abandoned land (opening auctions, and how much of its value it bids)
+   *   reserve       multiplier on the default cash reserve
+   *   followUp      weight on captures it expects next turn when choosing roads (Hard)
+   */
+  PERSONALITIES: Object.freeze({
+    builder: Object.freeze({
+      id: 'builder', name: 'Builder', blurb: 'Develops and upgrades, chasing districts.',
+      categories: Object.freeze({ residential: 1.2, commercial: 1.1, park: 1, civic: 1, industrial: 1, landmark: 1.1 }),
+      upgrade: 1.25, district: 1.35, shelter: 1, redevelop: 1, reserve: 0.9, followUp: 1,
+    }),
+    tycoon: Object.freeze({
+      id: 'tycoon', name: 'Tycoon', blurb: 'Commerce, industry and income first.',
+      categories: Object.freeze({ residential: 0.95, commercial: 1.25, park: 0.85, civic: 0.85, industrial: 1.25, landmark: 1.1 }),
+      upgrade: 1.1, district: 1, shelter: 0.85, redevelop: 1, reserve: 1, followUp: 1,
+    }),
+    planner: Object.freeze({
+      id: 'planner', name: 'Planner', blurb: 'Parks, civic buildings and mixed-use neighbourhoods.',
+      categories: Object.freeze({ residential: 1.05, commercial: 1, park: 1.35, civic: 1.35, industrial: 0.9, landmark: 1 }),
+      upgrade: 1, district: 1.1, shelter: 1.35, redevelop: 0.9, reserve: 1.15, followUp: 1,
+    }),
+    expansionist: Object.freeze({
+      id: 'expansionist', name: 'Expansionist', blurb: 'Territory first: captures and abandoned land.',
+      categories: Object.freeze({ residential: 0.95, commercial: 0.95, park: 0.9, civic: 0.9, industrial: 0.95, landmark: 0.9 }),
+      upgrade: 0.9, district: 1, shelter: 1, redevelop: 1.3, reserve: 0.85, followUp: 1.3,
+    }),
   }),
 });
 

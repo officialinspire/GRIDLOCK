@@ -17,6 +17,8 @@ import { bonusList } from './bonusView.js';
 import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
 import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
+import { isCpu } from '../core/seats.js';
+import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
 import { buzz } from './haptics.js';
 import {
@@ -187,13 +189,17 @@ function abandonedView(game, block, player) {
       h('strong', { class: 'acquire-option__title' }, title),
       h('span', { class: 'acquire-option__detail' }, detail({ ...q, cost: q.reserve })),
       h('span', { class: 'price__cost' }, `Reserve ${formatCash(q.reserve)}`),
-      ...bidders.map((bidder) => h('label', { class: 'auction-bid' },
+      ...bidders.map((bidder) => (isCpu(bidder)
+        // CPU mayors bid too, sealed: their amounts are only revealed by the result.
+        ? h('p', { class: 'auction-bid auction-bid--cpu', dataset: { cpuBidder: bidder.seat } },
+          h('span', {}, bidder.name), h('span', { class: 'auction-bid__sealed' }, 'Sealed bid'))
+        : h('label', { class: 'auction-bid' },
         h('span', {}, bidder.name),
         h('input', {
           type: 'number', min: q.reserve, step: ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT,
           max: bidder.cash, name: `bid-${bidder.seat}`, placeholder: 'Pass',
           value: bidder.seat === player.seat && bidder.cash >= q.reserve ? q.reserve : null,
-        }))),
+        })))),
       h('button', { type: 'button', class: 'btn btn--sm', dataset: { auction: mode } }, 'Resolve bids'),
     );
   };
@@ -292,6 +298,7 @@ function handleAuction(mode) {
   const bids = [...panel.querySelectorAll('[name^="bid-"]')]
     .filter((input) => input.value !== '')
     .map((input) => ({ seat: Number(input.name.slice(4)), bid: Number(input.value) }));
+  bids.push(...cpuBids(state.game, state.blockId, mode));
   const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
   if (!result.ok) {
     buzz('error');
@@ -303,8 +310,9 @@ function handleAuction(mode) {
   const reopen = result.mode === ACQUIRE_MODES.REBUILD;
   $('#build-dialog').close();
   state.onChange({ ...result, bonusBefore: Infinity });
-  // A cleared lot goes straight to choosing what to build (only if the winner is on turn).
-  if (reopen) openBuildPanel(state.game, result.block);
+  // A cleared lot goes straight to choosing what to build (only if the winner is on turn and a
+  // person: a CPU mayor chooses for itself).
+  if (reopen && !isCpu(currentPlayer(state.game))) openBuildPanel(state.game, result.block);
 }
 
 /** True if the current player may open the panel: their own block, or an abandoned one. */

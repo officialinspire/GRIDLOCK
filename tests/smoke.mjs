@@ -58,9 +58,28 @@ async function noHorizontalScroll(page, label) {
 function watchForBrowserErrors(page) {
   const errors = [];
   const optionalFont = (url) => /fonts\.(?:googleapis|gstatic)\.com/.test(url);
+  let navigations = 0;
+  const startedAt = new WeakMap();
+  const loaded = new Set();
+  const abortedErrors = new Map(); // url → error entries awaiting a successful load
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
   page.on('console', (message) => {
     const source = message.location().url ?? '';
+    // Firefox reports a load the page cancelled while the service worker was answering it as
+    // "A ServiceWorker intercepted the request and encountered an unexpected error": the same
+    // cancellation as NS_BINDING_ABORTED below, so it gets the same rule.
+    // A cancelled image stream can also surface as "Image corrupt or truncated." for that image.
+    const swCancel = message.type() === 'error'
+      && (message.text().match(/Failed to load ‘([^’]+)’\. A ServiceWorker intercepted the request and encountered an unexpected error/)
+        ?? (/Image corrupt or truncated/.test(message.text()) && source ? [null, source] : null));
+    if (swCancel) {
+      const url = swCancel[1];
+      if (loaded.has(url)) return;
+      const entry = `console: ${message.text()}`;
+      errors.push(entry);
+      abortedErrors.set(url, [...(abortedErrors.get(url) ?? []), entry]);
+      return;
+    }
     if (message.type() === 'error' && !optionalFont(source)) errors.push(`console: ${message.text()}`);
     if (message.type() === 'warning' && /\[assets\]/.test(message.text())) errors.push(`asset warning: ${message.text()}`);
   });
@@ -71,10 +90,6 @@ function watchForBrowserErrors(page) {
   // Likewise, the browser may cancel an in-flight image a style no longer needs (e.g. on a screen
   // switch); Firefox reports these as NS_BINDING_ABORTED. Only a file that never loads is an asset
   // failure, so an abort is dropped once the same URL loads successfully (before or after).
-  let navigations = 0;
-  const startedAt = new WeakMap();
-  const loaded = new Set();
-  const abortedErrors = new Map(); // url → error entries awaiting a successful load
   page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) navigations++; });
   page.on('request', (request) => startedAt.set(request, navigations));
   page.on('requestfailed', (request) => {
@@ -134,7 +149,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForSelector('html.is-ready');
     assert.ok(await page.isVisible('[data-screen="title"]'), 'title visible');
     assert.match(await page.textContent('.city-edition'), /Fredericksburg, Virginia/);
-    for (const label of ['New Game', 'How To Play', 'Settings']) {
+    for (const label of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game', 'How To Play', 'Statistics', 'Settings']) {
       assert.ok(await page.getByRole('button', { name: label }).isVisible(), `${label} button`);
     }
     assert.equal(await page.$$eval('[data-sprite]', (els) => els.length), 0, 'all static sprites hydrated');
@@ -143,7 +158,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 10);
+    assert.equal(await page.locator('.howto-card').count(), 11);
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -158,7 +173,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.isChecked('input[name="showCoords"]'), true, 'coords persisted');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     assert.equal(await page.locator('.seat-card').count(), 4);
     assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players · \$12,000 each/);
     assert.equal(await page.locator('[name="join"]:disabled').count(), 4);
@@ -300,7 +315,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=5&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     const fin = page.locator('#finance-dialog');
@@ -365,7 +380,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=19`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await pave(page, road(id));
@@ -397,7 +412,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'v-0-0']) {
@@ -449,7 +464,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const last = await page.evaluate(async () => {
       const { allRoadIds, getBlock } = await import('/js/core/board.js');
@@ -489,9 +504,9 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
-    const btn = await page.locator('[data-nav="setup"]').evaluate((el) => getComputedStyle(el).borderImageSource);
+    const btn = await page.locator('[data-setup-preset="solo"]').evaluate((el) => getComputedStyle(el).borderImageSource);
     assert.match(btn, /generated\/ui\/btn-gold\.png/);
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await page.evaluate(async () => {
       const { getBlock } = await import('/js/core/board.js');
@@ -521,7 +536,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
     const size = await page.evaluate(() => [document.documentElement.scrollHeight, innerHeight, document.documentElement.scrollWidth, innerWidth]);
@@ -558,7 +573,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await pave(page, page.locator('[data-road="h-0-0"]'));
     await page.reload({ waitUntil: 'networkidle' });
@@ -591,7 +606,7 @@ for (const vp of VIEWPORTS) {
   const errors = watchForBrowserErrors(page);
   try {
     await page.goto(base, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
     await pave(page, page.locator('[data-road="v-0-1"]'));
@@ -672,7 +687,7 @@ for (const vp of VIEWPORTS) {
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
 
     // In game: ambience plays (where Web Audio exists), ducks for pause, resumes.
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     st = await audioState();
     assert.equal(st.scene.name, 'game');
@@ -786,7 +801,7 @@ const recordVibration = () => {
     assert.equal(await page.isVisible('#haptics-row'), coarse, 'haptics switch shown only on touch devices');
     if (coarse) assert.equal(await page.isChecked('#settings-form [name="haptics"]'), true, 'on by default');
     await page.locator('[data-screen="settings"] [data-nav="back"]').tap();
-    await page.getByRole('button', { name: 'New Game' }).tap();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).tap();
     await page.locator('#setup-start').tap();
 
     // Tap twice to pave: arm (tiny) then pave (short).
@@ -881,7 +896,7 @@ const recordVibration = () => {
     // Tap targets (portrait and rotated to landscape).
     for (const [w, h] of [[390, 844], [844, 390]]) {
       await page.setViewportSize({ width: w, height: h });
-      await page.getByRole('button', { name: 'New Game' }).tap();
+      await page.getByRole('button', { name: 'Local Multiplayer' }).tap();
       await page.locator('#setup-start').tap();
       const t = await page.evaluate(() => {
         const hit = (sel, axis) => {
@@ -932,7 +947,7 @@ const recordVibration = () => {
     await page.getByRole('button', { name: 'Settings' }).click();
     if (!coarse) assert.equal(await page.isVisible('#haptics-row'), false, 'no haptics switch on desktop');
     await page.locator('[data-screen="settings"] [data-nav="back"]').click();
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     if (await page.locator('#handoff-dialog[open]').count()) await page.click('#handoff-ready');
     const road = (id) => page.locator(`#board [data-road="${id}"]`);
@@ -974,7 +989,7 @@ const recordVibration = () => {
   const seen = async () => (await page.evaluate(() => window.__GRIDLOCK__.tutorial())).seen;
   try {
     await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     // 1. Manage City: shown at once, and the game stays fully playable around it.
     await tip('manage').waitFor();
@@ -1028,7 +1043,7 @@ const recordVibration = () => {
 
     // Completion persists: the next game has no tips.
     await page.reload({ waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     await road('h-0-0').click();
     assert.equal(await page.locator('.coach-mark').count(), 0, 'no tips after completing the tutorial');
@@ -1059,7 +1074,7 @@ const recordVibration = () => {
   const errors = watchForBrowserErrors(page);
   const status = async () => (await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.tutorial.v1'))))?.status;
   const startNewGame = async () => {
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
   };
   try {
@@ -1125,7 +1140,7 @@ const recordVibration = () => {
   const chip = () => page.textContent('#hud-mode');
   try {
     await page.goto(`${base}?seed=4&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     // Three presets, each with its description, Standard preselected.
     const options = page.locator('#setup-rules .rule-option');
     assert.equal(await options.count(), 3);
@@ -1178,7 +1193,7 @@ const recordVibration = () => {
     // Classic: no city events and no "calm round" notes.
     await page.click('#game-menu-btn');
     await page.click('#pause-dialog [data-dialog-action="save-quit"]');
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.check('[name="gameType"][value="standard"]');
     await page.locator('.rule-option', { hasText: 'Classic' }).click();
     await page.click('#setup-start');
@@ -1214,7 +1229,7 @@ const recordVibration = () => {
   const errors = watchForBrowserErrors(page);
   const career = () => page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.career.v1')));
   const newGame = async (mode, players) => {
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.check(`[name="gameType"][value="${players === 4 ? 'standard' : 'custom'}"]`);
     for (let s = players + 1; s <= 4; s++) await page.locator(`label[for="seat-${s}-join"]`).click();
     await page.locator('.rule-option', { hasText: mode }).click();
@@ -1320,7 +1335,7 @@ const recordVibration = () => {
   });
   try {
     await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
     await page.click('#setup-start');
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await page.click(`#board [data-road="${id}"]`);
     // P4 owns two neighbouring homes and a Housing Boom is on: a third home activates a district bonus.
@@ -1385,6 +1400,830 @@ const recordVibration = () => {
     failures++;
     console.error(`✘ strategic info: ${err.message}`);
     await page.screenshot({ path: 'test-results/forecast-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Replayable cities: challenge links pre-fill setup, the seed shows in pause/results,
+// Replay Same City rolls the same events for the same moves, and copying falls back to a text box.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const road = (id) => page.locator(`#board [data-road="${id}"]`);
+  // Horizontal roads never close a block, so every run makes exactly the same moves.
+  const MOVES = ['h-0-0', 'h-0-1', 'h-0-2', 'h-1-0', 'h-1-1', 'h-1-2', 'h-2-0', 'h-2-1', 'h-2-2', 'h-3-0', 'h-3-1', 'h-3-2', 'h-4-0', 'h-4-1', 'h-4-2'];
+  const playMoves = async () => {
+    for (const id of MOVES) {
+      await road(id).click();
+      await dismissEvent(page);
+    }
+    return page.evaluate(() => JSON.stringify(window.__GRIDLOCK__.getGame().events.history));
+  };
+  const finishCity = () => page.evaluate(async () => {
+    const { allRoadIds } = await import('./js/core/board.js');
+    const g = window.__GRIDLOCK__.getGame();
+    g.eventPool = [];
+    const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+    ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+    for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+    return ids.at(-1);
+  });
+  try {
+    await page.goto(`${base}?seed=31337&mode=chaos&seats=134&debug`, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).search, '?debug', 'challenge parameters leave the address bar; ?debug stays');
+    assert.match(await page.textContent('#toasts'), /Challenge city 31337 · Urban Chaos rules/);
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    assert.equal(await page.inputValue('#setup-seed'), '31337', 'seed pre-filled');
+    assert.equal(await page.isChecked('[name="mode"][value="chaos"]'), true, 'mode pre-selected');
+    assert.equal(await page.isChecked('[name="gameType"][value="custom"]'), true);
+    assert.deepEqual(await page.locator('.seat-card:not(.is-out)').evaluateAll((els) => els.map((e) => e.dataset.seat)), ['1', '3', '4']);
+    assert.match(await page.textContent('#setup-challenge'), /Challenge city 31337 · Urban Chaos rules · 3 players/);
+    assert.match(await page.textContent('#setup-summary'), /Custom Game · 3 players · .* · Urban Chaos rules · seed 31337/);
+
+    // New Seed / Random / invalid input.
+    await page.click('#setup-seed-new');
+    const rolled = await page.inputValue('#setup-seed');
+    assert.match(rolled, /^\d+$/);
+    assert.notEqual(rolled, '31337');
+    await page.fill('#setup-seed', 'abc');
+    assert.equal(await page.isDisabled('#setup-start'), true, 'an invalid seed blocks Start');
+    assert.match(await page.textContent('#setup-summary'), /whole number/);
+    await page.click('#setup-seed-clear');
+    assert.equal(await page.inputValue('#setup-seed'), '');
+    assert.equal(await page.isDisabled('#setup-start'), false, 'blank = random city');
+    await page.fill('#setup-seed', '31337');
+    await noHorizontalScroll(page, 'setup with seed');
+    await page.click('#setup-start');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), 31337);
+
+    const firstRun = await playMoves();
+    assert.ok(JSON.parse(firstRun).length >= 3, 'Urban Chaos rolled events to compare');
+    await page.click('#game-menu-btn');
+    assert.equal(await page.textContent('#pause-seed'), '31337', 'seed visible when paused');
+    assert.ok(!(await page.textContent('#pause-dialog')).includes('debug'));
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+
+    await road(await finishCity()).click();
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#results-seed'), '31337', 'seed visible on results');
+
+    // Copy Challenge Link: clipboard works → toast; clipboard refused → selectable text.
+    await page.evaluate(() => {
+      window.__copied = [];
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (t) => { window.__copied.push(t); } } });
+    });
+    await page.click('[data-results-action="copy-link"]');
+    await page.waitForFunction(() => window.__copied.length === 1);
+    const link = new URL(await page.evaluate(() => window.__copied[0]));
+    assert.equal(link.search, '?seed=31337&mode=chaos&seats=134', 'link carries seed, mode and seats');
+    assert.equal(link.origin + link.pathname, base);
+    assert.equal(await page.isVisible('#results-dialog'), true, 'copying keeps the results open');
+    assert.equal(await page.isVisible('#share-fallback'), false);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) } });
+    });
+    await page.click('[data-results-action="copy-link"]');
+    await page.locator('#share-fallback').waitFor({ state: 'visible' });
+    assert.equal(await page.inputValue('#share-link'), link.href);
+    assert.equal(await page.evaluate(() => {
+      const el = document.getElementById('share-link');
+      return document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === el.value.length;
+    }), true, 'fallback link is focused and selected');
+    await noHorizontalScroll(page, 'results with share fallback');
+    await page.screenshot({ path: 'test-results/replay-results.png' });
+
+    // Replay Same City: same seed, rules and table; the same moves roll the same events.
+    await page.click('[data-results-action="replay"]');
+    assert.deepEqual(await page.evaluate(() => {
+      const g = window.__GRIDLOCK__.getGame();
+      return [g.seed, g.mode, g.players.map((p) => p.seat).join(''), g.events.history.length];
+    }), [31337, 'chaos', '134', 0]);
+    assert.equal(await playMoves(), firstRun, 'identical event sequence on replay');
+
+    // Play Again deals a new city with the same table.
+    await road(await finishCity()).click();
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.click('[data-results-action="rematch"]');
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), 31337, 'Play Again = a fresh seed');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().mode), 'chaos');
+
+    // A friend opening the link (no ?debug) deals the same city too.
+    await page.goto(link.href, { waitUntil: 'networkidle' });
+    assert.equal(new URL(page.url()).search, '');
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    assert.equal(await page.inputValue('#setup-seed'), '31337');
+    await page.click('#setup-start');
+    assert.equal(await page.evaluate(() => typeof window.__GRIDLOCK__), 'undefined', 'no debug hook on a challenge link');
+    assert.deepEqual(errors, []);
+    console.log('✔ replayable cities: challenge link → setup, seed in pause/results, copy + fallback, same events on replay');
+  } catch (err) {
+    failures++;
+    console.error(`✘ replayable cities: ${err.message}`);
+    await page.screenshot({ path: 'test-results/replay-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Accessibility audit (no extra dependencies): on every screen and dialog, each visible control
+// has an accessible name, every id reference resolves, ids are unique, and open dialogs are
+// labelled. Reduced motion (OS preference or the in-app setting) leaves nothing animating.
+{
+  const audit = (page, label) => page.evaluate((where) => {
+    const problems = [];
+    const visible = (el) => el.checkVisibility ? el.checkVisibility() : el.offsetParent !== null;
+    const text = (id) => document.getElementById(id)?.textContent.trim() ?? '';
+    const name = (el) => {
+      if (el.getAttribute('aria-labelledby')) return el.getAttribute('aria-labelledby').split(/\s+/).map(text).join(' ').trim();
+      if (el.getAttribute('aria-label')?.trim()) return el.getAttribute('aria-label').trim();
+      if (el.labels?.length) return [...el.labels].map((l) => l.textContent.trim()).join(' ').trim();
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) && el.type !== 'button' && el.type !== 'submit') return el.title?.trim() ?? '';
+      return (el.textContent.trim() || el.title?.trim() || el.querySelector('img[alt]')?.alt || el.value || '').trim();
+    };
+    const controls = document.querySelectorAll('button, a[href], [role="button"], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])');
+    for (const el of controls) {
+      if (!visible(el)) continue;
+      if (!name(el)) problems.push(`${where}: unnamed ${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${el.className ? `.${String(el.className).split(' ')[0]}` : ''}`);
+    }
+    const ids = new Map();
+    for (const el of document.querySelectorAll('[id]')) ids.set(el.id, (ids.get(el.id) ?? 0) + 1);
+    for (const [id, n] of ids) if (n > 1) problems.push(`${where}: duplicate id #${id}`);
+    for (const attr of ['aria-labelledby', 'aria-describedby', 'aria-controls', 'for']) {
+      for (const el of document.querySelectorAll(`[${attr}]`)) {
+        // Closed dialogs fill in their titles when opened; only what's rendered is exposed.
+        if (!(el.matches('dialog[open]') || (el.tagName !== 'DIALOG' && visible(el)))) continue;
+        for (const ref of el.getAttribute(attr).split(/\s+/).filter(Boolean)) {
+          if (!document.getElementById(ref)) problems.push(`${where}: ${attr}="${ref}" points nowhere`);
+        }
+      }
+    }
+    for (const dialog of document.querySelectorAll('dialog[open]')) {
+      const labelled = dialog.getAttribute('aria-label') || (dialog.getAttribute('aria-labelledby') && name(dialog));
+      if (!labelled) problems.push(`${where}: open dialog #${dialog.id} has no label`);
+    }
+    return problems;
+  }, label);
+  const stillMoving = (page) => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === 'running' && !(a.effect?.getTiming().duration === 0)).map((a) => a.animationName ?? a.transitionProperty ?? 'animation'));
+
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const problems = [];
+  const check = async (label) => {
+    problems.push(...await audit(page, label));
+    const moving = await stillMoving(page);
+    if (moving.length) problems.push(`${label}: animating under reduced motion (${moving.join(', ')})`);
+  };
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await check('title');
+    for (const [nav, label] of [['howto', 'how to play'], ['settings', 'settings'], ['stats', 'statistics']]) {
+      await page.click(`[data-screen="title"] [data-nav="${nav}"]`);
+      await check(label);
+      await page.click(`[data-screen="${nav}"] [data-nav="back"]`);
+    }
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await check('setup');
+    await page.click('#setup-start');
+    await check('game');
+    await page.click('#game-menu-btn');
+    await check('pause');
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    await page.click('#board [data-road="h-0-0"]');
+    await page.click('#board [data-road="v-0-0"]');
+    await page.click('#board [data-road="h-1-0"]');
+    await page.click('#board [data-road="v-0-1"]'); // P4 closes A1
+    await page.locator('#capture-choice-dialog').waitFor({ state: 'visible' });
+    await check('capture choice');
+    await page.click('[data-capture-choice="develop"]');
+    await check('build panel');
+    await page.locator('#build-dialog [data-build="residential"]').click();
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('./js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await page.click(`#board [data-road="${last}"]`);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await check('results');
+    assert.deepEqual(problems, [], 'accessibility problems');
+
+    // The in-app Reduced Motion setting works without the OS preference.
+    const full = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await full.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    const p2 = await full.newPage();
+    await p2.goto(base, { waitUntil: 'networkidle' });
+    await p2.click('[data-screen="title"] [data-nav="settings"]');
+    await p2.locator('label:has([name="reducedMotion"])').click();
+    assert.equal(await p2.evaluate(() => document.documentElement.dataset.motion), 'reduced');
+    await p2.click('[data-screen="settings"] [data-nav="back"]');
+    assert.deepEqual(await stillMoving(p2), [], 'nothing animates with the Reduced Motion setting on');
+    await p2.reload({ waitUntil: 'networkidle' });
+    assert.equal(await p2.evaluate(() => document.documentElement.dataset.motion), 'reduced', 'setting persists');
+    await full.close();
+    assert.deepEqual(errors, []);
+    console.log('✔ accessibility: named controls, valid references, labelled dialogs on every screen; reduced motion (OS + setting)');
+  } catch (err) {
+    failures++;
+    console.error(`✘ accessibility: ${err.message}`);
+    await page.screenshot({ path: 'test-results/a11y-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Seat controllers: Solo / Local Friends / Mixed presets, CPU difficulty, validation, and the
+// table surviving autosave + Continue, results, Play Again and Replay Same City.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const table = () => page.evaluate(() => window.__GRIDLOCK__.getGame().players.map((p) => [p.seat, p.name, p.controller, p.difficulty]));
+  const card = (seat) => page.locator(`.seat-card[data-seat="${seat}"]`);
+  const controller = (seat, value) => card(seat).locator(`[name="controller-${seat}"][value="${value}"]`);
+  const finishCity = async () => {
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('./js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await page.click(`#board [data-road="${last}"]`);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+  };
+  const SOLO = [[1, 'Player 1', 'human', null], [2, 'Mayor Bot 1', 'cpu', 'normal'], [3, 'Mayor Bot 2', 'cpu', 'hard'], [4, 'Mayor Bot 3', 'cpu', 'normal']];
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    // Local Friends by default: every seat human and locked, exactly the old setup.
+    assert.equal(await page.isChecked('[name="seatPreset"][value="friends"]'), true);
+    assert.deepEqual(await page.locator('.table-option__name').allTextContents(), ['Solo', 'Local Friends', 'Mixed']);
+    for (const seat of [1, 2, 3, 4]) {
+      assert.equal(await controller(seat, 'human').isChecked(), true);
+      assert.equal(await controller(seat, 'cpu').isDisabled(), true);
+      assert.equal(await card(seat).locator('.seat-card__difficulty').isVisible(), false);
+    }
+    assert.match(await page.textContent('#setup-summary'), /^Standard Game · 4 players · \$12,000 each/);
+
+    // Solo: seat 1 human, seats 2–4 CPU with difficulty pickers and bot names.
+    await page.locator('.table-option', { hasText: 'Solo' }).click();
+    assert.deepEqual(await Promise.all([1, 2, 3, 4].map((seat) => controller(seat, 'cpu').isChecked())), [false, true, true, true]);
+    assert.deepEqual(await Promise.all([1, 2, 3, 4].map((seat) => card(seat).locator('[name="name"]').getAttribute('placeholder'))),
+      ['Player 1', 'Mayor Bot 1', 'Mayor Bot 2', 'Mayor Bot 3']);
+    assert.equal(await card(1).locator('.seat-card__difficulty').isVisible(), false);
+    assert.equal(await card(2).locator('.seat-card__personality').isVisible(), false, 'Solo bots get an automatic personality');
+    await card(3).locator('[name="difficulty"]').selectOption('hard');
+    assert.match(await page.textContent('#setup-summary'), /Standard Game · 4 players \(1 human, 3 CPU\)/);
+
+    // Mixed: per-seat choice; an all-CPU table can't start.
+    await page.locator('.table-option', { hasText: 'Mixed' }).click();
+    assert.equal(await controller(1, 'cpu').isDisabled(), false);
+    await controller(1, 'cpu').check();
+    assert.equal(await page.isDisabled('#setup-start'), true, 'no human seat');
+    assert.match(await page.textContent('#setup-summary'), /At least one seat must be Human/);
+    await controller(1, 'human').check();
+    // Custom with a CPU seat left out: 3 seats, still valid.
+    await page.check('[name="gameType"][value="custom"]');
+    await page.locator('label[for="seat-4-join"]').click();
+    assert.match(await page.textContent('#setup-summary'), /Custom Game · 3 players \(1 human, 2 CPU\)/);
+    await page.locator('label[for="seat-4-join"]').click();
+    await page.check('[name="gameType"][value="standard"]');
+    await noHorizontalScroll(page, 'setup with CPU seats');
+    await page.screenshot({ path: 'test-results/seats-setup.png' });
+
+    await page.click('#setup-start');
+    assert.deepEqual(await table(), SOLO, 'controllers and bot names reach the game');
+    assert.equal(await page.locator('.player-card__cpu').count(), 3, 'CPU tag on the three bot seats');
+    assert.equal(await page.locator('.player-card[data-seat="1"] .player-card__cpu').count(), 0);
+    assert.match(await page.locator('.player-card[data-seat="3"]').getAttribute('aria-label'), /Mayor Bot 2 \(CPU · Hard · (Builder|Tycoon|Planner|Expansionist)\)/);
+
+    // Autosave + Continue.
+    await page.click('#board [data-road="h-0-0"]');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.deepEqual(await table(), SOLO, 'Continue keeps the table');
+
+    // Results show who was a bot.
+    await finishCity();
+    assert.equal(await page.locator('#results-dialog .result-card__cpu').count(), 3);
+    assert.match(await page.locator('.result-card[data-seat="3"] .result-card__cpu').textContent(), /^CPU · Hard · (Builder|Tycoon|Planner|Expansionist)$/);
+    await page.screenshot({ path: 'test-results/seats-results.png' });
+
+    await page.click('[data-results-action="rematch"]');
+    assert.deepEqual(await table(), SOLO, 'Play Again keeps the table');
+    await finishCity();
+    const seed = await page.evaluate(() => window.__GRIDLOCK__.getGame().seed);
+    await page.click('[data-results-action="replay"]');
+    assert.deepEqual(await table(), SOLO, 'Replay Same City keeps the table');
+    assert.equal(await page.evaluate(() => window.__GRIDLOCK__.getGame().seed), seed);
+    assert.deepEqual(errors, []);
+    console.log('✔ seat controllers: Solo/Local Friends/Mixed, difficulty, validation; kept by Continue, results, Play Again, Replay');
+  } catch (err) {
+    failures++;
+    console.error(`✘ seat controllers: ${err.message}`);
+    await page.screenshot({ path: 'test-results/seats-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// CPU seats in the real turn loop: Solo (1 human + 3 CPU) and a Mixed table.
+{
+  const newContext = (settings) => browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' }).then(async (context) => {
+    await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    await context.addInitScript((initial) => {
+      if (!sessionStorage.getItem('gl-test-init')) {
+        sessionStorage.setItem('gl-test-init', '1');
+        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+        localStorage.setItem('gridlock.settings.v1', JSON.stringify(initial));
+      }
+      // Record every dialog that opens, to prove which screens were (not) shown.
+      window.__opened = [];
+      const showModal = HTMLDialogElement.prototype.showModal;
+      HTMLDialogElement.prototype.showModal = function () { window.__opened.push(this.id); return showModal.call(this); };
+    }, { confirmTaps: false, quickHandoff: false, ...settings });
+    return context;
+  });
+  const state = (page) => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    const me = g.players[g.turnIndex];
+    return { seat: me.seat, cpu: me.controller === 'cpu', phase: g.turnPhase, ended: g.phase === 'ended',
+      roads: Object.keys(g.board.roads).length, log: g.log.length, cash: me.cash };
+  });
+  /** A person's move: clear any dialog in the way, then pave the road a Normal CPU would pick. */
+  async function humanStep(page) {
+    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+      ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
+      if (await page.locator(`${sel}[open]`).count()) return page.click(click);
+    }
+    if (await page.locator('#finance-dialog[open]').count()) {
+      const out = page.locator('#finance-dialog').locator('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]').first();
+      return out.click();
+    }
+    const road = await page.evaluate(async () => {
+      const { chooseRoad } = await import('./js/core/cpu/roads.js');
+      const g = window.__GRIDLOCK__.getGame();
+      return g.phase === 'playing' && g.players[g.turnIndex].controller !== 'cpu' ? chooseRoad(g, { difficulty: 'normal' }).road : null;
+    });
+    if (road) await page.click(`#board [data-road="${road}"]`);
+  }
+  /** Plays until `done`: people move via humanStep; CPU turns run themselves (Skip speeds them up). */
+  async function playUntil(page, done, { skip = true, limit = 600 } = {}) {
+    for (let i = 0; i < limit; i++) {
+      const s = await state(page);
+      if (await done(s)) return s;
+      if (s.cpu && !s.ended && !(await page.locator('dialog[open]').count())) {
+        if (skip && await page.isVisible('#cpu-skip')) await page.click('#cpu-skip').catch(() => {});
+        await page.waitForTimeout(40);
+      } else await humanStep(page);
+    }
+    throw new Error('playUntil: gave up');
+  }
+
+  // --- Solo ---------------------------------------------------------------
+  const context = await newContext({ cpuSpeed: 'relaxed' });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.locator('.table-option', { hasText: 'Solo' }).click();
+    await page.fill('#setup-seed', '4242'); // a fixed city, so every run sees the same events
+    await page.click('#setup-start');
+    assert.deepEqual(await state(page).then((s) => [s.seat, s.cpu]), [1, false], 'the human starts');
+    assert.equal(await page.isVisible('#cpu-status'), false);
+
+    await page.click('#board [data-road="h-0-0"]');
+    // A CPU turn: thinking feedback, no human controls, board clicks refused.
+    assert.equal(await page.isVisible('#cpu-status'), true);
+    assert.equal(await page.textContent('#cpu-status-name'), 'Mayor Bot 1');
+    assert.match(await page.textContent('#cpu-status'), /Mayor Bot 1 is thinking/);
+    assert.equal(await page.isVisible('#action-pave'), false);
+    await page.click('#board [data-road="h-6-5"]');
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().board.roads['h-6-5']), 1, 'a person can\'t move for a bot');
+    assert.match(await page.textContent('#toasts'), /Mayor Bot 1 is playing/);
+
+    // Pause stops pending CPU actions; resuming continues them.
+    await page.click('#game-menu-btn');
+    const paused = await state(page);
+    await page.waitForTimeout(1600);
+    assert.deepEqual(await state(page), paused, 'nothing happens while paused');
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+
+    // Faster: the speed control switches the setting and is pressed.
+    await page.click('#cpu-faster');
+    assert.equal(await page.getAttribute('#cpu-faster', 'aria-pressed'), 'true');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).cpuSpeed), 'fast');
+
+    // The three bots play themselves and hand back to the human, with no handoff screen.
+    // (A city event card waits for a person to read it; the bots wait too.)
+    await playUntil(page, (s) => !s.cpu, { skip: false });
+    assert.equal(await page.isVisible('#cpu-status'), false);
+    const cpuRoads = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road' && e.seat !== 1).length);
+    assert.ok(cpuRoads >= 3, 'each bot paved');
+
+    // Reload in the middle of a CPU turn: Continue resumes from the autosave, no step repeated.
+    await playUntil(page, (s) => s.cpu, { skip: false });
+    await page.waitForTimeout(300);
+    await page.reload({ waitUntil: 'networkidle' });
+    // The save as the reload left it (a bot may have finished one more step on the way out).
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game);
+    // Continue and read the game in one synchronous tick, before the first bot step can fire.
+    const resumed = await page.evaluate(() => {
+      document.querySelector('#continue-game').click();
+      const g = window.__GRIDLOCK__.getGame();
+      return { roads: Object.keys(g.board.roads).length, log: g.log.length };
+    });
+    assert.equal(resumed.roads, Object.keys(saved.board.roads).length, 'resumes exactly where the save left off');
+    assert.equal(resumed.log, saved.log.length);
+    await playUntil(page, (s) => !s.cpu, { skip: false });
+    const roadsLog = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road').map((e) => e.road));
+    assert.equal(new Set(roadsLog).size, roadsLog.length, 'no road played twice');
+    assert.equal(roadsLog.length, await page.evaluate(() => Object.keys(window.__GRIDLOCK__.getGame().board.roads).length));
+
+    // Play the whole city out (Skip on CPU turns).
+    const end = await playUntil(page, (s) => s.ended);
+    assert.equal(end.ended, true);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#results-dialog .result-card__cpu').count(), 3);
+    const opened = await page.evaluate(() => window.__opened);
+    assert.ok(!opened.includes('handoff-dialog'), 'Solo never shows the handoff screen');
+    // Ended games stop every CPU timer: nothing moves afterwards.
+    const final = await state(page);
+    await page.waitForTimeout(1200);
+    assert.deepEqual(await state(page), final);
+    assert.equal(await page.isVisible('#cpu-status'), false);
+    assert.deepEqual(errors, []);
+    console.log('✔ CPU Solo: bots play themselves, thinking feedback, no handoff, pause, faster/skip, reload resume, game end');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU Solo: ${err.message}`);
+    await page.screenshot({ path: 'test-results/cpu-solo-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+
+  // --- Mixed: Human, CPU, Human, CPU ------------------------------------------
+  const mixedContext = await newContext({ cpuSpeed: 'fast' });
+  const mixed = await mixedContext.newPage();
+  const mixedErrors = watchForBrowserErrors(mixed);
+  try {
+    await mixed.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await mixed.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await mixed.locator('.table-option', { hasText: 'Mixed' }).click();
+    for (const [seat, controller] of [[2, 'cpu'], [4, 'cpu']]) {
+      await mixed.locator(`.seat-card[data-seat="${seat}"] [name="controller-${seat}"][value="${controller}"]`).check();
+    }
+    await mixed.locator('.seat-card[data-seat="4"] [name="difficulty"]').selectOption('hard');
+    assert.equal(await mixed.locator('.seat-card[data-seat="4"] .seat-card__personality').isVisible(), true, 'Mixed offers a personality');
+    await mixed.locator('.seat-card[data-seat="4"] [name="personality"]').selectOption('tycoon');
+    await mixed.fill('#setup-seed', '777');
+    await mixed.click('#setup-start');
+    // Difficulty and personality on the HUD (seat 2 was left on Auto).
+    assert.equal(await mixed.textContent('.player-card[data-seat="4"] .player-card__bot'), 'Hard · Tycoon');
+    assert.match(await mixed.textContent('.player-card[data-seat="2"] .player-card__bot'), /^Normal · (Builder|Planner|Expansionist)$/);
+    assert.equal(await mixed.locator('.player-card[data-seat="1"] .player-card__bot').count(), 0);
+    const handoffs = () => mixed.evaluate(() => window.__opened.filter((id) => id === 'handoff-dialog').length);
+
+    // Human 1 → CPU 2 → handoff to Human 3 (none before or after the bot).
+    await mixed.click('#board [data-road="h-0-0"]');
+    assert.equal(await handoffs(), 0, 'no handoff before a CPU seat');
+    await mixed.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await mixed.textContent('#handoff-title'), 'Pass to Player 3');
+    assert.equal(await handoffs(), 1);
+    await mixed.click('#handoff-ready');
+
+    // Stage a debt for the Hard bot (seat 4): its turn must sell its way out through the real APIs.
+    await mixed.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r3c3');
+      b.ownerSeat = 4;
+      applyDevelopment(b, 'residential', 1);
+      refreshBonuses(g.board);
+      g.players.find((p) => p.seat === 4).cash = -200;
+    });
+    await humanStep(mixed); // Human 3 paves → CPU 4 starts in debt
+    await mixed.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await mixed.textContent('#handoff-title'), 'Pass to Player 1');
+    const cpu4 = await mixed.evaluate(() => {
+      const g = window.__GRIDLOCK__.getGame();
+      return { cash: g.players.find((p) => p.seat === 4).cash, sold: g.log.some((e) => (e.type === 'downgrade' || e.type === 'sale') && e.seat === 4),
+        paved: g.log.some((e) => e.type === 'road' && e.seat === 4) };
+    });
+    assert.ok(cpu4.sold, 'the bot sold to clear its debt');
+    assert.ok(cpu4.cash >= 0 && cpu4.paved, 'then played on');
+    assert.equal(await mixed.locator('#finance-dialog[open]').count(), 0, 'no debt panel for a bot');
+    await mixed.click('#handoff-ready');
+
+    // Redevelopment bidding: Human 1 opens an auction; the bots bid sealed.
+    await mixed.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r5c5');
+      applyDevelopment(b, 'industrial', 1);
+      Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 2 });
+      refreshBonuses(g.board);
+      g.players.find((p) => p.seat === 4).cash = 9000; // well funded again after its debt
+    });
+    if (await mixed.locator('#event-dialog[open]').count()) await mixed.click('#event-continue');
+    await mixed.click('#board [data-block="r5c5"]');
+    const auction = mixed.locator('#build-dialog [data-auction-mode="restore"]');
+    await auction.waitFor();
+    assert.deepEqual(await auction.locator('[data-cpu-bidder]').evaluateAll((els) => els.map((e) => e.dataset.cpuBidder)), ['4'],
+      'Hard bot bids sealed (the Easy bot abandoned it, so it can\'t)');
+    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /Sealed bid/);
+    await auction.locator('[name="bid-1"]').fill('');
+    await auction.locator('[name="bid-3"]').fill('');
+    await auction.locator('[data-auction="restore"]').click();
+    assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
+    // The inspector names the bot's difficulty and personality.
+    await mixed.click('#board [data-block="r5c5"]');
+    assert.match(await mixed.textContent('#inspector'), /Mayor Bot 2 \(CPU · Hard · Tycoon\)/);
+    assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
+
+    // (The Solo run plays a whole city to the results; this one stops here to keep CI quick.)
+    assert.deepEqual(mixedErrors, []);
+    console.log('✔ CPU Mixed: handoff only between different people, bot debt + sealed redevelopment bids');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU Mixed: ${err.message}`);
+    await mixed.screenshot({ path: 'test-results/cpu-mixed-FAIL.png' }).catch(() => {});
+  } finally {
+    await mixedContext.close();
+  }
+
+  // --- A CPU mayor opens bidding on an abandoned block; people may bid, or pass by leaving ---
+  const auctionContext = await newContext({ cpuSpeed: 'fast' });
+  const bidPage = await auctionContext.newPage();
+  const bidErrors = watchForBrowserErrors(bidPage);
+  try {
+    await bidPage.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await bidPage.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await bidPage.check('[name="gameType"][value="custom"]');
+    await bidPage.locator('label[for="seat-4-join"]').click();
+    await bidPage.locator('.table-option', { hasText: 'Mixed' }).click();
+    await bidPage.locator('.seat-card[data-seat="2"] [name="controller-2"][value="cpu"]').check();
+    await bidPage.locator('.seat-card[data-seat="2"] [name="difficulty"]').selectOption('hard');
+    await bidPage.fill('#setup-seed', '99');
+    await bidPage.click('#setup-start');
+    // An abandoned downtown Commercial that Player 3 walked away from (so Player 1 may bid, 3 may not).
+    await bidPage.evaluate(async () => {
+      const { applyDevelopment } = await import('./js/core/development.js');
+      const { refreshBonuses } = await import('./js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const b = g.board.blocks.find((x) => x.id === 'r2c2');
+      applyDevelopment(b, 'commercial', 1);
+      Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 3 });
+      refreshBonuses(g.board);
+    });
+    await bidPage.click('#board [data-road="h-0-0"]'); // Player 1 paves → the Hard bot's turn
+    await bidPage.locator('#build-dialog [data-auction-mode="restore"]').waitFor({ timeout: 15_000 });
+    assert.match(await bidPage.textContent('#toasts'), /Mayor Bot 1 opens bidding on abandoned Block C3/);
+    assert.equal(await bidPage.locator('#build-dialog [data-cpu-bidder="2"]').count() > 0, true, 'the bot\'s own bid is sealed');
+    assert.deepEqual(await state(bidPage).then((x) => x.roads), 1, 'the bot waits while people can bid');
+    await bidPage.click('#build-dialog [data-action="close"]'); // Player 1 passes
+    await bidPage.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
+    const lot = await bidPage.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r2c2'));
+    assert.deepEqual([lot.ownerSeat, lot.abandoned], [2, false], 'the bot won its own auction');
+    assert.equal(await bidPage.textContent('#handoff-title'), 'Pass to Player 3', 'then finished its turn');
+    assert.deepEqual(bidErrors, []);
+    console.log('✔ CPU opens redevelopment bidding: people can bid, leaving passes, the bot plays on');
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU opens bidding: ${err.message}`);
+    await bidPage.screenshot({ path: 'test-results/cpu-auction-FAIL.png' }).catch(() => {});
+  } finally {
+    await auctionContext.close();
+  }
+}
+
+// Onboarding around the play options: the title offers Play Solo / Local Multiplayer /
+// Custom / Mixed Game; Solo's defaults; a first Solo game's tutorial includes the CPU tip; and
+// during a bot's turn its card glows, the strip says what it intends (with the road or block
+// highlighted), the board is locked, and Pause / Speed up work. Desktop and phone.
+for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+  const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.isMobile, hasTouch: vp.hasTouch, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true, cpuSpeed: 'relaxed' }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const game = () => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    return { seat: g.players[g.turnIndex].seat, log: g.log.length, roads: Object.keys(g.board.roads).length,
+      players: g.players.map((p) => [p.seat, p.controller, p.difficulty]), type: g.gameType };
+  });
+  const heading = () => page.textContent('#setup-heading');
+  const checked = (name) => page.evaluate((n) => document.querySelector(`#setup-form [name="${n}"]:checked`)?.value, name);
+  const controllers = () => page.evaluate(() => [...document.querySelectorAll('.seat-card')]
+    .filter((c) => !c.classList.contains('is-empty') && c.querySelector('[name^="controller-"]:checked'))
+    .map((c) => c.querySelector('[name^="controller-"]:checked').value));
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    // Title: three ways to play, then How To Play · Statistics · Settings.
+    const options = page.locator('.play-options .play-option');
+    assert.equal(await options.count(), 3);
+    for (const name of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game']) {
+      const button = page.getByRole('button', { name: new RegExp(`^${name.replace('/', '\\/')}`) });
+      assert.equal(await button.isVisible(), true, `${name} offered`);
+      const box = await button.boundingBox();
+      assert.ok(box.y + box.height <= vp.height, `${name} is above the fold`);
+    }
+    assert.deepEqual((await page.locator('.menu-row .menu-row__btn').allTextContents()).map((t) => t.trim()), ['How To Play', 'Statistics', 'Settings']);
+    await noHorizontalScroll(page, `${vp.name} title`);
+
+    // Local Multiplayer: everyone human.
+    await page.getByRole('button', { name: /^Local Multiplayer/ }).click();
+    assert.equal(await heading(), 'Local Multiplayer');
+    assert.equal(await checked('seatPreset'), 'friends');
+    assert.deepEqual(await controllers(), ['human', 'human', 'human', 'human']);
+    await page.click('[data-screen="setup"] [data-nav="back"]');
+    // Custom / Mixed Game: a Custom Game with the Mixed table.
+    await page.getByRole('button', { name: /^Custom \/ Mixed Game/ }).click();
+    assert.equal(await heading(), 'Custom Game');
+    assert.equal(await checked('seatPreset'), 'mixed');
+    assert.equal(await checked('gameType'), 'custom');
+    await page.click('[data-screen="setup"] [data-nav="back"]');
+    // Play Solo: Player 1 human, Players 2–4 CPU Normal, Standard Game.
+    await page.getByRole('button', { name: /^Play Solo/ }).click();
+    assert.equal(await heading(), 'Play Solo');
+    assert.equal(await checked('seatPreset'), 'solo');
+    assert.equal(await checked('gameType'), 'standard');
+    assert.deepEqual(await controllers(), ['human', 'cpu', 'cpu', 'cpu']);
+    assert.deepEqual(await page.locator('.seat-card [name="difficulty"]:visible').evaluateAll((s) => s.map((x) => x.value)), ['normal', 'normal', 'normal']);
+    assert.match(await page.textContent('#setup-summary'), /^Standard Game · 4 players \(1 human, 3 CPU\)/);
+    await noHorizontalScroll(page, `${vp.name} Play Solo setup`);
+    await page.fill('#setup-seed', '4242');
+    await page.click('#setup-start');
+    assert.deepEqual((await game()).players, [[1, 'human', null], [2, 'cpu', 'normal'], [3, 'cpu', 'normal'], [4, 'cpu', 'normal']]);
+
+    // First game: the tutorial counts nine tips when bots are at the table.
+    const tip = (id) => page.locator(`.coach-mark[data-step="${id}"]`);
+    await tip('manage').waitFor();
+    assert.match(await tip('manage').textContent(), /Tip 1 of 9/);
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 0);
+    await page.click('#action-pave');
+    await page.click('#board [data-road="h-0-0"]');
+
+    // Mayor Bot 1's turn.
+    await page.locator('#cpu-status').waitFor({ state: 'visible' });
+    await tip('cpu').waitFor();
+    assert.match(await tip('cpu').textContent(), /Tip \d of 9.*CPU turns/s);
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 1, 'only the active bot glows');
+    assert.equal(await page.locator(`.player-card.is-thinking[data-seat="${(await game()).seat}"]`).count(), 1, 'the glowing card is the bot whose turn it is');
+    await page.locator('#cpu-status-intent').waitFor({ state: 'visible' });
+    assert.ok((await page.textContent('#cpu-status-intent')).trim().length > 0, 'the bot says what it intends');
+    assert.equal(await page.locator('.cpu-intent').count() <= 1, true);
+    assert.equal(await page.locator('#board.is-locked').count() === 1, true, 'the board is locked');
+    assert.equal(await page.isVisible('#action-pave'), false);
+    const before = await game();
+    await page.click('#board [data-road="h-0-5"]'); // top row: clear of the tutorial note on a phone
+    assert.notEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().board.roads['h-0-5']), 1, 'a person can\'t move for a bot');
+    assert.match(await page.textContent('#toasts'), /Mayor Bot \d is playing/);
+    await noHorizontalScroll(page, `${vp.name} CPU turn`);
+    await page.screenshot({ path: `test-results/cpu-turn-${vp.name}.png` });
+
+    // Pause (from the strip) stops the bot; resuming lets it continue.
+    await page.click('#cpu-pause');
+    await page.locator('#pause-dialog').waitFor({ state: 'visible' });
+    const paused = await game();
+    await page.waitForTimeout(1500);
+    assert.deepEqual(await game(), paused, 'nothing happens while paused');
+    assert.equal(paused.log >= before.log, true);
+    await page.click('#pause-dialog [data-dialog-action="resume"]');
+    // Speed up: pressed, saved, and the bots play on until Player 1 has the table again.
+    await page.click('#cpu-faster');
+    assert.equal(await page.getAttribute('#cpu-faster', 'aria-pressed'), 'true');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).cpuSpeed), 'fast');
+    for (let i = 0; i < 300 && (await game()).seat !== 1; i++) {
+      if (await page.locator('#event-dialog[open]').count()) await page.click('#event-continue');
+      else await page.waitForTimeout(100);
+    }
+    assert.equal((await game()).seat, 1, 'control came back to the human');
+    await page.locator('#cpu-status').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.player-card.is-thinking').count(), 0);
+    assert.equal(await page.locator('.cpu-intent').count(), 0, 'no leftover highlight');
+    assert.deepEqual(errors, []);
+    console.log(`✔ ${vp.name}: play options (Solo / Local Multiplayer / Custom), Solo defaults, CPU tip, bot highlight + intent, locked board, Pause, Speed up`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ ${vp.name} play options / CPU turn UI: ${err.message}`);
+    await page.screenshot({ path: `test-results/play-options-${vp.name}-FAIL.png` }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// 3 people + 1 CPU on a phone with reduced motion and haptics: handoffs only between people,
+// the bot's moves never vibrate, nothing animates, and sound keeps working around bot turns.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(recordVibration);
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false, cpuSpeed: 'fast' }));
+    }
+    window.__opened = [];
+    const showModal = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () { window.__opened.push(this.id); return showModal.call(this); };
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const seatNow = () => page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); return g.players[g.turnIndex].seat; });
+  const handoffs = () => page.evaluate(() => window.__opened.filter((id) => id === 'handoff-dialog').length);
+  const running = () => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: /^Custom \/ Mixed Game/ }).tap();
+    await page.locator('.seat-card[data-seat="4"] [name="controller-4"][value="cpu"]').check();
+    assert.match(await page.textContent('#setup-summary'), /4 players \(3 human, 1 CPU\)/);
+    await page.fill('#setup-seed', '4242');
+    await page.locator('#setup-start').tap();
+    assert.deepEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().players.map((p) => p.controller)), ['human', 'human', 'human', 'cpu']);
+    const haptics = await page.evaluate(() => 'vibrate' in navigator && matchMedia('(pointer: coarse)').matches);
+
+    // Person → person: the handoff screen, every time.
+    for (const [road, next] of [['h-0-0', 'Player 2'], ['h-0-2', 'Player 3']]) {
+      await page.locator(`#board [data-road="${road}"]`).tap();
+      await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+      assert.equal(await page.textContent('#handoff-title'), `Pass to ${next}`);
+      await page.waitForTimeout(400); // the tap-through guard ignores taps just after a dialog opens…
+      await page.locator('#handoff-ready').tap();
+      await page.waitForTimeout(400); // …and just after it closes
+    }
+    assert.equal(await handoffs(), 2);
+    // Player 3 → the bot: no handoff; bot moves don't vibrate; reduced motion means no animation.
+    await page.locator('#board [data-road="h-0-4"]').tap();
+    const vibBefore = (await page.evaluate(() => window.__vib)).length;
+    await page.locator('#cpu-status').waitFor({ state: 'visible' });
+    assert.equal(await seatNow(), 4);
+    assert.equal(await handoffs(), 2, 'no handoff before the bot');
+    assert.equal(await page.locator('.player-card.is-thinking[data-seat="4"]').count(), 1);
+    assert.equal(await running(), 0, 'reduced motion: the thinking glow does not animate');
+    await noHorizontalScroll(page, '3 people + 1 CPU phone');
+    // After the bot: back to Player 1, with a handoff (a different person than the last one).
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 20_000 });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1');
+    assert.equal((await page.evaluate(() => window.__vib)).length, vibBefore, 'the bot\'s moves never vibrate the phone');
+    if (haptics) assert.ok(vibBefore > 0, 'people\'s own moves do (haptics on)');
+    const log = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road').map((e) => e.seat));
+    assert.deepEqual(log.slice(0, 3), [1, 2, 3]);
+    assert.ok(log.slice(3).every((seat) => seat === 4) && log.length >= 4, 'the bot paved its own road');
+    const sound = await page.evaluate(() => window.__GRIDLOCK__.audio());
+    assert.equal(sound.unlocked, true, 'sound unlocked by the first tap');
+    assert.equal(sound.reduced, true);
+    await page.waitForTimeout(400);
+    await page.locator('#handoff-ready').tap();
+    assert.equal(await seatNow(), 1);
+    assert.deepEqual(errors, []);
+    console.log('✔ 3 people + 1 CPU (phone, reduced motion, haptics): handoffs only between people, no bot vibration or animation');
+  } catch (err) {
+    failures++;
+    console.error(`✘ 3 people + 1 CPU: ${err.message}`);
+    await page.screenshot({ path: 'test-results/three-plus-bot-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }

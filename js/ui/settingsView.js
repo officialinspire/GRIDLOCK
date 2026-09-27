@@ -1,6 +1,6 @@
 /** Settings screen: binds the form to persisted settings. */
 import { $ } from './dom.js';
-import { loadSettings, saveSettings, normalizeSettings, BOOLEAN_SETTINGS, VOLUME_SETTINGS } from '../core/settings.js';
+import { loadSettings, saveSettings, normalizeSettings, BOOLEAN_SETTINGS, VOLUME_SETTINGS, CHOICE_SETTINGS } from '../core/settings.js';
 import { bus } from '../core/bus.js';
 import { audio } from './audio.js';
 import { haptics } from './haptics.js';
@@ -24,6 +24,7 @@ function readForm(form) {
   const raw = {};
   for (const key of BOOLEAN_SETTINGS) raw[key] = form.elements[key].checked;
   for (const key of VOLUME_SETTINGS) raw[key] = form.elements[key].valueAsNumber;
+  for (const key of Object.keys(CHOICE_SETTINGS)) raw[key] = form.elements[key].value;
   return normalizeSettings(raw);
 }
 
@@ -45,6 +46,7 @@ function syncSoundControls(form, s) {
 function writeForm(form, s) {
   for (const key of BOOLEAN_SETTINGS) form.elements[key].checked = s[key];
   for (const key of VOLUME_SETTINGS) form.elements[key].value = String(s[key]);
+  for (const key of Object.keys(CHOICE_SETTINGS)) form.elements[key].value = s[key];
   syncSoundControls(form, s);
 }
 
