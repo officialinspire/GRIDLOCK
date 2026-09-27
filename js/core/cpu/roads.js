@@ -39,8 +39,6 @@ export const CPU_REASONS = Object.freeze({
   RISKY: 'risky', // easy: an unplanned road that hands over a block
 });
 
-/** Chance an Easy mayor rethinks a road that would leave a three-sided block. */
-const EASY_CAUTION = 0.7;
 
 /* ---------------- a position: the roads and which blocks can still be claimed ---------------- */
 
@@ -162,7 +160,7 @@ function decideEasy(pos, legal, rand) {
   if (captures.length) return { road: captures[Math.floor(rand() * captures.length)], reason: CPU_REASONS.CAPTURE, score: 0 };
   let road = legal[Math.floor(rand() * legal.length)];
   const safe = legal.filter((r) => isSafe(pos, r));
-  if (!isSafe(pos, road) && safe.length && rand() < EASY_CAUTION) road = safe[Math.floor(rand() * safe.length)];
+  if (!isSafe(pos, road) && safe.length && rand() < CPU.EASY_CAUTION) road = safe[Math.floor(rand() * safe.length)];
   return { road, reason: isSafe(pos, road) ? CPU_REASONS.RANDOM : CPU_REASONS.RISKY, score: 0 };
 }
 
@@ -185,15 +183,69 @@ function decideNormal(pos, legal, rand) {
 /**
  * Hard: the value of finishing our turn from `pos` with `road` (a road that claims nothing):
  * minus what the next mayor then takes, plus what we can expect back from the position they
- * leave (in full at a two-player table; half otherwise, since other mayors move in between).
+ * leave (CPU.HARD_FOLLOW_UP of it: in full at a two-player table, less where others move in between).
  */
 function endTurnScore(pos, road, follow) {
   const reply = replyTurn(play(pos, road).pos, true);
   return -reply.value + follow * takeAll(reply.pos, true).value;
 }
 
+/**
+ * Hard, endgame at a table of three or more: once no safe roads are left the rest of the board
+ * goes chain by chain, each mayor taking what they're offered and then giving away as little as
+ * they can, so which chain lands on whom depends on every sacrifice from here. Plays that out
+ * (every mayor, us included, playing sensibly: no double-deals) and scores what we collect
+ * against the average rival.
+ *
+ * Fast enough for a phone: every road that opens the same chain leads to the same position
+ * once the next mayor has taken it, so the play-outs from our candidate roads soon meet; each
+ * position is played out once per decision (`memo`).
+ */
+function createRollout(players) {
+  const memo = new Map();
+  /** The next mayor's reply to `road`: what they take and the position they're left in. */
+  const reply = (pos, road) => {
+    const taken = takeAll(play(pos, road).pos, true);
+    return { value: taken.value, pos: taken.pos };
+  };
+  /**
+   * From a position with nothing to capture: what each mayor collects from here, by seats after
+   * the one to move (0 = the mover, who must give something away; 1 = the next mayor…).
+   */
+  const collect = (pos) => {
+    const free = freeRoads(pos);
+    const key = free.join();
+    if (memo.has(key)) return memo.get(key);
+    let out = Array(players).fill(0);
+    const safe = free.find((r) => isSafe(pos, r));
+    let best = null;
+    if (safe) best = { value: 0, pos: play(pos, safe).pos };
+    else {
+      for (const road of free) {
+        const r = reply(pos, road);
+        if (!best || r.value < best.value) best = r;
+      }
+    }
+    if (best) {
+      const rest = collect(best.pos); // relative to the next mayor
+      out = out.map((_, k) => rest[(k - 1 + players) % players]);
+      out[1 % players] += best.value;
+    }
+    memo.set(key, out);
+    return out;
+  };
+  /** Our score for ending our turn with `road` from `pos`. */
+  return (pos, road) => {
+    const r = reply(pos, road);
+    const rest = collect(r.pos); // relative to the next mayor: we are players − 1 seats after them
+    const totals = rest.map((v, k) => (k === 0 ? v + r.value : v));
+    const mine = totals[players - 1];
+    return mine - (totals.reduce((x, y) => x + y, 0) - mine) / (players - 1);
+  };
+}
+
 /** Hard: best score for the rest of our turn from `pos` (we may still be capturing). */
-function bestContinuation(pos, follow) {
+function bestContinuation(pos, endScore, doubleDeal = true) {
   const options = closers(pos);
   const ahead = options.length ? takeAll(pos, true) : null;
   let best = -Infinity;
@@ -201,15 +253,15 @@ function bestContinuation(pos, follow) {
     // Keep capturing: which capture first doesn't change the total, so one branch suffices.
     const road = options[0];
     const step = play(pos, road);
-    best = valueOf(pos, step.captured, true) + bestContinuation(step.pos, follow);
+    best = valueOf(pos, step.captured, true) + bestContinuation(step.pos, endScore, doubleDeal);
   }
   // Stop here: with nothing left to capture we must; with exactly two blocks left in the run
   // and no safe roads anywhere, leaving them can buy control of the next (longer) chain.
   const noSafe = !freeRoads(pos).some((r) => isSafe(pos, r) && !completes(pos, r).length);
-  if (!options.length || (ahead.blocks.length === 2 && noSafe)) {
+  if (!options.length || (doubleDeal && ahead.blocks.length === 2 && noSafe)) {
     for (const road of freeRoads(pos)) {
       if (completes(pos, road).length) continue;
-      best = Math.max(best, endTurnScore(pos, road, follow));
+      best = Math.max(best, endScore(pos, road));
     }
     if (best === -Infinity) best = 0; // board complete
   }
@@ -217,29 +269,36 @@ function bestContinuation(pos, follow) {
 }
 
 function decideHard(pos, legal, rand, players, followUp = 1) {
-  // Follow-up captures count in full at a two-player table, half otherwise (others move in
-  // between); an Expansionist weighs them more (CPU.PERSONALITIES followUp).
-  const follow = (players === 2 ? 1 : 0.5) * followUp;
+  // Follow-up captures by table size (CPU.HARD_FOLLOW_UP: others move in between at bigger
+  // tables); an Expansionist weighs them more (CPU.PERSONALITIES followUp).
+  const follow = (CPU.HARD_FOLLOW_UP[players] ?? CPU.HARD_FOLLOW_UP[4]) * followUp;
+  const doubleDeal = players <= CPU.HARD_DOUBLE_DEAL_MAX_PLAYERS;
+  const noSafe = !legal.some((r) => isSafe(pos, r));
+  const nearEnd = legal.filter((r) => isSafe(pos, r)).length <= CPU.HARD_ROLLOUT_SAFE_ROADS;
+  // Endgame at a bigger table: play the chains out (CPU.HARD_ENDGAME_ROLLOUT); otherwise one reply ahead.
+  const rollout = nearEnd && players > 2 && CPU.HARD_ENDGAME_ROLLOUT ? createRollout(players) : null;
+  const endScore = rollout
+    ? (p, road) => rollout(p, road) * followUp
+    : (p, road) => endTurnScore(p, road, follow);
   const captures = legal.filter((r) => completes(pos, r).length);
   if (captures.length) {
     const scored = captures.map((road) => {
       const step = play(pos, road);
-      return { road, score: valueOf(pos, step.captured, true) + bestContinuation(step.pos, follow), reason: CPU_REASONS.CAPTURE };
+      return { road, score: valueOf(pos, step.captured, true) + bestContinuation(step.pos, endScore, doubleDeal), reason: CPU_REASONS.CAPTURE };
     });
     // Declining the rest of the run (a double-deal) competes with taking it.
     const ahead = takeAll(pos, true);
-    const noSafe = !legal.some((r) => isSafe(pos, r));
-    if (ahead.blocks.length === 2 && noSafe) {
+    if (doubleDeal && ahead.blocks.length === 2 && noSafe) {
       for (const road of legal) {
         if (completes(pos, road).length) continue;
-        scored.push({ road, score: endTurnScore(pos, road, follow), reason: CPU_REASONS.DOUBLE_DEAL });
+        scored.push({ road, score: endScore(pos, road), reason: CPU_REASONS.DOUBLE_DEAL });
       }
     }
     return pickBest(scored, rand);
   }
   const scored = legal.map((road) => ({
     road,
-    score: endTurnScore(pos, road, follow),
+    score: endScore(pos, road),
     reason: isSafe(pos, road) ? CPU_REASONS.SAFE : CPU_REASONS.SACRIFICE,
   }));
   return pickBest(scored, rand);

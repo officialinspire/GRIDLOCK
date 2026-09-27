@@ -566,6 +566,21 @@ function cpuPlan(g) {
   }
 }
 
+/**
+ * The driver's safety net when a CPU step changed nothing twice in a row: finish managing and
+ * go pave, or leave the pending capture vacant. Null when neither applies.
+ */
+function cpuFallback(g) {
+  if (g.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && g.pendingCaptures.length) {
+    const blockId = g.pendingCaptures[0];
+    return { text: null, run: () => leaveCapturedBlock(blockId) };
+  }
+  if (g.turnPhase === TURN_PHASES.MANAGE_CITY && currentPlayer(g).cash >= 0) {
+    return { text: null, run: () => { if (startPaving(g)) autosave(); render(); } };
+  }
+  return null;
+}
+
 /** The CPU may act only when nothing else needs the table. */
 function cpuCanAct() {
   return Boolean(game) && document.body.dataset.activeScreen === 'game' && !document.querySelector('dialog[open]');
@@ -739,6 +754,7 @@ export function initGameView() {
     getGame: () => game,
     canAct: cpuCanAct,
     plan: cpuPlan,
+    fallback: cpuFallback,
     pause: () => $('#game-menu-btn').click(),
     getSettings,
     setSpeed: (cpuSpeed) => updateSettings({ cpuSpeed }),

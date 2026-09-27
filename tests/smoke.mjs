@@ -2152,6 +2152,83 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   }
 }
 
+// 3 people + 1 CPU on a phone with reduced motion and haptics: handoffs only between people,
+// the bot's moves never vibrate, nothing animates, and sound keeps working around bot turns.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(recordVibration);
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false, cpuSpeed: 'fast' }));
+    }
+    window.__opened = [];
+    const showModal = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () { window.__opened.push(this.id); return showModal.call(this); };
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const seatNow = () => page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); return g.players[g.turnIndex].seat; });
+  const handoffs = () => page.evaluate(() => window.__opened.filter((id) => id === 'handoff-dialog').length);
+  const running = () => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: /^Custom \/ Mixed Game/ }).tap();
+    await page.locator('.seat-card[data-seat="4"] [name="controller-4"][value="cpu"]').check();
+    assert.match(await page.textContent('#setup-summary'), /4 players \(3 human, 1 CPU\)/);
+    await page.fill('#setup-seed', '4242');
+    await page.locator('#setup-start').tap();
+    assert.deepEqual(await page.evaluate(() => window.__GRIDLOCK__.getGame().players.map((p) => p.controller)), ['human', 'human', 'human', 'cpu']);
+    const haptics = await page.evaluate(() => 'vibrate' in navigator && matchMedia('(pointer: coarse)').matches);
+
+    // Person → person: the handoff screen, every time.
+    for (const [road, next] of [['h-0-0', 'Player 2'], ['h-0-2', 'Player 3']]) {
+      await page.locator(`#board [data-road="${road}"]`).tap();
+      await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+      assert.equal(await page.textContent('#handoff-title'), `Pass to ${next}`);
+      await page.waitForTimeout(400); // the tap-through guard ignores taps just after a dialog opens…
+      await page.locator('#handoff-ready').tap();
+      await page.waitForTimeout(400); // …and just after it closes
+    }
+    assert.equal(await handoffs(), 2);
+    // Player 3 → the bot: no handoff; bot moves don't vibrate; reduced motion means no animation.
+    await page.locator('#board [data-road="h-0-4"]').tap();
+    const vibBefore = (await page.evaluate(() => window.__vib)).length;
+    await page.locator('#cpu-status').waitFor({ state: 'visible' });
+    assert.equal(await seatNow(), 4);
+    assert.equal(await handoffs(), 2, 'no handoff before the bot');
+    assert.equal(await page.locator('.player-card.is-thinking[data-seat="4"]').count(), 1);
+    assert.equal(await running(), 0, 'reduced motion: the thinking glow does not animate');
+    await noHorizontalScroll(page, '3 people + 1 CPU phone');
+    // After the bot: back to Player 1, with a handoff (a different person than the last one).
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 20_000 });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1');
+    assert.equal((await page.evaluate(() => window.__vib)).length, vibBefore, 'the bot\'s moves never vibrate the phone');
+    if (haptics) assert.ok(vibBefore > 0, 'people\'s own moves do (haptics on)');
+    const log = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'road').map((e) => e.seat));
+    assert.deepEqual(log.slice(0, 3), [1, 2, 3]);
+    assert.ok(log.slice(3).every((seat) => seat === 4) && log.length >= 4, 'the bot paved its own road');
+    const sound = await page.evaluate(() => window.__GRIDLOCK__.audio());
+    assert.equal(sound.unlocked, true, 'sound unlocked by the first tap');
+    assert.equal(sound.reduced, true);
+    await page.waitForTimeout(400);
+    await page.locator('#handoff-ready').tap();
+    assert.equal(await seatNow(), 1);
+    assert.deepEqual(errors, []);
+    console.log('✔ 3 people + 1 CPU (phone, reduced motion, haptics): handoffs only between people, no bot vibration or animation');
+  } catch (err) {
+    failures++;
+    console.error(`✘ 3 people + 1 CPU: ${err.message}`);
+    await page.screenshot({ path: 'test-results/three-plus-bot-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

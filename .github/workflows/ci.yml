@@ -19,6 +19,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: CPU robustness sweep (all modes, no illegal actions or stalls)
+        run: npm run simulate:cpu -- --games 104 --mode all
 
   browser:
     name: Browser smoke (${{ matrix.browser }})

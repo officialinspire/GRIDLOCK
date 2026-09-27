@@ -136,15 +136,16 @@ function cashFloor(game, level, reserve, f) {
   const seat = currentPlayer(game).seat;
   const charges = f.after.upkeep + pendingRepairs(game, seat);
   if (level === 'normal') return reserve + charges;
-  // Hard: survive next turn's charges even if income were halved, and a Fire on a building.
+  // Hard: survive next turn's charges even if income were cut (CPU.HARD_INCOME_CUT), and part
+  // of a Fire repair (CPU.HARD_FIRE_BUFFER) when a Fire could hit one of its buildings.
   const exposed = eventRules(game).enabled && fireDef
     && blocksOwnedBy(game.board, seat).some((b) => isDeveloped(b) && fireDef.targets.categories.includes(b.type));
-  const fire = exposed || fireDef?.targets.categories.includes(f.type) ? fireDef.repairCost : 0;
+  const fire = exposed || fireDef?.targets.categories.includes(f.type) ? Math.round(fireDef.repairCost * CPU.HARD_FIRE_BUFFER) : 0;
   // During a downturn, also keep what the lean rounds after next will cost (charges beyond income).
   const slump = downturns(game);
   const lean = slump.length
     ? Math.max(0, eventPaydaysLeft(game, slump.map((d) => d.instance)) - 1) * Math.max(0, charges - f.after.income) : 0;
-  return reserve + Math.max(0, charges + fire - Math.floor(f.after.income / 2)) + lean;
+  return reserve + Math.max(0, charges + fire - Math.floor(f.after.income * (1 - CPU.HARD_INCOME_CUT))) + lean;
 }
 
 /* ---------------- Hard's extra judgement (all read from real transactions) ---------------- */
@@ -464,6 +465,10 @@ function chooseRedevelopment(game, level, reserve, profile) {
     for (const mode of [ACQUIRE_MODES.RESTORE, ACQUIRE_MODES.REBUILD]) {
       const value = redevelopmentSurplus(game, me.seat, block.id, mode, turns, level);
       if (!value || value.surplus <= 0 || me.cash - value.reserve < reserve) continue;
+      // Only open bidding it will take part in: its own sealed bid (same reserve, same cash
+      // risk rules) must be valid, or the auction would settle with no bids and the bot would
+      // ask to open it again.
+      if (chooseRedevelopmentBid(game, me.seat, block.id, mode, { difficulty: level, reserve }) == null) continue;
       const score = value.surplus * weight(profile, 'redevelop');
       if (!best || score > best.score) {
         best = { action: 'redevelop', blockId: block.id, mode, reason: CITY_REASONS.DEVELOP, cost: value.reserve, score };

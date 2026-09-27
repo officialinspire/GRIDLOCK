@@ -299,6 +299,24 @@ test('sealed bids: at least the reserve, in whole increments, within cash minus 
   assert.equal(JSON.stringify(game), JSON.stringify(abandonedTable()), 'bidding changes nothing');
 });
 
+test('a CPU mayor only opens bidding it will bid in itself, at any cash level (no stuck auctions)', () => {
+  // Hard keeps next turn's upkeep in hand when bidding; opening must follow the same rule, or the
+  // auction settles with no bids and the bot asks to open it again, forever.
+  for (let cash = 0; cash <= 14000; cash += 250) {
+    const game = abandonedTable();
+    placeRoad(game, 'h-0-0'); // seat 1 → the Hard bot's Manage City
+    const own = getBlockById(game.board, 'r4c4');
+    Object.assign(own, { ownerSeat: 2 });
+    applyDevelopment(own, 'industrial', 2); // upkeep to keep in hand
+    refreshBonuses(game.board);
+    currentPlayer(game).cash = cash;
+    const d = chooseCityAction(game);
+    if (d.action !== 'redevelop') continue;
+    const result = applyCityAction(structuredClone(game), d);
+    assert.ok(result.ok, `cash $${cash}: the auction it opens settles (${result.error})`);
+  }
+});
+
 test('a CPU mayor opens bidding on a lot worth having, and the sealed bids settle it', async () => {
   const game = abandonedTable();
   placeRoad(game, 'h-0-0'); // seat 1 → the Hard bot's Manage City

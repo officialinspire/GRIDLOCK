@@ -26,6 +26,14 @@ let timer = null;
 let plannedFor = null;
 let plan = null; // { text, target, run } for the step being thought about
 let skipping = false;
+let stuck = 0; // steps in a row that changed nothing (see STUCK_LIMIT)
+
+/**
+ * Safety net: a step that changes nothing would be planned again and again. After this many in
+ * a row the driver asks for the fallback step instead (finish managing and pave, or leave a
+ * capture vacant). The simulator (tools/cpu-simulate.mjs) checks this never happens.
+ */
+const STUCK_LIMIT = 2;
 
 /** A fingerprint of everything a step could change: if it differs, the plan is stale. */
 function stateKey(game) {
@@ -92,7 +100,7 @@ export function kickCpu() {
   }
   cancel();
   plannedFor = key;
-  plan = hooks.plan(game);
+  plan = (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game);
   showIntent(plan);
   const planned = plan;
   const delay = skipping ? 0 : CPU.THINK_MS[hooks.getSettings().cpuSpeed] ?? CPU.THINK_MS.normal;
@@ -104,7 +112,10 @@ export function kickCpu() {
     plan = null;
     showIntent(null);
     // The plan was made for exactly this state (same key), so it is still the right move.
-    if (fresh) planned.run();
+    if (fresh) {
+      planned.run();
+      stuck = hooks.getGame() === now && stateKey(now) === key ? stuck + 1 : 0;
+    }
     kickCpu();
   }, delay);
 }
@@ -113,6 +124,7 @@ export function kickCpu() {
 export function stopCpu() {
   cancel();
   skipping = false;
+  stuck = 0;
   if (hooks) showStatus(null);
 }
 
@@ -123,8 +135,8 @@ export function skipCpu() {
   kickCpu();
 }
 
-export function initCpuDriver({ getGame, canAct, plan: planStep, getSettings, setSpeed, pause }) {
-  hooks = { getGame, canAct, plan: planStep, getSettings };
+export function initCpuDriver({ getGame, canAct, plan: planStep, fallback, getSettings, setSpeed, pause }) {
+  hooks = { getGame, canAct, plan: planStep, fallback, getSettings };
   $('#cpu-skip').addEventListener('click', skipCpu);
   $('#cpu-pause').addEventListener('click', pause);
   $('#cpu-faster').addEventListener('click', () => {

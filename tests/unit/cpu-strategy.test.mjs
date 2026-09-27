@@ -234,15 +234,17 @@ test('difficulty matters more than personality: Hard beats Easy whatever the per
   }
 });
 
-test('Expansionist Hard weighs follow-up captures more: it double-deals where a plain Hard bot would not', () => {
-  // Three mayors. A downtown domino (C3 already on three sides, D3) is on offer, and a
-  // four-block chain (A1, B1, C1 in the suburbs, C2 in midtown) is left for whoever must open it.
-  //   take both:   +$5,000 now, then open the chain: −$6,500
-  //   double-deal: give the domino (−$5,000), get the chain back later (+$6,500 × follow-up weight)
+test('Hard double-deals for the next chain at two players, but not where a third mayor would get it', () => {
+  // A downtown domino (C3 already on three sides, D3) is on offer, and a four-block chain
+  // (A1, B1, C1 in the suburbs, C2 in midtown) is left for whoever must open it.
+  //   take both:   +$5,000 now, then open the chain for the next mayor (−$6,500)
+  //   double-deal: give the next mayor the domino; they must then open the chain. At two
+  //                players it comes back to us; at three it goes to the third mayor.
   const free = ['v-0-0', 'v-0-1', 'v-0-2', 'h-1-2', 'v-1-2', 'v-2-3', 'v-2-4'];
   const open = ['r0c0', 'r0c1', 'r0c2', 'r1c2', 'r2c2', 'r2c3'];
-  const table = (personality) => {
-    const game = createGame({ seats: [{ seat: 1, controller: 'cpu', difficulty: 'hard', personality }, { seat: 2 }, { seat: 3 }], seed: 1, eventPool: [] });
+  const table = (players, personality = null) => {
+    const seats = [{ seat: 1, controller: 'cpu', difficulty: 'hard', personality }, { seat: 2 }, { seat: 3 }].slice(0, players);
+    const game = createGame({ seats, seed: 1, eventPool: [] });
     for (const id of Object.keys(game.board.roads)) delete game.board.roads[id];
     const all = [];
     for (let r = 0; r <= 6; r++) for (let c = 0; c < 6; c++) all.push(`h-${r}-${c}`);
@@ -251,8 +253,10 @@ test('Expansionist Hard weighs follow-up captures more: it double-deals where a 
     for (const b of game.board.blocks) if (!open.includes(b.id)) b.ownerSeat = 2;
     return game;
   };
-  const plain = chooseRoad(table(null));
-  assert.deepEqual([plain.road, plain.reason], ['v-2-3', 'capture'], 'plain Hard takes the domino');
-  const expansionist = chooseRoad(table('expansionist'));
-  assert.deepEqual([expansionist.road, expansionist.reason], ['v-2-4', 'double-deal'], 'the Expansionist plays for the chain');
+  const duel = chooseRoad(table(2));
+  assert.deepEqual([duel.road, duel.reason], ['v-2-4', 'double-deal'], 'two players: the chain comes back');
+  for (const personality of [null, ...PERSONALITY_IDS]) {
+    const three = chooseRoad(table(3, personality));
+    assert.deepEqual([three.road, three.reason], ['v-2-3', 'capture'], `three players (${personality ?? 'no personality'}): takes the domino`);
+  }
 });

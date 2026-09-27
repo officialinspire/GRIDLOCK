@@ -13,6 +13,7 @@
     "test:smoke:firefox": "BROWSER=firefox node tests/smoke.mjs",
     "test:pwa": "node tests/pwa.mjs",
     "simulate": "node tools/simulate.mjs",
+    "simulate:cpu": "node tools/cpu-simulate.mjs",
     "build:assets": "node tools/build-assets.mjs",
     "build:pwa": "node tools/build-pwa.mjs",
     "build:icons": "node tools/build-pwa.mjs --icons"

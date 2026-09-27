@@ -154,8 +154,29 @@ export const CPU = Object.freeze({
   EASY_BUILD_CHANCE: 0.75,
   /** …and, in Manage City, to build on or upgrade one of its blocks. */
   EASY_MANAGE_CHANCE: 0.35,
+  /** Easy: chance it rethinks a road that would leave a three-sided block (else it plays it). */
+  EASY_CAUTION: 0.7,
+  /**
+   * Hard roads: how much of the captures it expects back after the next mayor's reply counts,
+   * by table size (in full at two players; others move in between at bigger tables)…
+   */
+  HARD_FOLLOW_UP: Object.freeze({ 2: 1, 3: 0.5, 4: 0.5 }),
+  /** …and the largest table at which it will decline the last two blocks of a run to keep control. */
+  HARD_DOUBLE_DEAL_MAX_PLAYERS: 4,
+  /**
+   * Hard roads, endgame at three or more players (no safe roads left): play the remaining chains
+   * out, every mayor taking what it's offered and giving away as little as it can, to see which
+   * sacrifice sends the long chains its way. Off: one reply ahead, as at two players.
+   */
+  HARD_ENDGAME_ROLLOUT: true,
+  /** …starting once this few safe roads are left (0: only when none are). */
+  HARD_ROLLOUT_SAFE_ROADS: 0,
   /** Hard: minimum expected return per dollar spent before it commits cash. */
   HARD_MIN_ROI: 0.05,
+  /** Hard: its cash floor covers next turn's charges as if income fell by this share… */
+  HARD_INCOME_CUT: 0.5,
+  /** …plus this share of a Fire repair bill when a Fire could hit one of its buildings. */
+  HARD_FIRE_BUFFER: 1,
   /** Hard: value per turn of civic shelter, as a share of the income it protects from emergencies. */
   CIVIC_SHELTER_VALUE: 0.15,
   /** Hard: share of a district bonus it counts for a build that leaves the district one block short. */
