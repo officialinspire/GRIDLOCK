@@ -68,18 +68,32 @@ function watchForBrowserErrors(page) {
   // location) isn't an asset failure. Firefox reports those as failed when a service worker is in
   // the path. Only such aborts are excused: every other failure, and any abort without a later
   // navigation, still fails the test.
+  // Likewise, the browser may cancel an in-flight image a style no longer needs (e.g. on a screen
+  // switch); Firefox reports these as NS_BINDING_ABORTED. Only a file that never loads is an asset
+  // failure, so an abort is dropped once the same URL loads successfully (before or after).
   let navigations = 0;
   const startedAt = new WeakMap();
+  const loaded = new Set();
+  const abortedErrors = new Map(); // url → error entries awaiting a successful load
   page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) navigations++; });
   page.on('request', (request) => startedAt.set(request, navigations));
   page.on('requestfailed', (request) => {
-    if (optionalFont(request.url())) return;
+    const url = request.url();
+    if (optionalFont(url)) return;
     const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
-    if (aborted && navigations > (startedAt.get(request) ?? navigations)) return;
-    errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`);
+    if (aborted && (navigations > (startedAt.get(request) ?? navigations) || loaded.has(url))) return;
+    const entry = `requestfailed: ${url} (${request.failure()?.errorText ?? 'unknown'})`;
+    errors.push(entry);
+    if (aborted) abortedErrors.set(url, [...(abortedErrors.get(url) ?? []), entry]);
   });
   page.on('response', (response) => {
-    if (response.status() >= 400 && !optionalFont(response.url())) errors.push(`HTTP ${response.status()}: ${response.url()}`);
+    const url = response.url();
+    if (response.status() >= 400 && !optionalFont(url)) errors.push(`HTTP ${response.status()}: ${url}`);
+    if (response.status() < 400) {
+      loaded.add(url);
+      for (const entry of abortedErrors.get(url) ?? []) errors.splice(errors.indexOf(entry), 1);
+      abortedErrors.delete(url);
+    }
   });
   return errors;
 }
@@ -786,11 +800,24 @@ const recordVibration = () => {
     if (coarse) assert.deepEqual(await lastVib(), HAPTIC.capture, 'capture: stronger pattern');
 
     // Tap-through: a quick double tap on "Develop Now" must not also press what opens beneath it.
+    // Dispatched in the page 60ms apart so the gap is a real double tap on every engine (driving
+    // two separate taps can take longer than the guard window on slow CI runners).
     await settle();
-    const develop = await page.locator('[data-capture-choice="develop"]').boundingBox();
-    const [x, y] = [develop.x + develop.width / 2, develop.y + develop.height / 2];
-    await page.touchscreen.tap(x, y);
-    await page.touchscreen.tap(x, y);
+    const doubleTap = await page.evaluate(async () => {
+      const develop = document.querySelector('[data-capture-choice="develop"]').getBoundingClientRect();
+      const [x, y] = [develop.left + develop.width / 2, develop.top + develop.height / 2];
+      const tap = (el) => {
+        el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, clientX: x, clientY: y }));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, clientX: x, clientY: y }));
+      };
+      const t0 = performance.now();
+      tap(document.elementFromPoint(x, y));
+      await new Promise((done) => setTimeout(done, 60));
+      // The second tap lands on a build option of the panel that just opened (worst case).
+      tap(document.querySelector('#build-dialog [data-build="residential"]'));
+      return { gap: performance.now() - t0 };
+    });
+    assert.ok(doubleTap.gap < 300, `taps ${Math.round(doubleTap.gap)}ms apart form a double tap`);
     const panel = page.locator('#build-dialog');
     assert.equal(await panel.isVisible(), true, 'build panel opened and stayed open');
     assert.equal(await page.locator('[data-block="r0c0"] .block__building').count(), 0, 'the second tap built nothing');
