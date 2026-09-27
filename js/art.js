@@ -54,13 +54,6 @@ export const ART = Object.freeze({
     recession: ['effects:smoke'],
   }),
 
-  /** Table decoration around the board (desktop only; never on the play grid). */
-  tableDecor: Object.freeze([
-    { sprite: 'props:tree-oak', spot: 'tl' },
-    { sprite: 'props:streetlamp', spot: 'tr' },
-    { sprite: 'props:car-red', spot: 'bl' },
-    { sprite: 'props:bench', spot: 'br' },
-  ]),
 
   /**
    * The downtown street on the start and title screens, left to right. `size` scales a piece

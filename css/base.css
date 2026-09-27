@@ -103,7 +103,7 @@ img { max-width: 100%; }
  *   corners cannot grow the document's horizontal scroll area.
  */
 .board-frame {
-  height: min(100cqw, 100cqh);
+  height: var(--board-size, min(100cqw, 100cqh)); /* the same as its width: always square */
 }
 @media (max-width: 540px) {
   .screen--page { overflow-x: clip; }

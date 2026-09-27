@@ -1,6 +1,6 @@
 /*
  * Papercraft skin: UI chrome cut from "UI buttons_panels.png" (see
- * tools/build-assets.mjs → assets/generated/ui/) plus table decoration.
+ * tools/build-assets.mjs → assets/generated/ui/).
  * Loaded last so it layers over the plain CSS fallbacks in components.css.
  * Paths are relative to this file.
  */
@@ -113,33 +113,11 @@
     0 22px 34px rgba(0, 0, 0, 0.5);
 }
 
-/* ---------- Table decoration (props_decor), outside the play grid ---------- */
-.table-decor { position: absolute; inset: 0; pointer-events: none; display: none; }
-.table-decor .sprite {
-  position: absolute;
-  width: clamp(48px, 7cqw, 96px);
-  filter: drop-shadow(3px 6px 0 rgba(0, 0, 0, 0.25)) drop-shadow(0 8px 8px rgba(0, 0, 0, 0.35));
-}
-.table-decor [data-spot='tl'] { left: 0; top: 2%; }
-.table-decor [data-spot='tr'] { right: 1%; top: 2%; width: clamp(28px, 3.4cqw, 48px); }
-.table-decor [data-spot='bl'] { left: 0; bottom: 4%; width: clamp(64px, 9cqw, 120px); }
-.table-decor [data-spot='br'] { right: 0; bottom: 4%; }
-/* Only when the board area has real side margins; never overlapping the grid. */
-@container (min-aspect-ratio: 13 / 10) {
-  .table-decor { display: block; }
-}
 .board-area { position: relative; }
 
-/* Title screen props */
-
-
-@media (prefers-reduced-transparency: reduce) {
-  .table-decor { display: none; }
-}
 
 /* ---------- Compact screens: readability over decoration ---------- */
 @media (max-height: 560px) and (orientation: landscape) {
-  .table-decor { display: none !important; }
   .btn { min-height: 40px; border-width: 11px; border-image-width: 11px; }
   .btn--icon.btn--sm { width: 40px; min-height: 40px; border-width: 11px; border-image-width: 11px; }
   .player-card:not(.is-empty) { border-width: 8px; border-image-width: 8px; }

@@ -32,6 +32,13 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
   - captures: a rubber "claimed" stamp before the arpeggio;
   - construction: a building site of its own for each building type: hammers and a doorbell for homes, a drill and cash register for shops, shovels and birdsong for parks, a stone block and brass call for civic buildings, clanking and steam for industry, a crane whoosh and fanfare for landmarks;
   - events: a sound of its own for each city event: rain and thunder, wind and sleigh bells, a fire engine, a power-down, festival horns and fireworks, hammering for the Housing Boom, sparkling chimes for the grant, a ka-ching for the boom, and a sad trombone for the recession.
+- **Layout polish (desktop, tablet, phone):**
+  - The board is always exactly square. An old WebKit workaround had set its height separately, which stretched blocks slightly on some screens.
+  - The district key sits under the board instead of over its corner (phones held sideways leave it out to keep the board and its tap targets large), and the stray decorations around the board are gone.
+  - Player cards line up. When bots are at the table, every card has a second line (*CPU · Hard · Tycoon* or *Human*), and names shrink to fit narrow cards instead of being cut short.
+  - Phones held sideways show compact cards (cash, blocks, income), so all four fit.
+  - The empty *Tap a block* hint hides on short screens.
+  - New Game's section headings are paper tabs instead of being cut by the panel frame.
 - **Offline:** the music and intro are precached too (about 5.9 MB). The service worker answers media byte-range requests from the cache, which Safari requires to play audio and video offline.
 
 ### V1.2 release notes
@@ -615,7 +622,7 @@ js/
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
 js/art.js                  Semantic art roles (what views ask for)
 css/title.css              Start screen, intro and the downtown main menu (sky, street, city-block menu)
-css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon, table decor
+css/art.css                Papercraft skin: 9-sliced UI frames, toggles, ribbon
 css/mobile.css             Touch hardening + compact phone/tablet layout (loaded last)
 tools/build-assets.mjs     Generates assets/generated/ (WebP, keyed-out props, UI frames)
 tools/build-pwa.mjs        Refreshes sw.js precache + version; --icons renders assets/icons/
@@ -686,7 +693,7 @@ The ten original sprite sheets stay at the repo root, **unmodified**; `tests/uni
 
 **Tabletop look:** each block is a paper cut-out lifted off a kraft-paper board. Stacked drop shadows read as cardstock, and developed blocks gain a layer per level. Level 2 adds one street prop and Level 3 a second (trees, lamps, mailboxes, power poles…), placed at the kerb so buildings stay readable. Claimed blocks carry the owner's flag, frame and tint. The board frame is a stack of card sheets.
 
-**Readability rules:** props and decor never sit on roads. Table decor only appears when the board has side margins, and on short landscape screens chrome slims down and decor is hidden. Unbuilt roads stay as high-contrast pencil lines, and paved ones keep a thin builder-coloured curb.
+**Readability rules:** props and decor never sit on roads, and nothing floats over the board. The district key sits in a strip under the board, never over it; on short landscape screens the chrome slims down and the key is left out so the board keeps every pixel. Unbuilt roads stay as high-contrast pencil lines, and paved ones keep a thin builder-coloured curb.
 
 Open `dev/sprites.html` through the local server to see every crop.
 

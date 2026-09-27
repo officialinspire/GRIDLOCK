@@ -96,7 +96,11 @@
   width: auto;
   filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.35));
 }
-.downtown__building { margin-inline: calc(var(--bh) * -0.05); }
+.downtown__building {
+  margin-inline: calc(var(--bh) * -0.05);
+  /* Trim the sheet's bleed at the top (the edge of the sprite above it on the sheet). */
+  clip-path: inset(3px -20px -20px -20px);
+}
 .downtown__prop { position: relative; z-index: 1; margin-inline: calc(var(--bh) * -0.02); margin-bottom: -3px; }
 /* Narrower screens show the heart of downtown (City Hall in the middle). */
 .downtown [data-from] { display: none; }
@@ -337,7 +341,7 @@
 @keyframes logo-drop { from { transform: translateY(-24px) scale(0.94); opacity: 0; } }
 
 /* The note only where it has room beside the menu. */
-@media (max-width: 1360px) {
+@media (max-width: 1500px) {
   .title-note { display: none; }
 }
 /* Tablets in portrait: a smaller logo keeps the street clear of the menu. */

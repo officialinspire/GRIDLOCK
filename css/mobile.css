@@ -78,9 +78,8 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
   .player-card[data-seat='3'] { grid-column: 3; }
   .player-card[data-seat='4'] { grid-column: 4; }
   .board-area { grid-row: 2; grid-column: 1 / -1; container-type: size; }
-  .board-frame { width: min(100cqw, 100cqh); }
+  .board-area { --board-size: min(100cqw, calc(100cqh - var(--legend-room))); }
   .inspector { display: none; }
-  .table-decor { display: none !important; }
 
   .action-bar { position: static; flex-wrap: wrap; gap: 6px; padding: 6px 8px 8px; }
   .action-bar .btn { flex: 1 1 0; min-width: 0; }
@@ -172,7 +171,7 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
 
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
   .board-area { place-items: start center; }
-  .district-legend { right: 2px; bottom: 2px; padding: 3px 5px; gap: 2px 5px; }
+  .district-legend { padding: 2px 8px; gap: 8px; }
   .district-legend strong { display: none; }
   .block__event-vfx { width: 48%; opacity: .72; }
 }
