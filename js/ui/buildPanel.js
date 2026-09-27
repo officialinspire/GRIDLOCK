@@ -16,6 +16,7 @@ import { formatCash, blockIncome, bonusIncome } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
 import { toast } from './toast.js';
+import { buzz } from './haptics.js';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned,
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES, FIN_ERRORS,
@@ -217,6 +218,7 @@ function render() {
 }
 
 function refuse(error, shortfall) {
+  buzz('error');
   const text = error === DEV_ERRORS.INSUFFICIENT_FUNDS
     ? `Not enough cash: need ${formatCash(shortfall)} more.`
     : ERROR_TEXT[error] ?? 'You can’t do that.';
@@ -256,8 +258,12 @@ function handleAcquire(result) {
       [FIN_ERRORS.FORMER_OWNER]: 'You can\'t buy back a block you abandoned.',
       [FIN_ERRORS.IN_DISTRESS]: 'Clear your debt first.',
     }[result.error];
-    if (text) toast(text, { tone: 'warn' });
-    else refuse(result.error, result.shortfall);
+    if (text) {
+      buzz('error');
+      toast(text, { tone: 'warn' });
+    } else {
+      refuse(result.error, result.shortfall);
+    }
     render();
     return;
   }
@@ -275,6 +281,7 @@ function handleAuction(mode) {
     .map((input) => ({ seat: Number(input.name.slice(4)), bid: Number(input.value) }));
   const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
   if (!result.ok) {
+    buzz('error');
     toast('No eligible affordable bid met the reserve.', { tone: 'warn' });
     return;
   }

@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   ambience: true, // procedural tabletop/city background, game screen only
   ambienceVolume: 50, // 0–100
   confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
+  haptics: true, // vibration feedback on touch devices that support it (no effect elsewhere)
   reducedMotion: false,
   showCoords: false,
   quickHandoff: false,

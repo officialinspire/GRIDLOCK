@@ -9,6 +9,9 @@ import { initSetupView } from './ui/setupView.js';
 import { initGameView, getGame, saveGameNow } from './ui/gameView.js';
 import { initPwa } from './pwa.js';
 import { audio, initAudio } from './ui/audio.js';
+import { initHaptics } from './ui/haptics.js';
+import { initTouchGuard } from './ui/touchGuard.js';
+import { loadSettings } from './core/settings.js';
 import { bus } from './core/bus.js';
 
 /** Fills `[data-econ="KEY"]` text from ECONOMY so copy never drifts from the constants. */
@@ -35,6 +38,8 @@ function boot() {
   fillEconomyCopy();
   placeDecor();
   initAudio({ bus });
+  initHaptics(loadSettings());
+  initTouchGuard();
   initSettingsView();
   hydrateSprites(document);
   initSetupView();

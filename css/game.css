@@ -204,7 +204,9 @@
 
 .board {
   --road: 5.2cqw;
-  --road-tap: max(10px, 1.6cqw); /* extra hit area either side of a road slot */
+  /* Extra hit area either side of a road slot. Capped relative to the board so that on small
+     (phone) boards the neighbouring blocks stay tappable too; boards 500px+ are unaffected. */
+  --road-tap: min(max(10px, 1.6cqw), 2cqw);
   display: grid;
   grid-template-columns: var(--road) repeat(var(--cols, 6), minmax(0, 1fr) var(--road));
   grid-template-rows: var(--road) repeat(var(--rows, 6), minmax(0, 1fr) var(--road));

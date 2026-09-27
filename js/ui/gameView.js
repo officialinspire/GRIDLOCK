@@ -25,6 +25,7 @@ import { showResults as openResults } from './resultsView.js';
 import { showScreen, resetTo } from './router.js';
 import { toast, clearToasts } from './toast.js';
 import { audio, play } from './audio.js';
+import { buzz } from './haptics.js';
 import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 
@@ -152,7 +153,9 @@ function handleDevelopment(change) {
   if (captured) resolveCapture(game, captured);
   autosave();
   // Sales/downgrades pay a refund; Level 2–3 is an upgrade; anything else is new construction.
-  play(change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build');
+  const kind = change.refund > 0 ? 'coins' : change.level >= 2 && !change.mode ? 'upgrade' : 'build';
+  play(kind);
+  if (kind !== 'coins') buzz(kind);
   const player = currentPlayer(game);
   const after = game.board.blocks.filter((b) => b.ownerSeat === player.seat).reduce((s, b) => s + bonusIncome(b), 0);
   if (after > bonusBefore) toast(`★ Bonus income +${formatCash(after - bonusBefore)}/turn`, { tone: 'capture' });
@@ -207,6 +210,7 @@ function handleBlockSelect(id) {
 
 function handleRoadArmed() {
   play('tick');
+  buzz('arm');
   if (!armHintShown) {
     armHintShown = true;
     toast('Tap the highlighted road again to pave it.', { duration: 2200 });
@@ -298,6 +302,7 @@ function handleRoad(id) {
   if (!result.ok) {
     rejectRoad(id);
     play('error');
+    buzz('error');
     toast(REJECT_MESSAGES[result.error] ?? 'You can’t build there.', { tone: 'warn', duration: 1600 });
     if (result.error === MOVE_ERRORS.IN_DISTRESS) openDistressPanel(game);
     return;
@@ -308,6 +313,7 @@ function handleRoad(id) {
   render();
   renderChain();
   play(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
+  buzz(n > 0 ? 'capture' : 'pave', { intensity: chain || 1 });
 
   if (n > 0) {
     flashFrame();
@@ -320,7 +326,10 @@ function handleRoad(id) {
     clearActiveGame();
     refreshSavedGameControls();
     setTimeout(() => {
-      if (game?.results) play('win');
+      if (game?.results) {
+        play('win');
+        buzz('win');
+      }
       showResults();
     }, n > 0 ? 700 : 0);
     bus.emit('game:move', result);
@@ -331,6 +340,7 @@ function handleRoad(id) {
   const finishTransition = () => {
     if (result.event?.started) {
       play('event', { kind: getEventDef(result.event.started.id)?.kind });
+      buzz('event');
       showEventCard(game, result.event.started, result.event.expired);
     } else if (result.event?.expired.length) {
       toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);

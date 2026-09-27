@@ -3,6 +3,7 @@ import { $ } from './dom.js';
 import { loadSettings, saveSettings, normalizeSettings, BOOLEAN_SETTINGS, VOLUME_SETTINGS } from '../core/settings.js';
 import { bus } from '../core/bus.js';
 import { audio } from './audio.js';
+import { haptics } from './haptics.js';
 
 let settings = loadSettings();
 
@@ -15,6 +16,7 @@ export function applySettingsToDocument(s = settings) {
   root.dataset.motion = s.reducedMotion ? 'reduced' : 'full';
   root.dataset.coords = s.showCoords ? 'on' : 'off';
   audio.configure(s);
+  haptics.configure(s);
 }
 
 /** Reads the controls directly: FormData would drop the disabled ones (e.g. ambience while muted). */
@@ -62,6 +64,8 @@ export function updateSettings(patch) {
 
 export function initSettingsView() {
   const form = $('#settings-form');
+  // Desktop and iPhone (no Vibration API) never see the haptics switch.
+  $('#haptics-row').hidden = !haptics.supported();
   writeForm(form, settings);
   applySettingsToDocument();
 
@@ -79,5 +83,6 @@ export function initSettingsView() {
     // Let players hear the level they picked.
     if (['masterVolume', 'sfxVolume'].includes(e.target.name)) audio.play('coins');
     if (e.target.name === 'sound' && settings.sound) audio.play('tick');
+    if (e.target.name === 'haptics' && settings.haptics) haptics.buzz('build');
   });
 }

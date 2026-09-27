@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 import { mkdir, rm } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { startServer } from './serve.mjs';
+import { PATTERNS as HAPTIC } from '../js/ui/haptics.js';
 
 async function loadPlaywright() {
   try {
@@ -728,6 +729,200 @@ for (const vp of VIEWPORTS) {
   } catch (err) {
     failures++;
     console.error(`✘ audio settings (phone): ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+/** Records navigator.vibrate calls (defines the API where the engine lacks it, e.g. WebKit). */
+const recordVibration = () => {
+  window.__vib = [];
+  Object.defineProperty(Navigator.prototype, 'vibrate', {
+    configurable: true,
+    writable: true,
+    value(pattern) { window.__vib.push(Array.isArray(pattern) ? pattern : [pattern]); return true; },
+  });
+};
+
+// Touch + haptics on a phone: patterns per action, tap-through guard, setting, tap targets.
+{
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce',
+  });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(recordVibration);
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const road = (id) => page.locator(`#board [data-road="${id}"]`);
+  const vib = () => page.evaluate(() => window.__vib);
+  const lastVib = async () => (await vib()).at(-1) ?? null;
+  const tapTwice = async (id) => { await road(id).tap(); await road(id).tap(); };
+  const settle = () => page.waitForTimeout(400); // longer than the 300ms tap-through guard
+  try {
+    await page.goto(`${base}?seed=19&debug`, { waitUntil: 'networkidle' });
+    const coarse = await page.evaluate(() => matchMedia('(pointer: coarse)').matches);
+    // Settings: the switch exists only where haptics can work.
+    await page.getByRole('button', { name: 'Settings' }).tap();
+    assert.equal(await page.isVisible('#haptics-row'), coarse, 'haptics switch shown only on touch devices');
+    if (coarse) assert.equal(await page.isChecked('#settings-form [name="haptics"]'), true, 'on by default');
+    await page.locator('[data-screen="settings"] [data-nav="back"]').tap();
+    await page.getByRole('button', { name: 'New Game' }).tap();
+    await page.locator('#setup-start').tap();
+
+    // Tap twice to pave: arm (tiny) then pave (short).
+    await road('h-0-0').tap();
+    assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-armed')), 'first tap previews');
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.arm);
+    await road('h-0-0').tap();
+    assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-built')), 'second tap paves');
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.pave);
+    for (const id of ['v-0-0', 'h-1-0', 'v-0-1']) await tapTwice(id);
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.capture, 'capture: stronger pattern');
+
+    // Tap-through: a quick double tap on "Develop Now" must not also press what opens beneath it.
+    await settle();
+    const develop = await page.locator('[data-capture-choice="develop"]').boundingBox();
+    const [x, y] = [develop.x + develop.width / 2, develop.y + develop.height / 2];
+    await page.touchscreen.tap(x, y);
+    await page.touchscreen.tap(x, y);
+    const panel = page.locator('#build-dialog');
+    assert.equal(await panel.isVisible(), true, 'build panel opened and stayed open');
+    assert.equal(await page.locator('[data-block="r0c0"] .block__building').count(), 0, 'the second tap built nothing');
+
+    // Refused action: warning; then a real build: confirmation.
+    await settle();
+    await page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); g.players[3].cash = 10; });
+    await panel.locator('[data-build="residential"]').tap();
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.error, 'invalid action: warning');
+    // Cash restored behind the UI's back, so the open panel still shows the option as unaffordable.
+    await page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); g.players[3].cash = 12500; });
+    await panel.locator('[data-build="residential"]').tap({ force: true });
+    assert.ok(await page.locator('[data-block="r0c0"] .block__building').count(), 'built');
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.build, 'build: confirmation');
+
+    // Bonus road ends the round: the seeded Fire is a major event.
+    await settle();
+    await tapTwice('h-6-5');
+    assert.ok(await page.isVisible('#event-dialog'), 'city event');
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.event, 'major event pattern');
+    await settle();
+    await page.locator('#event-continue').tap();
+
+    // Setting off: gameplay unchanged, no vibration.
+    if (coarse) {
+      await settle();
+      await page.locator('[data-screen="game"] [data-nav="settings"]').tap();
+      await page.locator('#haptics-row').tap();
+      assert.equal(await page.isChecked('#settings-form [name="haptics"]'), false);
+      await page.locator('[data-screen="settings"] [data-nav="back"]').tap();
+      const before = (await vib()).length;
+      await tapTwice('h-6-4');
+      assert.ok(await road('h-6-4').evaluate((el) => el.classList.contains('is-built')), 'paving still works');
+      assert.equal((await vib()).length, before, 'no vibration with haptics off');
+      await page.reload({ waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: 'Settings' }).tap();
+      assert.equal(await page.isChecked('#settings-form [name="haptics"]'), false, 'haptics setting persisted');
+      await page.locator('#haptics-row').tap();
+      await page.locator('[data-screen="settings"] [data-nav="back"]').tap();
+      await page.locator('#continue-game').tap();
+    }
+
+    // Win: stage a nearly finished city, then pave the last road.
+    await settle();
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlock } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board);
+      ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      const b = getBlock(g.board, 5, 5);
+      if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.at(-1);
+    });
+    await tapTwice(last);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    if (coarse) assert.deepEqual(await lastVib(), HAPTIC.win, 'win pattern');
+    await settle();
+    await page.locator('#results-dialog [data-results-action="title"]').tap();
+
+    // Tap targets (portrait and rotated to landscape).
+    for (const [w, h] of [[390, 844], [844, 390]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.getByRole('button', { name: 'New Game' }).tap();
+      await page.locator('#setup-start').tap();
+      const t = await page.evaluate(() => {
+        const hit = (sel, axis) => {
+          const el = document.querySelector(sel);
+          const b = el.getBoundingClientRect();
+          let n = 0;
+          for (let i = -30; i < (axis === 'y' ? b.height : b.width) + 30; i++) {
+            const at = axis === 'y' ? document.elementFromPoint(b.left + b.width / 2, b.top + i) : document.elementFromPoint(b.left + i, b.top + b.height / 2);
+            if (at?.closest(sel)) n++;
+          }
+          return n;
+        };
+        const controls = [...document.querySelectorAll('[data-screen="game"] button')].filter((b) => b.offsetParent && !b.closest('#board'))
+          .map((b) => { const r = b.getBoundingClientRect(); return [b.id || b.className, Math.round(Math.min(r.width, r.height))]; });
+        return { road: hit('[data-road="h-2-2"]', 'y'), block: hit('[data-block="r2c2"]', 'x'), controls };
+      });
+      assert.ok(t.road >= 20, `${w}×${h}: road hit strip ${t.road}px`);
+      assert.ok(t.block >= 12, `${w}×${h}: block keeps a tappable centre (${t.block}px)`);
+      if (coarse) for (const [name, min] of t.controls) assert.ok(min >= 44, `${w}×${h}: ${name} is ${min}px (< 44)`);
+      await noHorizontalScroll(page, `touch ${w}×${h}`);
+      await page.locator('#game-menu-btn').tap();
+      await settle();
+      await page.locator('#pause-dialog [data-dialog-action="save-quit"]').tap();
+    }
+    assert.deepEqual(errors, []);
+    console.log(`✔ touch + haptics: patterns, tap-through guard, setting, win, tap targets${coarse ? '' : ' (no coarse pointer: haptics off)'}`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ touch + haptics: ${err.message}`);
+    await page.screenshot({ path: 'test-results/haptics-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// Desktop is unchanged: no haptics switch, no vibration, mouse clicks pave directly.
+// A touchscreen laptop (touch + mouse) previews finger taps but not mouse clicks.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(recordVibration);
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(base, { waitUntil: 'networkidle' });
+    const coarse = await page.evaluate(() => matchMedia('(pointer: coarse)').matches);
+    await page.getByRole('button', { name: 'Settings' }).click();
+    if (!coarse) assert.equal(await page.isVisible('#haptics-row'), false, 'no haptics switch on desktop');
+    await page.locator('[data-screen="settings"] [data-nav="back"]').click();
+    await page.getByRole('button', { name: 'New Game' }).click();
+    await page.click('#setup-start');
+    if (await page.locator('#handoff-dialog[open]').count()) await page.click('#handoff-ready');
+    const road = (id) => page.locator(`#board [data-road="${id}"]`);
+    await road('h-0-0').click();
+    assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('is-built')), 'mouse click paves at once');
+    if (await page.locator('#handoff-dialog[open]').count()) await page.click('#handoff-ready');
+    await page.waitForTimeout(400);
+    await road('h-0-1').tap();
+    assert.ok(await road('h-0-1').evaluate((el) => el.classList.contains('is-armed')), 'a finger tap on a touch laptop previews first');
+    await road('h-0-1').tap();
+    assert.ok(await road('h-0-1').evaluate((el) => el.classList.contains('is-built')));
+    if (!coarse) assert.deepEqual(await page.evaluate(() => window.__vib), [], 'desktop never vibrates');
+    assert.deepEqual(errors, []);
+    console.log('✔ desktop unchanged; touchscreen laptop previews finger taps');
+  } catch (err) {
+    failures++;
+    console.error(`✘ desktop/touch laptop: ${err.message}`);
+    await page.screenshot({ path: 'test-results/touch-laptop-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }

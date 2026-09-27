@@ -191,6 +191,11 @@
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
             <input type="checkbox" class="toggle" name="confirmTaps">
           </label>
+          <!-- Shown only on touch devices that can vibrate (see js/ui/haptics.js). -->
+          <label class="setting-row" id="haptics-row" hidden>
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Haptics (vibration)</span>
+            <input type="checkbox" class="toggle" name="haptics">
+          </label>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
             <input type="checkbox" class="toggle" name="quickHandoff">

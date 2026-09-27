@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from '../config.js';
 
 const KEY = 'gridlock.settings.v1';
 
-export const BOOLEAN_SETTINGS = Object.freeze(['sound', 'ambience', 'confirmTaps', 'reducedMotion', 'showCoords', 'quickHandoff']);
+export const BOOLEAN_SETTINGS = Object.freeze(['sound', 'ambience', 'confirmTaps', 'haptics', 'reducedMotion', 'showCoords', 'quickHandoff']);
 export const VOLUME_SETTINGS = Object.freeze(['masterVolume', 'sfxVolume', 'ambienceVolume']);
 
 /** Fills gaps with defaults (older saves keep working), keeps booleans, clamps volumes to whole 0–100. */

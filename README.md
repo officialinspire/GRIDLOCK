@@ -55,7 +55,7 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 | Keyboard | Tab into the board, use arrow keys between cells, Enter/Space to activate, Escape to cancel an armed road | n/a |
 | Pause, How To Play, quit | ⏸ button (top left) | same |
 
-Settings (saved on the device): sound on/off, master/effects/ambience volume, city ambience, tap twice to pave, **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
+Settings (saved on the device): sound on/off, master/effects/ambience volume, city ambience, tap twice to pave, haptics (touch devices with vibration), **Quick Handoff** (skip the “Pass to…” privacy card), reduce motion, and block coordinates. Without Quick Handoff, every control change pauses until the next mayor confirms they are ready.
 
 ### Sound
 
@@ -241,7 +241,11 @@ Notes:
 
 - **One screen, no page scrolling in-game:** on phones the four HUD cards sit in a 2×2 grid (or one row on short screens, with abbreviated money), and the board fills the rest.
 - **No accidental zoom or selection:** `touch-action: manipulation` stops double-tap zoom while pinch zoom still works, and board text can't be selected or long-pressed.
-- **Touch targets:** road slots have enlarged hit areas, and all buttons are at least about 44px tall.
+- **Touch targets:** every button is at least 44px in both directions on touch screens (iOS 44pt / Android 48dp guidance), including the slim short-landscape layout. Road slots have enlarged hit strips, capped relative to the board so that on small phone boards the blocks between them stay tappable too (desktop boards are unchanged).
+- **Tap twice to pave** (on by default): a finger tap previews a road in your colour and a second tap paves it; tapping another road moves the preview, and tapping a block or making a move clears it. It follows the pointer that made the tap, so on a touchscreen laptop or an iPad with a trackpad finger taps preview while mouse clicks, pens and the keyboard pave directly.
+- **No tap-through:** on touch screens, a tap in the first 300ms after a dialog opens (or on the board right after one closes) is ignored, so the second half of a quick double tap can't press whatever just appeared under the finger (for example a build option after *Develop Now*). Mouse and keyboard are unaffected.
+- **Haptics (optional):** on touch devices that support vibration (Android browsers), a **Haptics** setting (on by default) adds short patterns: a barely-there pulse when a road is previewed, a short tap when it's paved, a stronger double on a capture (three pulses in a chain), a confirmation tick for builds and upgrades, two firm buzzes when an action is refused, and distinct patterns for a new city event and for winning. It never vibrates before your first touch or in the background. Desktop and iPhone (no Vibration API) don't show the setting and behave exactly as before; everything a buzz signals is also on screen.
+- **Rotation:** the board, dialogs and sheets re-fit when the device rotates; open dialogs stay within the screen and scroll if they must, and a road preview survives the rotation.
 - **Hover effects only where hover exists** (`@media (hover: none)`), so taps don't leave items looking stuck in a hover state.
 - **Clear states:** the current player's colour appears on the board frame, banner, card and prompt. Roads show an armed/preview state, disabled roads look disabled when the board is locked, and focus rings are visible.
 - **Not colour alone:** every player also has a persistent symbol and distinct road/block pattern, repeated in accessible labels.
@@ -293,6 +297,8 @@ js/
     financeView.js         Distress panel and bankruptcy card
     resultsView.js         Final results screen
     audio.js               Audio manager: synthesised effects, procedural ambience, volume buses, fades
+    haptics.js             Optional vibration patterns (touch devices with the Vibration API only)
+    touchGuard.js          Ignores tap-through taps on freshly opened/closed dialogs (touch only)
     settingsView.js        Settings form ↔ storage
     toast.js, dom.js       Helpers
 dev/sprites.html           Sprite atlas: every registered crop, for checking coordinates
@@ -317,6 +323,7 @@ tests/
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds, chain escalation, volumes/fades, ambience scenes, settings
+  unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker
   smoke.mjs                Playwright smoke test across 5 viewports
   pwa.mjs                  Offline/PWA browser check under a /GRIDLOCK/ subpath
@@ -377,4 +384,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone). It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
