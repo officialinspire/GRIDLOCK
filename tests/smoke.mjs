@@ -2362,6 +2362,74 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   }
 }
 
+// Desktop fits one screen: real browser windows are short (1366×768 screens leave ~650px). The
+// game, the build panel, the results and New Game's Start button fit without scrolling, and the
+// board is square and clear of the action bar.
+for (const [w, h] of [[1366, 650], [1920, 940]]) {
+  const context = await browser.newContext({ viewport: { width: w, height: h }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('gl-test-init')) {
+      sessionStorage.setItem('gl-test-init', '1');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    }
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const scroll = () => page.evaluate(() => [document.documentElement.scrollWidth - innerWidth, document.documentElement.scrollHeight - innerHeight]);
+  const fitsDialog = (sel) => page.locator(sel).evaluate((d) => d.scrollHeight <= d.clientHeight + 1);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.click('[data-setup-preset="friends"]');
+    const start = await page.locator('#setup-start').boundingBox();
+    assert.ok(start.y + start.height <= h, `${w}×${h}: Start Game on screen`);
+    await page.click('[data-screen="setup"] [data-nav="back"]');
+    await page.click('[data-screen="title"] [data-nav="settings"]');
+    assert.deepEqual(await scroll(), [0, 0], `${w}×${h}: Settings fit`);
+    await page.click('[data-screen="settings"] [data-nav="back"]');
+    await page.click('[data-setup-preset="friends"]');
+    await page.click('#setup-start');
+    assert.deepEqual(await scroll(), [0, 0], `${w}×${h}: the game fits one screen`);
+    const g = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      return { frame: r('#board-frame'), bar: r('.action-bar'), legend: r('.district-legend') };
+    });
+    assert.ok(Math.abs(g.frame.width - g.frame.height) <= 1, `${w}×${h}: square board`);
+    assert.ok(g.frame.bottom <= g.bar.top + 1, `${w}×${h}: board clear of the action bar`);
+    assert.ok(g.legend.bottom <= g.bar.top + 1, `${w}×${h}: district key clear of the action bar`);
+    // Build panel and results fit without scrolling inside.
+    await page.evaluate(() => { const game = window.__GRIDLOCK__.getGame(); game.eventPool = []; for (const id of ['h-0-0', 'v-0-0', 'v-0-1']) game.board.roads[id] = 2; });
+    await page.click('#board [data-road="h-1-0"]');
+    await page.click('#capture-choice-dialog [data-capture-choice="develop"]');
+    await page.locator('#build-dialog').waitFor({ state: 'visible' });
+    assert.equal(await fitsDialog('#build-dialog'), true, `${w}×${h}: build panel fits`);
+    // Back out of the build panel and leave the block vacant: on to the bonus road.
+    await page.locator('#build-dialog').getByRole('button', { name: 'Leave Vacant' }).click();
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().turnPhase === 'bonus-road');
+    const last = await page.evaluate(async () => {
+      const { allRoadIds } = await import('./js/core/board.js');
+      const game = window.__GRIDLOCK__.getGame();
+      const ids = allRoadIds(game.board).filter((id) => game.board.roads[id] == null);
+      ids.slice(0, -1).forEach((id) => { game.board.roads[id] = 1; });
+      for (const b of game.board.blocks) if (b.ownerSeat == null) b.ownerSeat = 1 + ((b.row + b.col) % 4);
+      return ids.at(-1);
+    });
+    await page.evaluate((id) => document.querySelector(`#board [data-road="${id}"]`).click(), last);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.waitForTimeout(400);
+    assert.equal(await fitsDialog('#results-dialog'), true, `${w}×${h}: results fit`);
+    assert.deepEqual(errors, []);
+    console.log(`✔ desktop ${w}×${h}: game, New Game, Settings, build panel and results fit one screen; square board`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ desktop ${w}×${h} fit: ${err.message}`);
+    await page.screenshot({ path: `test-results/desktop-fit-${w}x${h}-FAIL.png` }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 await browser.close();
 server.close();
 if (failures) {

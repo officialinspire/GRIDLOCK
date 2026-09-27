@@ -77,8 +77,9 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
   .player-card[data-seat='2'] { grid-column: 2; }
   .player-card[data-seat='3'] { grid-column: 3; }
   .player-card[data-seat='4'] { grid-column: 4; }
-  .board-area { grid-row: 2; grid-column: 1 / -1; container-type: size; }
-  .board-area { --board-size: min(100cqw, calc(100cqh - var(--legend-room))); }
+  .board-area { grid-row: 2; grid-column: 1 / -1; container-type: size; padding-bottom: 0; }
+  .board-area .board-frame,
+  .board-area .district-legend { --board-size: min(100cqw, calc(100cqh - var(--legend-room))); }
   .inspector { display: none; }
 
   .action-bar { position: static; flex-wrap: wrap; gap: 6px; padding: 6px 8px 8px; }

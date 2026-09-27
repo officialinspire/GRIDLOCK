@@ -111,15 +111,34 @@
   min-width: 0;
 }
 
-/* Board sizing: largest square that fits the available area, above a strip for the district key. */
+/* Board sizing: largest square that fits the available area, above a strip for the district key
+   (or, where the area is wide, with the key beside the board and no strip). */
 .board-area {
-  --legend-room: 38px;
-  --board-size: min(100cqw, calc(100cqh - var(--legend-room)));
   position: relative;
   container-type: size;
   display: grid;
   place-items: start center;
   min-height: 0;
+}
+
+.board-frame,
+.district-legend {
+  --legend-room: 38px;
+  --board-size: min(100cqw, calc(100cqh - var(--legend-room)));
+}
+@container (min-aspect-ratio: 3 / 2) {
+  .board-frame,
+  .district-legend { --legend-room: 0px; }
+  .district-legend {
+    top: auto;
+    bottom: 6px;
+    left: calc(50% + var(--board-size) / 2 + 14px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 6px 10px;
+    transform: rotate(-1.5deg);
+  }
 }
 
 /* Compact feedback floats above the board without changing its layout or blocking input. */
@@ -702,7 +721,9 @@ html[data-coords='on'] .block__coord { display: block; }
   }
   .hud { gap: 10px; }
   .board-area { container-type: inline-size; }
-  .board-area { --board-size: min(100cqw, 72dvh); padding-bottom: var(--legend-room); }
+  .board-area { padding-bottom: 38px; }
+  .board-area .board-frame,
+  .board-area .district-legend { --board-size: min(100cqw, 72dvh); }
   .inspector { transform: none; margin-top: 8px; }
   .action-bar {
     position: sticky;
@@ -763,7 +784,7 @@ html[data-coords='on'] .block__coord { display: block; }
   .stat { padding: 1px 4px; }
   .player-card__meta { font-size: 0.66rem; margin: -2px 0 0; }
   /* Every pixel goes to the (small) board here; districts are explained in How To Play and the inspector. */
-  .board-area { --legend-room: 0px; }
+  .board-frame { --legend-room: 0px; }
   .district-legend { display: none; }
   .action-bar { padding: 6px; flex-wrap: nowrap; }
   .action-bar .btn { min-height: 40px; font-size: 1rem; }
