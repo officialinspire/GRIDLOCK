@@ -68,8 +68,10 @@ function watchForBrowserErrors(page) {
     // Firefox reports a load the page cancelled while the service worker was answering it as
     // "A ServiceWorker intercepted the request and encountered an unexpected error": the same
     // cancellation as NS_BINDING_ABORTED below, so it gets the same rule.
+    // A cancelled image stream can also surface as "Image corrupt or truncated." for that image.
     const swCancel = message.type() === 'error'
-      && message.text().match(/Failed to load ‘([^’]+)’\. A ServiceWorker intercepted the request and encountered an unexpected error/);
+      && (message.text().match(/Failed to load ‘([^’]+)’\. A ServiceWorker intercepted the request and encountered an unexpected error/)
+        ?? (/Image corrupt or truncated/.test(message.text()) && source ? [null, source] : null));
     if (swCancel) {
       const url = swCancel[1];
       if (loaded.has(url)) return;
