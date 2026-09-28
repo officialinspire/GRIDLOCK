@@ -165,3 +165,91 @@
   .setup { gap: 10px 14px; }
   [data-screen='setup'] { gap: 10px; padding-top: max(8px, env(safe-area-inset-top)); }
 }
+
+/* ==========================================================================
+   Landscape game layout (desktop, landscape tablets, phones held sideways):
+   the board takes the full height of the window. The turn prompt and the
+   action buttons sit in the right column under the player cards instead of a
+   bar across the bottom, so no row of the screen is lost to them.
+   ========================================================================== */
+@media (orientation: landscape) and (min-width: 700px) {
+  .screen--game {
+    --side: clamp(170px, 18vw, 290px);
+    display: grid;
+    grid-template-columns: var(--side) minmax(0, 1fr) var(--side);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'top top top'
+      'events board rhud'
+      'lhud board rhud'
+      'lhud board insp'
+      'lhud board actions';
+    column-gap: 12px;
+    row-gap: 8px;
+  }
+  .game-layout { display: contents; }
+  .game-topbar { grid-area: top; }
+  .event-strip { grid-area: events; align-self: start; flex-wrap: wrap; margin: 0; }
+  .hud--left { grid-area: lhud; }
+  .hud--right { grid-area: rhud; }
+  .board-area { grid-area: board; min-height: 0; }
+  .inspector { grid-area: insp; }
+  .hud { align-self: stretch; min-height: 0; }
+
+  /* The action panel: the prompt, then the buttons side by side; the CPU strip wraps below. */
+  .action-bar {
+    grid-area: actions;
+    flex-wrap: wrap;
+    align-content: end;
+    gap: 8px;
+    padding: 8px 8px 10px;
+  }
+  .turn-prompt { flex: 1 1 100%; order: -1; padding: 6px 8px; font-size: 1rem; line-height: 1.25; }
+  .action-bar .btn { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
+  .action-bar .btn:disabled { display: none; }
+  /* A bot's turn: its "thinking" strip replaces the prompt; Pause · Speed up · Skip in one row. */
+  .action-bar:has(.cpu-status:not([hidden])) .turn-prompt { display: none; }
+  .cpu-status { flex: 1 1 100%; flex-wrap: wrap; gap: 6px; margin: 0; }
+  .cpu-status__lines { flex: 1 1 100%; }
+  .cpu-status__text { font-size: 0.95rem; }
+  .cpu-status__intent { font-size: 0.85rem; }
+  .cpu-status .btn { flex: 1 1 0; min-width: 0; min-height: 40px; gap: 4px; padding: 4px; font-size: 0.85rem; white-space: nowrap; }
+  .cpu-status .btn .btn__icon { display: none; }
+  /* Short windows: no room for the side inspector under the cards; block details open as a sheet. */
+  @media (max-height: 760px) { .inspector { display: none; } }
+
+  /* Toasts over the empty table at the bottom of the left column. */
+  /* Two toasts at most, in a compact size . */
+  body[data-active-screen='game'] .toast-stack > :nth-last-child(n + 3) { display: none; }
+  body[data-active-screen='game'] .toast { padding: 6px 12px; font-size: 0.85rem; line-height: 1.25; border-radius: 16px; }
+  body[data-active-screen='game'] .toast-stack {
+    top: auto;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
+    width: calc(clamp(170px, 18vw, 290px) - 2px); /* the left column */
+    justify-items: start;
+    transform: none;
+  }
+}
+
+/* Phones held sideways: compact everything around the (now much larger) board. */
+@media (orientation: landscape) and (min-width: 700px) and (max-height: 560px) {
+  .screen--game { --side: clamp(160px, 21vw, 200px); column-gap: 8px; row-gap: 6px; }
+  .turn-prompt { font-size: 0.82rem; padding: 4px 6px; }
+  .action-bar { padding: 5px 6px 6px; gap: 5px; }
+  .action-bar .btn { min-height: 38px; font-size: 0.95rem; }
+  .cpu-status__text { font-size: 0.82rem; }
+  .cpu-status__intent { font-size: 0.75rem; }
+  .cpu-status .btn { min-height: 34px; font-size: 0.72rem; }
+  .cpu-status .btn .btn__icon { display: none; }
+  .cpu-status .btn { white-space: nowrap; }
+  /* Compact cards: name, cash, then blocks and income (bots are named "Mayor Bot"). */
+  .player-card__meta, .player-card__turn { display: none; } /* the highlighted card shows whose turn it is */
+  .player-card { padding-block: 5px; gap: 3px; }
+  .hud { gap: 6px; }
+  body[data-active-screen='game'] .toast { font-size: 0.75rem; padding: 4px 10px; }
+  body[data-active-screen='game'] .toast-stack > :nth-last-child(n + 2) { display: none; }
+  .event-strip { gap: 4px; }
+  .event-pill { font-size: 0.75rem; }
+  body[data-active-screen='game'] .toast-stack { width: 200px; }
+}

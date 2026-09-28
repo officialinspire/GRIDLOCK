@@ -254,8 +254,9 @@ function handleBlockSelect(id) {
   renderActions();
   if (!id || !game) return;
   if (!isCpuTurn() && openBuildPanel(game, id)) return;
-  // Compact (portrait) layouts hide the side inspector: show the same details in a bottom sheet.
-  if (isCompact()) {
+  // Compact (portrait) layouts and short windows hide the side inspector: show the same details in a bottom sheet.
+  const sideInspector = $('#inspector');
+  if (isCompact() || !sideInspector.offsetParent) {
     renderInspector(id, $('#info-body'));
     $('#info-dialog').showModal();
   }

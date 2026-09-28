@@ -126,13 +126,14 @@
   --legend-room: 38px;
   --board-size: min(100cqw, calc(100cqh - var(--legend-room)));
 }
-@container (min-aspect-ratio: 3 / 2) {
+/* Wide board area: the key goes in the empty bottom-left corner beside the board (no strip under it). */
+@container (min-aspect-ratio: 7 / 5) {
   .board-frame,
   .district-legend { --legend-room: 0px; }
   .district-legend {
     top: auto;
     bottom: 6px;
-    left: calc(50% + var(--board-size) / 2 + 14px);
+    left: 0;
     flex-direction: column;
     align-items: flex-start;
     gap: 3px;
@@ -226,7 +227,7 @@
 }
 
 .board {
-  --road: 5.2cqw;
+  --road: 4.2cqw; /* road lanes: narrow enough that the plots (and buildings) read well */
   /* Extra hit area either side of a road slot. Capped relative to the board so that on small
      (phone) boards the neighbouring blocks stay tappable too; boards 500px+ are unaffected. */
   --road-tap: min(max(10px, 1.6cqw), 2cqw);
@@ -1732,7 +1733,7 @@ html[data-coords='on'] .block__coord { display: block; }
   font-weight: 800;
   color: var(--ink-soft);
 }
-.player-card__meta .player-card__cpu { padding: 0 6px; font-size: 0.6rem; line-height: 1.5; }
+.player-card__meta .player-card__cpu { flex: none; padding: 0 6px; font-size: 0.68rem; line-height: 1.45; }
 .player-card__bot { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .player-card__role { letter-spacing: 0.02em; }
 .inspector__bot { font-weight: 700; color: var(--ink-soft); }

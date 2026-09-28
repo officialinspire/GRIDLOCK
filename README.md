@@ -47,6 +47,14 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
   - **Settings:** two columns.
   - **How To Play and Statistics:** tighter cards. These reference pages still scroll on short windows.
   - A smoke test checks 1366×650 and 1920×940: the game, Settings, the build panel and the results fit with no scrolling, New Game's Start button is on screen, and the board is square and clear of the action bar.
+- **Bigger board, text that fits:**
+  - In landscape (desktop, landscape tablets, phones held sideways) the board takes the window's full height. The turn prompt and action buttons moved into the right column under the player cards instead of a bar across the bottom.
+  - Road lanes are narrower, so the plots and buildings are larger. At 1366×650 a block went from 44px to 64px; phones held sideways went from 23px to 34px.
+  - On short windows, block details open as a sheet instead of squeezing the player cards.
+  - During a bot's turn, its thinking line replaces the prompt and Pause / Speed up / Skip sit in one row.
+  - At most two compact toasts show in play (one on phones), placed over empty table.
+  - Phones show all six building choices, three across.
+  - Small labels (the CPU tag) are at least 10.9px, and the bot's difficulty line hides on the narrowest cards instead of being cut off.
 - **Offline:** the music and intro are precached too (about 5.9 MB). The service worker answers media byte-range requests from the cache, which Safari requires to play audio and video offline.
 
 ### V1.2 release notes

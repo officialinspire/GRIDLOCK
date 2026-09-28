@@ -2396,8 +2396,10 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
       return { frame: r('#board-frame'), bar: r('.action-bar'), legend: r('.district-legend') };
     });
     assert.ok(Math.abs(g.frame.width - g.frame.height) <= 1, `${w}×${h}: square board`);
-    assert.ok(g.frame.bottom <= g.bar.top + 1, `${w}×${h}: board clear of the action bar`);
-    assert.ok(g.legend.bottom <= g.bar.top + 1, `${w}×${h}: district key clear of the action bar`);
+    const apart = (a, b) => a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+    assert.ok(apart(g.frame, g.bar), `${w}×${h}: board clear of the action panel`);
+    assert.ok(apart(g.legend, g.frame) && apart(g.legend, g.bar), `${w}×${h}: district key clear of the board and actions`);
+    assert.ok(g.frame.height >= h * 0.8, `${w}×${h}: the board uses most of the window height (${Math.round(g.frame.height)}px)`);
     // Build panel and results fit without scrolling inside.
     await page.evaluate(() => { const game = window.__GRIDLOCK__.getGame(); game.eventPool = []; for (const id of ['h-0-0', 'v-0-0', 'v-0-1']) game.board.roads[id] = 2; });
     await page.click('#board [data-road="h-1-0"]');

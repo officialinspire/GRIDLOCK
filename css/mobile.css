@@ -140,7 +140,7 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
   .player-card[data-seat='4'] { grid-area: 1 / 4; }
   .board-area { grid-area: 2 / 1 / 3 / -1; }
   .player-card, .player-card:not(.is-empty) { padding: 3px 3px 3px 8px; }
-  .player-card__token, .player-card__turn { display: none; }
+  .player-card__token, .player-card__turn, .player-card__meta { display: none; }
   .player-card__name { font-size: 0.72rem; }
   .player-card__stats { grid-template-columns: 1fr 1fr; }
   .stat--cash { grid-column: 1 / -1; }
@@ -186,4 +186,36 @@ body[data-active-screen='game'] { overflow: hidden; height: 100dvh; }
 }
 @media (max-width: 400px) {
   .turn-banner { font-size: 0.85rem; letter-spacing: -0.01em; }
+}
+
+/* Portrait (phones, tablets): during play, one compact toast at a time, over the bottom of the board;
+   a bot's turn shows its "thinking" strip in place of the prompt, with Pause · Speed up · Skip in one row. */
+@media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
+  body[data-active-screen='game'] .toast-stack { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 150px); }
+  body[data-active-screen='game'] .toast-stack > :nth-last-child(n + 2) { display: none; }
+  body[data-active-screen='game'] .toast { padding: 5px 12px; font-size: 0.85rem; line-height: 1.25; border-radius: 16px; }
+  .action-bar:has(.cpu-status:not([hidden])) .turn-prompt,
+  .action-bar:has(.cpu-status:not([hidden])) > .btn { display: none; }
+  .cpu-status { flex: 1 1 100%; flex-wrap: wrap; gap: 6px; margin: 0; }
+  .cpu-status__lines { flex: 1 1 100%; }
+  .cpu-status .btn { flex: 1 1 0; min-width: 0; min-height: 44px; gap: 4px; padding: 4px 6px; white-space: nowrap; font-size: 0.95rem; }
+}
+@media (max-width: 400px) {
+  .cpu-status .btn { font-size: 0.85rem; }
+  .cpu-status .btn .btn__icon { display: none; }
+  body[data-active-screen='game'] .toast { font-size: 0.78rem; }
+}
+
+/* Phones: the build panel shows all six choices, three across. */
+@media (max-width: 600px) {
+  .build-panel { padding: 12px 10px; }
+  .build-panel__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .build-option { padding: 6px 3px 5px; border-top-width: 5px; }
+  .build-option__art { width: 72% !important; }
+  .build-option__label { font-size: 0.85rem; gap: 2px; }
+  .build-option__icon { display: none; }
+  .build-option__name { font-size: 0.68rem; line-height: 1.15; }
+  .price__cost { font-size: 0.95rem; }
+  .price__income, .price__short { font-size: 0.7rem; }
+  .build-option .forecast-line { font-size: 0.66rem; line-height: 1.2; gap: 0 4px; }
 }
