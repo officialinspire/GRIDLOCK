@@ -466,8 +466,28 @@
   width: auto;
   filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.35));
 }
-.block__prop--0 { left: -5%; }
-.block__prop--1 { right: -5%; }
+/* Scene slots (js/art.js blockScene): Level 2 corner props; Level 3 adds an annex behind the
+   main building and a street piece at the kerb, so the lot reads as a dense mini city block. */
+.block__prop--corner-left { left: -5%; }
+.block__prop--corner-right { right: -5%; }
+.block__prop--annex {
+  z-index: 0; /* behind the main building, peeking out on the right */
+  left: auto;
+  right: -3%;
+  top: 8%;
+  bottom: auto;
+  height: 58%;
+  filter: saturate(0.85) drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.3));
+}
+/* The street piece parks on the top kerb, clear of the level badge along the bottom. */
+.block__prop--street { left: 4%; top: -6%; bottom: auto; height: 26%; z-index: 3; }
+/* The city dominates the ownership overlays as it grows (the owner mark stays for every level). */
+.block--developed .block__tint { opacity: 0.16; }
+.block--lv3 .block__tint { opacity: 0.08; }
+.block--developed .block__flag { width: 28%; top: -12%; }
+.block--lv3 .block__flag { width: 22%; }
+.block--lv2 .block__frame { opacity: 0.8; }
+.block--lv3 .block__frame { opacity: 0.6; }
 .block__frame { inset: -2%; width: 104%; height: 104%; opacity: 0.95; }
 .block__seal {
   left: 28%;
@@ -1062,7 +1082,7 @@ html[data-coords='on'] .block__coord { display: block; }
 .block__badge .pip { width: clamp(4px, 0.9cqw, 7px); height: clamp(4px, 0.9cqw, 7px); border-width: 1px; }
 .block--developed .block__building { bottom: 16%; }
 .block--lv2 .block__building { width: 86%; left: 7%; }
-.block--lv3 .block__building { width: 92%; left: 4%; bottom: 14%; }
+.block--lv3 .block__building { width: 74%; left: 2%; bottom: 16%; } /* room for the annex and street piece */
 .block.is-just-built { animation: capture-pop 520ms var(--ease-pop); }
 
 /* ---------- Build / Upgrade panel ---------- */

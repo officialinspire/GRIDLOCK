@@ -27,9 +27,9 @@ function stagedFinish(seed) {
   return game;
 }
 
-test('twelve achievements, each with a name, a short description and a badge icon', () => {
-  assert.equal(ACHIEVEMENTS.length, 12);
-  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, 12);
+test('twenty-four achievements, each with a name, a short description and a badge icon', () => {
+  assert.equal(ACHIEVEMENTS.length, 24);
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, 24);
   for (const a of ACHIEVEMENTS) {
     assert.ok(a.name && a.text.length < 60 && /^(icons|title):/.test(a.icon), a.id);
     assert.equal(typeof a.test, 'function');

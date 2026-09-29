@@ -122,3 +122,38 @@ test('storage failures never escape persistence helpers', () => {
   assert.equal(loadActiveGame(broken), null);
   assert.equal(clearActiveGame(broken), false);
 });
+
+test('saves from before eras, Prestige, takeovers and recovery migrate safely and play on', async () => {
+  const { createGame, placeRoad, currentPlayer, ERAS } = await import('../../js/core/game.js');
+  const { saveActiveGame: save, loadActiveGame: load, SAVE_KEY: KEY } = await import('../../js/core/persistence.js');
+  const storage = memoryStorage();
+  const game = createGame({ seats: [{ seat: 1 }, { seat: 2 }, { seat: 3 }], seed: 8 });
+  for (const id of ['h-0-0', 'h-0-1', 'h-0-2', 'h-0-3']) placeRoad(game, id);
+  assert.equal(save(game, { seats: game.players.map(({ seat }) => ({ seat })) }, storage), true);
+  const raw = JSON.parse(storage.getItem(KEY));
+  // Strip everything added since V1.3: eras/City Actions, derived Prestige/control, shields, recovery.
+  delete raw.game.era;
+  delete raw.game.city;
+  for (const b of raw.game.board.blocks) for (const k of ['prestige', 'prestigeNotes', 'control', 'shieldedUntil']) delete b[k];
+  for (const p of raw.game.players) delete p.lastBankruptcyRound;
+  storage.setItem(KEY, JSON.stringify(raw));
+  const back = load(storage);
+  assert.ok(back, 'loads');
+  assert.equal(back.game.era, ERAS.EXPANSION);
+  assert.equal(back.game.city.takeovers, 0);
+  assert.ok(back.game.board.blocks.every((b) => b.shieldedUntil === null && Number.isInteger(b.prestige) && Number.isInteger(b.control)));
+  assert.ok(back.game.players.every((p) => p.lastBankruptcyRound === null));
+  const seat = currentPlayer(back.game).seat;
+  assert.equal(placeRoad(back.game, 'h-0-4').ok, true, 'plays on');
+  assert.notEqual(currentPlayer(back.game).seat, seat);
+
+  // Anything that can't be made consistent is refused, never half-loaded.
+  for (const corrupt of [(g) => { g.era = 'utopia'; }, (g) => { g.board.blocks[0].shieldedUntil = 'x'; }, (g) => { g.players[0].lastBankruptcyRound = 'x'; }]) {
+    const bad = structuredClone(raw);
+    corrupt(bad.game);
+    storage.setItem(KEY, JSON.stringify(bad));
+    assert.equal(load(storage), null, corrupt.toString());
+  }
+  storage.setItem(KEY, JSON.stringify({ ...raw, version: 99 }));
+  assert.equal(load(storage), null, 'a save from a newer version is ignored');
+});

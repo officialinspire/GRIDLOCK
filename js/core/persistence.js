@@ -193,6 +193,13 @@ export function loadActiveGame(storage = globalThis.localStorage) {
     }
     // Saves from before takeovers: nobody has taken one this turn.
     if (plainObject(migrated?.game?.city) && migrated.game.city.takeovers === undefined) migrated.game.city.takeovers = 0;
+    // Saves from before takeover shields and recovery tracking: nothing shielded, no recent bankruptcy.
+    if (Array.isArray(migrated?.game?.board?.blocks)) {
+      for (const block of migrated.game.board.blocks) if (plainObject(block) && block.shieldedUntil === undefined) block.shieldedUntil = null;
+    }
+    if (Array.isArray(migrated?.game?.players)) {
+      for (const player of migrated.game.players) if (plainObject(player) && player.lastBankruptcyRound === undefined) player.lastBankruptcyRound = null;
+    }
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.
     refreshBonuses(migrated.game.board);

@@ -630,7 +630,12 @@ for (const vp of VIEWPORTS) {
     await pave(page, page.locator('[data-road="h-0-0"]'));
     await page.waitForLoadState('networkidle');
     assert.equal(await page.locator('[data-road="h-0-0"] .road__tile').count(), 1);
-    assert.equal(await page.locator('[data-block="r0c0"] .block__prop').count(), 2);
+    // Level 3: annex, two corners and a street piece; the street piece is hidden on a phone this narrow.
+    assert.equal(await page.locator('[data-block="r0c0"] .block__prop').count(), 4);
+    for (const slot of ['annex', 'corner-left', 'corner-right']) {
+      assert.ok(await page.locator(`[data-block="r0c0"] .block__prop--${slot}`).isVisible(), slot);
+    }
+    assert.equal(await page.locator('[data-block="r0c0"] .block__prop--street').isVisible(), false);
     assert.deepEqual(errors, []);
     console.log('✔ art pipeline (hi-DPI phone)');
   } catch (err) {
@@ -1372,7 +1377,7 @@ const recordVibration = () => {
     await page.click('#results-dialog [data-results-action="title"]');
     await page.getByRole('button', { name: 'Statistics' }).click();
     assert.equal(await page.isVisible('#career-empty'), true, 'empty career');
-    assert.equal(await page.textContent('#career-badge-count'), '0 / 12');
+    assert.equal(await page.textContent('#career-badge-count'), '0 / 24');
     await page.locator('[data-screen="stats"] [data-nav="back"]').click();
 
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
@@ -1407,9 +1412,9 @@ const recordVibration = () => {
     assert.equal(await page.isVisible('#career-empty'), false);
     assert.match(await page.textContent('#career-stats'), /Matches completed\s*1/);
     assert.equal(await page.locator('#career-mayors tbody tr').count(), 2);
-    assert.equal(await page.locator('#career-badges .badge').count(), 12);
+    assert.equal(await page.locator('#career-badges .badge').count(), 24);
     assert.ok(await page.locator('#career-badges .badge.is-earned').count() >= 3);
-    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 12$/);
+    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 24$/);
     await noHorizontalScroll(page, 'statistics');
     await page.screenshot({ path: 'test-results/career-stats.png', fullPage: true });
 

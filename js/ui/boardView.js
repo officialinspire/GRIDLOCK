@@ -8,7 +8,7 @@
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
-import { ART, progressionProps } from '../art.js';
+import { ART, blockScene } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
 import { DISTRICTS, roadId, hasRoad, blockLabel, builtSides } from '../core/board.js';
 import { levelArt, getCategory, describeDevelopment } from '../core/buildings.js';
@@ -150,8 +150,10 @@ function blockCell(game, block) {
     h('span', { class: 'block__district-paper', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__tint', 'aria-hidden': 'true' }),
     color && createSprite(ART.owner.frame(block.ownerSeat), { className: 'block__frame' }),
-    ...(developed ? progressionProps(block.type, block.level) : []).map((ref, i) =>
-      createSprite(ref, { className: `block__prop block__prop--${i}` })),
+    // Denser with each level (js/art.js blockScene): corner props at Level 2, an annex and a
+    // street piece at Level 3. Decorative only: the block's label already says what it is.
+    ...(developed ? blockScene(block.type, block.level) : []).map(({ ref, slot }) =>
+      createSprite(ref, { className: `block__prop block__prop--${slot}` })),
     art && createSprite(art.sprite, { className: 'block__building' }),
     ruin && h('span', { class: 'block__abandoned', 'aria-hidden': 'true' }, 'Abandoned'),
     color && !art && createSprite(ART.owner.seal(block.ownerSeat), { className: 'block__seal' }),

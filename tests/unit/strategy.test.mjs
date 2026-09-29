@@ -6,13 +6,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ECONOMY } from '../../js/config.js';
-import { getBlock, getBlockById } from '../../js/core/board.js';
+import { getBlock } from '../../js/core/board.js';
 import { applyDevelopment, buildOnBlock, upgradeBlock, quoteBuild, quoteUpgrade, TABLE } from '../../js/core/development.js';
 import { refreshBonuses } from '../../js/core/bonuses.js';
-import { TXN } from '../../js/core/economy.js';
-import { createGame, currentPlayer, getPlayer, playerStats, TURN_PHASES, ERAS } from '../../js/core/game.js';
+import { createGame, getPlayer, playerStats } from '../../js/core/game.js';
 import { scorePlayer, computeResults } from '../../js/core/scoring.js';
-import { forecastDevelopment, blockDetails } from '../../js/core/forecast.js';
+import { forecastDevelopment } from '../../js/core/forecast.js';
 import {
   blockPrestige, prestigeFor, industryDiscount, CATEGORY_EFFECTS, PRESTIGE_NOTES,
 } from '../../js/core/strategy.js';

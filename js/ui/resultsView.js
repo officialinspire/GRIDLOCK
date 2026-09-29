@@ -47,6 +47,8 @@ function playerCard(row, awardsBySeat, isWinner, index, cpu) {
       stat('Levels built', row.totalLevels),
       stat('Blocks owned', row.blocks),
       stat('Income', `+${formatCash(row.income)}/turn`),
+      (row.takeovers > 0 || row.takeoversLost > 0) && stat('Takeovers', `${row.takeovers} made · ${row.takeoversLost} lost`),
+      row.bankruptcies > 0 && stat('Bankruptcies', `${row.bankruptcies} (−${formatCash(row.bankruptcyPenalty)})`, 'is-negative'),
     ),
     h('div', { class: 'result-card__best' },
       hi && createSprite(hi.sprite, { className: 'result-card__best-art' }),
@@ -106,7 +108,8 @@ export function renderResults(game) {
     ['Best Single Block', stats.bestSingleBlock
       ? `${statName(stats.bestSingleBlock.seat)} · ${stats.bestSingleBlock.label} · ${formatCash(stats.bestSingleBlock.value)}` : 'None'],
     ['Events Survived', stats.eventsSurvived],
-    ['Bankruptcies', stats.bankruptcies],
+    // One tile for both, so the summary keeps its five-across layout.
+    ['Bankruptcies · Takeovers', `${stats.bankruptcies} · ${stats.takeovers ?? 0}`],
   ];
   $('#match-stats').replaceChildren(...facts.map(([label, value]) =>
     h('div', { class: 'match-stat' }, h('dt', {}, label), h('dd', {}, value))));

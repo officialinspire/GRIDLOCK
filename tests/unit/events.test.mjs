@@ -13,7 +13,7 @@ import {
 } from '../../js/core/events.js';
 import { calculateIncome, isValidAmount, TXN } from '../../js/core/economy.js';
 import { scorePlayer } from '../../js/core/scoring.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES, ERAS } from '../../js/core/game.js';
+import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, ERAS } from '../../js/core/game.js';
 import { playOutCity } from './_city.mjs';
 import { distressStatus, sellDevelopment, declareBankruptcy, ownershipProblems } from '../../js/core/finance.js';
 import { getSpriteRect } from '../../js/assets.js';

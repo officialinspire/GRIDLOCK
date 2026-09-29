@@ -91,24 +91,40 @@ export const ART = Object.freeze({
 });
 
 /**
- * City-building visual progression: street props that appear around a
- * developed block as it levels up. Index = level - 1; each level adds to the
- * previous. Kept to two small corner props so buildings stay readable.
+ * City-building visual progression: how a developed block fills up as it levels. Every piece is
+ * an existing sprite (props_decor, buildings, civic sheets):
+ *   Level 1  the primary structure only (from core/buildings.js)
+ *   Level 2  + two corner props at the kerb (trees, lamps, mailboxes, utility poles…)
+ *   Level 3  + an annex behind the main building and a street piece in front (a parked car,
+ *            van, truck, bike, bus stop…), so the block reads as a dense mini city block
  */
-const PROGRESSION = Object.freeze({
-  residential: ['props:tree-tall', 'props:mailbox'],
-  commercial: ['props:streetlamp', 'props:trash-can'],
-  park: ['props:bush-flowers', 'props:bench'],
-  civic: ['props:hydrant', 'props:streetlamp'],
-  industrial: ['props:power-pole', 'props:water-tower'],
-  landmark: ['props:planter', 'props:tree-pine'],
+const SCENES = Object.freeze({
+  residential: Object.freeze({ corners: ['props:tree-tall', 'props:mailbox'], annex: 'buildings:duplex', street: 'props:car-red' }),
+  commercial: Object.freeze({ corners: ['props:streetlamp', 'props:trash-can'], annex: 'buildings:cafe', street: 'props:van-blue' }),
+  park: Object.freeze({ corners: ['props:bush-flowers', 'props:bench'], annex: 'props:tree-oak', street: 'props:bike' }),
+  civic: Object.freeze({ corners: ['props:hydrant', 'props:streetlamp'], annex: 'props:statue', street: 'props:bus-stop' }),
+  industrial: Object.freeze({ corners: ['props:power-pole', 'props:water-tower'], annex: 'civic:warehouse', street: 'props:truck' }),
+  landmark: Object.freeze({ corners: ['props:planter', 'props:tree-pine'], annex: 'props:fountain', street: 'props:traffic-light' }),
 });
 
-/** Props for a block at `level` (Level 1: none, Level 2: one, Level 3: two). */
+/** Scene slots, in paint order: the annex sits behind the building, the rest in front of it. */
+export const SCENE_SLOTS = Object.freeze(['annex', 'corner-left', 'corner-right', 'street']);
+
+/**
+ * The pieces around a developed block at `level`: [{ ref, slot }] (none at Level 1 or for
+ * vacant/unknown types). Each level adds to the previous one.
+ */
+export function blockScene(type, level) {
+  const scene = SCENES[type];
+  if (!scene || level < 2) return [];
+  const pieces = [{ ref: scene.corners[0], slot: 'corner-left' }, { ref: scene.corners[1], slot: 'corner-right' }];
+  if (level < 3) return pieces;
+  return [{ ref: scene.annex, slot: 'annex' }, ...pieces, { ref: scene.street, slot: 'street' }];
+}
+
+/** The sprite refs of blockScene() (Level 1: none, Level 2: two, Level 3: four). */
 export function progressionProps(type, level) {
-  const list = PROGRESSION[type];
-  if (!list || level < 2) return [];
-  return list.slice(0, Math.min(list.length, level - 1));
+  return blockScene(type, level).map((piece) => piece.ref);
 }
 
 /** Every sprite ref this module can return (for tests). */
@@ -121,6 +137,6 @@ export function allArtRefs() {
     else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   walk(ART);
-  Object.values(PROGRESSION).forEach((l) => refs.push(...l));
+  Object.values(SCENES).forEach((scene) => refs.push(...scene.corners, scene.annex, scene.street));
   return refs;
 }

@@ -196,12 +196,19 @@ export function computeMatchStats(game) {
     bestSingleBlock: best,
     eventsSurvived: game.events.history.length,
     bankruptcies: game.players.reduce((sum, player) => sum + (player.bankruptcies ?? 0), 0),
+    takeovers: (game.log ?? []).filter((e) => e.type === 'takeover').length,
   };
 }
 
 /** Full results: ranked rows, winners (seats), distinctions. */
 export function computeResults(game) {
-  const rows = rankScores(game.players.map((p) => scorePlayer(game, p)));
+  // Takeovers made and suffered come from the log; they never affect ranking.
+  const takeovers = (game.log ?? []).filter((e) => e.type === 'takeover');
+  const rows = rankScores(game.players.map((p) => ({
+    ...scorePlayer(game, p),
+    takeovers: takeovers.filter((e) => e.seat === p.seat).length,
+    takeoversLost: takeovers.filter((e) => e.from === p.seat).length,
+  })));
   return {
     round: game.round,
     rows,
