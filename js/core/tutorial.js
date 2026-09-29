@@ -24,7 +24,7 @@ export const TUTORIAL_STEPS = Object.freeze([
   { id: 'income', title: 'Income & upkeep', text: 'At the start of your turn, developed blocks pay income and every block you own costs upkeep. Watch your cash!', moment: true },
   { id: 'events', title: 'City events', text: 'Each new round can bring a city event that changes income or costs for a while. Its card shows which blocks are affected.', moment: true },
   { id: 'cpu', title: 'CPU turns', text: 'Mayor Bots play their own turns: their card lights up and this strip says what they are up to. The board waits for them. Pause, Speed up or Skip any time.', moment: true, cpuOnly: true },
-  { id: 'scoring', title: 'Winning', text: 'The game ends when every road is paved. Highest City Value wins: cash + land + 75% of what you invested in buildings.' },
+  { id: 'scoring', title: 'Winning', text: 'After the City rounds, highest City Value wins: cash + 70% of land + everything invested in buildings + Prestige. Develop, don\'t just grab blocks.' },
 ]);
 
 export const STEP_IDS = TUTORIAL_STEPS.map((s) => s.id);

@@ -130,7 +130,8 @@ test('building deducts cash immediately and the block stores type/level/value/in
     cash: 11000, blocks: 1, income: 500, normalIncome: 500, eventDelta: 0,
     upkeep: Math.round(1000 * ECONOMY.FINANCE.LAND_TAX_PERCENT / 100) + Math.round(1500 * ECONOMY.FINANCE.UPKEEP_PERCENT / 100),
     distress: false, bankruptcies: 0,
-    bonus: 0, property: 2500, netWorth: 13500,
+    bonus: 0, property: 2500, netWorth: 13500, prestige: 0,
+    bankruptcyPenalty: 0, nextRecoveryCapital: ECONOMY.FINANCE.RECOVERY.CAPITAL, recovering: false,
   });
 });
 

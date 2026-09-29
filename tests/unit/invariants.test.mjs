@@ -1,6 +1,6 @@
 /**
  * V1 hardening fuzz: thousands of random but legal-ish actions (paving, building,
- * upgrading, selling, bankruptcy, buying ruins, bad inputs) across many seeds,
+ * upgrading, selling, bankruptcy, buying ruins, bad inputs, City turns) across many seeds,
  * with every event active. After EVERY step we re-derive the rules from scratch
  * and compare them with the stored state.
  */
@@ -14,7 +14,9 @@ import { computeBonuses, computeProtection } from '../../js/core/bonuses.js';
 import { CATEGORY_ORDER } from '../../js/core/buildings.js';
 import { effectiveIncome } from '../../js/core/events.js';
 import { TXN } from '../../js/core/economy.js';
-import { createGame, placeRoad, currentPlayer, PHASES, MOVE_ERRORS } from '../../js/core/game.js';
+import {
+  createGame, placeRoad, currentPlayer, endCityTurn, resolveCapture, PHASES, MOVE_ERRORS, ERAS, TURN_PHASES,
+} from '../../js/core/game.js';
 import {
   distressStatus, declareBankruptcy, sellDevelopment, downgradeBlock, acquireAbandoned, ownershipProblems,
 } from '../../js/core/finance.js';
@@ -67,6 +69,17 @@ function checkInvariants(game, ctx) {
   assert.equal(new Set(ids).size, ids.length, `${where}: duplicate events`);
   for (const e of game.events.active) assert.ok(e.startRound <= game.round && game.round <= e.endRound, `${where}: stale event`);
 
+  // Era: CITY exactly when every road is paved (or the match ended on the final road).
+  const paved = Object.keys(board.roads).length === allRoadIds(board).length;
+  if (game.era === ERAS.CITY) {
+    assert.ok(paved, `${where}: CITY era with open roads`);
+    assert.ok(game.city.actionsLeft >= 0 && game.city.actionsLeft <= game.city.actionsPerTurn, `${where}: City Actions`);
+    assert.ok(game.round <= game.city.endRound, `${where}: played past the last City round`);
+  } else {
+    assert.equal(game.era, ERAS.EXPANSION, where);
+    if (game.phase === PHASES.PLAYING) assert.ok(!paved, `${where}: EXPANSION with every road paved`);
+  }
+
   // Turn pointer.
   assert.ok(game.turnIndex >= 0 && game.turnIndex < game.players.length);
   assert.ok(seats.includes(currentPlayer(game).seat));
@@ -79,7 +92,7 @@ function playFuzz(seed, nPlayers) {
   const rand = () => ((r = (r * 16807) % 2147483647) / 2147483647);
   const pick = (arr) => arr[Math.floor(rand() * arr.length)];
   const ctx = { seed, step: 0 };
-  let captures = 0, chains = 0, bankruptcies = 0, rotations = 0;
+  let captures = 0, chains = 0, bankruptcies = 0, rotations = 0, cityTurns = 0;
 
   while (game.phase === PHASES.PLAYING) {
     ctx.step++;
@@ -88,9 +101,10 @@ function playFuzz(seed, nPlayers) {
     const mine = blocksOwnedBy(game.board, me.seat);
 
     if (me.cash < 0) {
-      // Distress: paving is refused until resolved.
+      // Distress: paving (or ending a City turn) is refused until resolved.
       const free = allRoadIds(game.board).find((id) => !(id in game.board.roads));
-      assert.deepEqual(placeRoad(game, free), { ok: false, error: MOVE_ERRORS.IN_DISTRESS });
+      if (free) assert.deepEqual(placeRoad(game, free), { ok: false, error: MOVE_ERRORS.IN_DISTRESS });
+      else assert.deepEqual(endCityTurn(game), { ok: false, error: MOVE_ERRORS.IN_DISTRESS });
       const st = distressStatus(game, me);
       if (st.canDeclare) {
         assert.equal(declareBankruptcy(game).ok, true);
@@ -131,6 +145,25 @@ function playFuzz(seed, nPlayers) {
     }
     checkInvariants(game, ctx);
 
+    if (game.era === ERAS.CITY) {
+      // No roads, ever; the final capture resolves; a few City Actions, then end the turn.
+      assert.deepEqual(placeRoad(game, 'h-0-0'), { ok: false, error: MOVE_ERRORS.ROADS_CLOSED });
+      if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP) {
+        assert.equal(resolveCapture(game), true);
+      } else if (game.city.actionsLeft === 0 || rand() < 0.4) {
+        const idxBefore = game.turnIndex;
+        const res = endCityTurn(game);
+        assert.equal(res.ok, true);
+        cityTurns++;
+        if (!res.gameEnded) {
+          assert.equal(game.turnIndex, (idxBefore + 1) % game.players.length, 'City turns rotate');
+          assert.equal(game.city.actionsLeft, game.city.actionsPerTurn, 'a fresh turn has every City Action');
+        }
+      }
+      checkInvariants(game, ctx);
+      continue;
+    }
+
     // Pave: prefer a road that completes a box sometimes, to exercise chains.
     const free = allRoadIds(game.board).filter((id) => !(id in game.board.roads));
     const closing = free.filter((id) => roadBlocks(game.board, id)
@@ -140,7 +173,10 @@ function playFuzz(seed, nPlayers) {
     const idxBefore = game.turnIndex;
     const res = placeRoad(game, id);
     assert.equal(res.ok, true);
-    if (res.captured.length) {
+    if (res.cityEra) {
+      assert.equal(currentPlayer(game).seat, seatBefore, 'the final mover plays the first City turn');
+      captures += res.captured.length;
+    } else if (res.captured.length) {
       captures += res.captured.length;
       if (!res.gameEnded) {
         assert.equal(currentPlayer(game).seat, seatBefore, 'capture grants another road');
@@ -158,13 +194,16 @@ function playFuzz(seed, nPlayers) {
   assert.equal(Object.keys(game.board.roads).length, allRoadIds(game.board).length);
   const results = computeResults(game);
   assert.deepEqual(game.results, results, 'frozen results match a fresh computation at the end');
-  for (const row of game.results.rows) assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings);
-  return { captures, chains, bankruptcies, rotations };
+  for (const row of game.results.rows) assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige - row.bankruptcyPenalty);
+  assert.equal(game.phase, PHASES.ENDED);
+  assert.equal(game.round, game.city.endRound, 'the match ends after the last City round');
+  assert.ok(cityTurns >= game.city.rounds * game.players.length, 'every mayor played every City round');
+  return { captures, chains, bankruptcies, rotations, cityTurns };
 }
 
 
 test('fuzz: every rule holds after every step (2–4 players, events on)', () => {
-  const totals = { captures: 0, chains: 0, bankruptcies: 0, rotations: 0 };
+  const totals = { captures: 0, chains: 0, bankruptcies: 0, rotations: 0, cityTurns: 0 };
   for (let seed = 1; seed <= 45; seed++) {
     const s = playFuzz(seed, 2 + (seed % 3));
     for (const k of Object.keys(totals)) totals[k] += s[k];

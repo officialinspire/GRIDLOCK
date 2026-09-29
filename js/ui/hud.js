@@ -6,13 +6,15 @@
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
 import { ART } from '../art.js';
-import { PLAYER_PRESETS, CPU } from '../config.js';
+import { PLAYER_PRESETS, CPU, ECONOMY } from '../config.js';
 import { formatCash, formatCashShort, formatDelta } from '../core/economy.js';
 
 /** Short phones show four HUD cards in one row; money is abbreviated there (matches css/mobile.css). */
 const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-height: 700px)';
 const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
-import { currentPlayer, getPlayer, playerStats, roadsBuilt, standings, PHASES } from '../core/game.js';
+import {
+  currentPlayer, getPlayer, playerStats, roadsBuilt, standings, eraStatus, PHASES, ERAS,
+} from '../core/game.js';
 import { totalRoads } from '../core/board.js';
 import { controllerLabel, isCpu, DIFFICULTY_LABELS } from '../core/seats.js';
 
@@ -152,7 +154,11 @@ function playerCard(game, seat) {
       h('span', { class: 'player-card__name' }, player.name),
       stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
-      stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
+      stats.bankruptcies > 0 && h('span', {
+        class: `player-card__fresh${stats.recovering ? ' is-recovering' : ''}`,
+        title: `Bankrupt ${stats.bankruptcies}×${stats.recovering ? ', recovering' : ''}: final score −${formatCash(stats.bankruptcyPenalty)} City Value. `
+          + `Another bankruptcy would restart with ${formatCash(stats.nextRecoveryCapital)}.`,
+      }, stats.recovering ? `↺${stats.bankruptcies} Recovering` : `↺${stats.bankruptcies}`),
     ),
     // Second line when bots are at the table, on every card so they line up: "CPU · Hard · Tycoon"
     // or "Human". (An all-human table needs neither.)
@@ -167,6 +173,8 @@ function playerCard(game, seat) {
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
       incomeStat(stats),
       stat('property', 'Property', formatCash(stats.property), 'icons:building', 'City value of property (land + actual construction cost basis)'),
+      stat('prestige', 'Prestige', stats.prestige, 'icons:trophy',
+        `Prestige: ${formatCash(stats.prestige * ECONOMY.SCORING.PRESTIGE)} of City Value (${formatCash(ECONOMY.SCORING.PRESTIGE)} per point). Parks, Civic and Landmarks earn it; industry next to homes costs it`),
     ),
   );
 }
@@ -183,6 +191,36 @@ function carryCashDeltas(chipsBySeat) {
   }
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The era chip in the round badge: "Expansion", then "City 2/4 · 1 action" (see eraStatus). */
+function renderEra(game) {
+  const status = eraStatus(game);
+  const chip = $('#hud-era');
+  const city = status.era === ERAS.CITY;
+  chip.dataset.era = status.era;
+  // Every road is paved in the CITY era: the counter gives way to the era chip.
+  document.querySelector('.round-badge__roads').hidden = city;
+  chip.classList.toggle('is-spent', city && status.actionsLeft === 0);
+  if (!city) {
+    chip.textContent = 'Expansion';
+    chip.title = status.rounds
+      ? `Expansion era: pave every road to start the City era (${plural(status.rounds, 'full round')}, ${plural(status.actionsPerTurn, 'City Action')} per turn)`
+      : 'Expansion era: the match ends when every road is paved';
+    return;
+  }
+  if (game.phase === PHASES.ENDED) {
+    chip.textContent = 'City complete';
+    chip.title = 'The City era is over';
+    return;
+  }
+  const round = status.round ? `City ${status.round}/${status.rounds}` : `City · ${plural(status.roundsLeft, 'round')} to go`;
+  chip.textContent = `${round} · ${plural(status.actionsLeft, 'action')}`;
+  chip.title = `City era: no more roads. ${status.round
+    ? `Round ${status.round} of ${status.rounds}; ${plural(status.roundsLeft, 'round')} left including this one.`
+    : `${plural(status.rounds, 'full round')} start next round.`} ${plural(status.actionsLeft, 'City Action')} left this turn (of ${status.actionsPerTurn}).`;
+}
+
 export function renderHud(game) {
   const chipsBySeat = new Map();
   if (game === lastGame) {
@@ -197,6 +235,7 @@ export function renderHud(game) {
   animateMoney(game);
   $('#hud-round').textContent = game.round;
   $('#hud-roads').textContent = `${roadsBuilt(game)}/${totalRoads(game.board)}`;
+  renderEra(game);
 
   const banner = $('#turn-banner');
   if (game.phase === PHASES.ENDED) {

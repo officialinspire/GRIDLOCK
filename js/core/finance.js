@@ -8,22 +8,29 @@
  *   bankruptcy allowed only when selling everything still can't clear the debt.
  *              The debt is written off, every block the player owns becomes
  *              Abandoned (ownerless; development kept but inactive), and they
- *              restart with FRESH_START_CAPITAL (first FRESH_START_LIMIT times).
+ *              restart with recovery capital (FINANCE.RECOVERY: shrinking each
+ *              time, never $0). Each bankruptcy adds a growing final-score
+ *              penalty (FINANCE.BANKRUPTCY_PENALTY). The match always goes on.
  *   abandoned  other players buy the land and either restore the ruin or clear
  *              it to rebuild. Former owners can't buy their own ruins back.
  *
+ * Hostile takeovers of owned blocks are a separate system: core/takeover.js.
+ *
  * Loop safety: bankruptcy leaves the player owning nothing, so they owe no
- * upkeep and can't fall back into distress until they buy again; they can't
- * re-buy their own ruins; and fresh-start capital is capped.
+ * upkeep (queued repair bills are dropped too) and can't fall back into distress
+ * until they buy again; they can't re-buy their own ruins; recovery capital
+ * shrinks and the score penalty grows with every bankruptcy.
  */
 import { ECONOMY } from '../config.js';
 import { getBlockById, blocksOwnedBy } from './board.js';
 import { refreshBonuses } from './bonuses.js';
 import { TABLE, applyDevelopment, isDeveloped } from './development.js';
 import {
-  credit, debit, canAfford, investedIn, isInDistress, TXN,
+  credit, debit, canAfford, investedIn, isInDistress, recoveryCapital, bankruptcyPenalty, TXN,
 } from './economy.js';
-import { currentPlayer, PHASES } from './game.js';
+import {
+  currentPlayer, PHASES, outOfCityActions, spendCityAction,
+} from './game.js';
 
 const FIN = ECONOMY.FINANCE;
 
@@ -39,6 +46,7 @@ export const FIN_ERRORS = Object.freeze({
   IN_DISTRESS: 'in-distress',
   INSUFFICIENT_FUNDS: 'insufficient-funds',
   BAD_MODE: 'bad-mode',
+  NO_ACTIONS: 'no-city-actions', // CITY era: this turn's City Actions are spent
 });
 
 const pct = (amount, percent) => Math.round((amount * percent) / 100);
@@ -50,6 +58,8 @@ function ownerCheck(game, block) {
   if (!block) return FIN_ERRORS.NO_BLOCK;
   if (block.ownerSeat == null || block.ownerSeat !== currentPlayer(game).seat) return FIN_ERRORS.NOT_OWNER;
   if (!isDeveloped(block)) return FIN_ERRORS.NOT_DEVELOPED;
+  // CITY era: a voluntary sale is a City Action; selling to clear debt never is.
+  if (!isInDistress(currentPlayer(game)) && outOfCityActions(game)) return FIN_ERRORS.NO_ACTIONS;
   return null;
 }
 
@@ -74,6 +84,7 @@ export function quoteSale(game, blockId) {
 function commitSale(game, block, quote, kind) {
   const player = currentPlayer(game);
   const type = block.type;
+  if (!isInDistress(player)) spendCityAction(game);
   applyDevelopment(block, quote.toLevel === 0 ? 'vacant' : type, quote.toLevel, {
     constructionCosts: (block.constructionCosts ?? []).slice(0, quote.toLevel),
   });
@@ -115,7 +126,14 @@ export function distressStatus(game, player = currentPlayer(game)) {
     liquidation,
     canRecover: debt > 0 && liquidation >= debt,
     canDeclare: debt > 0 && liquidation < debt,
-    freshStart: player.bankruptcies < FIN.FRESH_START_LIMIT ? FIN.FRESH_START_CAPITAL : 0,
+    // What declaring bankruptcy now would mean: recovery capital, and the final-score penalty
+    // added by this bankruptcy (cumulative penalties grow with each one).
+    recoveryCapital: recoveryCapital(player.bankruptcies),
+    penaltyAfter: bankruptcyPenalty(player.bankruptcies + 1),
+    penaltyAdded: {
+      cityValue: bankruptcyPenalty(player.bankruptcies + 1).cityValue - bankruptcyPenalty(player.bankruptcies).cityValue,
+      prestige: bankruptcyPenalty(player.bankruptcies + 1).prestige - bankruptcyPenalty(player.bankruptcies).prestige,
+    },
   };
 }
 
@@ -136,19 +154,30 @@ export function declareBankruptcy(game) {
     block.ownerSeat = null;
     block.abandoned = true;
     block.abandonedBy = player.seat;
+    block.shieldedUntil = null; // a ruin is auctioned, never taken over
     abandoned.push(block.id);
   }
   refreshBonuses(game.board);
+  // Nothing left to repair: drop any queued event repair bills so they can't restart the debt.
+  game.events.repairs = game.events.repairs.filter((repair) => repair.seat !== player.seat);
 
-  // Write off the debt, then grant fresh-start capital (capped).
+  // Write off the debt, then grant recovery capital (shrinking with each bankruptcy, never $0).
   credit(game, player, status.debt, TXN.DEBT_WRITE_OFF);
-  const capital = status.freshStart;
+  const capital = status.recoveryCapital;
   credit(game, player, capital, TXN.FRESH_START);
   player.bankruptcies += 1;
+  player.lastBankruptcyRound = game.round;
 
-  game.log.push({ type: 'bankruptcy', seat: player.seat, round: game.round, debt: status.debt, abandoned, capital });
-  game.lastBankruptcy = { seat: player.seat, round: game.round, abandoned, debt: status.debt, capital };
-  return { ok: true, seat: player.seat, abandoned, debtForgiven: status.debt, capital };
+  // The player stays in the game: same turn, same phase (Manage City), now solvent.
+  const penalty = bankruptcyPenalty(player.bankruptcies);
+  const nextCapital = recoveryCapital(player.bankruptcies);
+  const entry = {
+    type: 'bankruptcy', seat: player.seat, round: game.round, era: game.era, count: player.bankruptcies,
+    debt: status.debt, abandoned, capital, penalty, nextCapital,
+  };
+  game.log.push(entry);
+  game.lastBankruptcy = { ...entry };
+  return { ok: true, seat: player.seat, abandoned, debtForgiven: status.debt, capital, count: player.bankruptcies, penalty, nextCapital };
 }
 
 /* ---------------- abandoned blocks ---------------- */
@@ -191,6 +220,7 @@ export function quoteAcquire(game, blockId, mode) {
   const player = currentPlayer(game);
   if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) return { ...base, error: FIN_ERRORS.FORMER_OWNER };
   if (isInDistress(player)) return { ...base, error: FIN_ERRORS.IN_DISTRESS };
+  if (outOfCityActions(game)) return { ...base, error: FIN_ERRORS.NO_ACTIONS };
 
   const { land, restore, reserve: cost } = redevelopmentPrice(block, mode);
   const quote = { ...base, cost, land, restore };
@@ -209,6 +239,8 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
   if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
   if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
+  // CITY era: opening an auction is the current mayor's City Action, whoever wins it.
+  if (outOfCityActions(game)) return { ok: false, error: FIN_ERRORS.NO_ACTIONS };
   const { land, restore, reserve } = redevelopmentPrice(block, mode);
   const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
   const rejected = [];
@@ -231,6 +263,7 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   const seatOrder = FIN.REDEVELOPMENT.TIE_BREAKER === 'highest-seat' ? -1 : 1;
   valid.sort((a, b) => b.bid - a.bid || seatOrder * (a.player.seat - b.player.seat));
   const winner = valid[0];
+  spendCityAction(game);
   debit(game, winner.player, winner.bid, TXN.ACQUIRE, { block: block.id, mode, auction: true });
   block.ownerSeat = winner.player.seat;
   block.abandoned = false;
@@ -250,6 +283,7 @@ export function acquireAbandoned(game, blockId, mode) {
   const player = currentPlayer(game);
   const paid = debit(game, player, quote.cost, TXN.ACQUIRE, { block: block.id, mode });
   if (!paid.ok) return { ...quote, ok: false, error: FIN_ERRORS.INSUFFICIENT_FUNDS };
+  spendCityAction(game);
 
   block.ownerSeat = player.seat;
   block.abandoned = false;

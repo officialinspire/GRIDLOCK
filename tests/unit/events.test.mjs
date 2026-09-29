@@ -13,7 +13,8 @@ import {
 } from '../../js/core/events.js';
 import { calculateIncome, isValidAmount, TXN } from '../../js/core/economy.js';
 import { scorePlayer } from '../../js/core/scoring.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES } from '../../js/core/game.js';
+import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, ERAS } from '../../js/core/game.js';
+import { playOutCity } from './_city.mjs';
 import { distressStatus, sellDevelopment, declareBankruptcy, ownershipProblems } from '../../js/core/finance.js';
 import { getSpriteRect } from '../../js/assets.js';
 
@@ -342,8 +343,10 @@ test('cost modifiers change quotes and the amount charged, then revert', () => {
   assert.equal(park.value, park.price + base / 2, 'scoring value uses cost basis');
   assert.equal(park.marketValue, park.price + base, 'optional market value remains list-priced');
   assert.equal(getPlayer(game, 1).cash + park.value, worthBefore, 'accounting value uses actual cost basis');
+  const { LAND, INVESTED_BUILDING, PRESTIGE } = ECONOMY.SCORING;
   assert.equal(scorePlayer(game, getPlayer(game, 1)).cityValue,
-    worthBefore - Math.round((base / 2) * (1 - ECONOMY.SCORING.INVESTED_BUILDING)),
+    getPlayer(game, 1).cash + Math.round(park.price * LAND) + Math.round((base / 2) * INVESTED_BUILDING)
+      + ECONOMY.STRATEGY.PRESTIGE.perLevel.park * PRESTIGE,
     'final scoring applies the configured building coefficient to actual cost');
   assert.deepEqual(game.ledger.at(-1).delta, -base / 2);
 
@@ -385,7 +388,7 @@ test('full random games with events: valid balances, reconciled ledger, clean ex
     let rng = seed;
     const rand = () => ((rng = (rng * 16807) % 2147483647) / 2147483647);
     let events = 0;
-    while (game.phase === PHASES.PLAYING) {
+    while (game.era === ERAS.EXPANSION) {
       // The current player develops something whenever they can, to exercise events.
       const me = currentPlayer(game);
       // Resolve financial distress first (paving is blocked while in debt).
@@ -407,6 +410,17 @@ test('full random games with events: valid balances, reconciled ledger, clean ex
       }
       assert.equal(new Set(game.events.active.map((e) => e.id)).size, game.events.active.length, 'no duplicate events');
     }
+    // Events keep coming in the CITY era.
+    const drawn = game.events.history.length;
+    playOutCity(game, {
+      turn: () => {
+        const me = currentPlayer(game);
+        const vacant = game.board.blocks.find((b) => b.ownerSeat === me.seat && b.level === 0);
+        if (vacant) buildOnBlock(game, vacant.id, 'residential');
+        for (const e of game.events.active) assert.ok(e.startRound <= game.round && e.endRound >= game.round);
+      },
+    });
+    events += game.events.history.length - drawn;
     assert.ok(events <= game.round - 1, 'calm rounds may have no event');
     assert.ok(game.events.active.length <= CITY_EVENTS.MAX_ACTIVE);
     assert.equal(game.events.history.length, events);

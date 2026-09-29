@@ -37,6 +37,21 @@ const VIEWPORTS = [
   { name: 'phone-landscape', width: 844, height: 390, isMobile: true, hasTouch: true },
 ];
 
+/** CITY era: every mayor ends their City turns (clearing event cards and handoffs) until the results open. */
+async function playOutCityEra(page) {
+  for (let i = 0; i < 80; i++) {
+    if (await page.locator('#results-dialog[open]').count()) return;
+    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+      ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
+      if (await page.locator(`${sel}[open]`).count()) await page.click(click);
+    }
+    if (await page.locator('#finance-dialog[open]').count()) {
+      await page.locator('#finance-dialog').locator('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]').first().click();
+    } else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn');
+    else await page.waitForTimeout(50);
+  }
+}
+
 async function dismissEvent(page) {
   if (await page.locator('#event-dialog[open]').count()) await page.click('#event-continue');
 }
@@ -170,7 +185,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 11);
+    assert.equal(await page.locator('.howto-card').count(), 12); // incl. Prestige & Takeovers
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -284,6 +299,7 @@ for (const vp of VIEWPORTS) {
       await pave(page, road(id));
       await dismissEvent(page);
     }
+    await playOutCityEra(page);
     await page.waitForSelector('#results-dialog[open]');
     assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null);
     assert.equal(await page.locator('#board .block--owned').count(), 36);
@@ -353,10 +369,17 @@ for (const vp of VIEWPORTS) {
     assert.ok(await fin.isVisible());
     await fin.locator('[data-sell="r4c5"]').click();
     await pave(page, road('h-3-4'));
+    assert.match(await fin.textContent(), /restarts you with \$2,000\. You stay in the game/);
     await fin.locator('#declare-bankruptcy').click();
-    assert.match(await fin.textContent(), /2 blocks abandoned/);
+    const card = await fin.textContent();
+    assert.match(card, /2 blocks abandoned/);
+    assert.match(card, /Recovery capital: \$2,000\. .* plays on this turn/);
+    assert.match(card, /Bankruptcy #1: final score −\$1,000 City Value and −2 Prestige/);
+    assert.match(card, /would pay only \$1,000/);
     await fin.getByRole('button', { name: 'Continue' }).click();
     assert.equal(await page.locator('#board .block--abandoned').count(), 2);
+    assert.match(await page.textContent('#turn-prompt'), /Recovering from bankruptcy/);
+    assert.match(await page.textContent('.player-card[data-seat="3"]'), /↺1 Recovering/);
 
     await pave(page, road('h-3-5'));
     const panel = page.locator('#build-dialog');
@@ -490,6 +513,18 @@ for (const vp of VIEWPORTS) {
       return ids.at(-1);
     });
     await pave(page, page.locator(`[data-road="${last}"]`));
+    // The final road starts the CITY era: no Pave Road, an End Turn button and the era in the HUD.
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    assert.ok(await page.isHidden('#action-pave'));
+    assert.ok(await page.isVisible('#action-end-turn'));
+    assert.ok(await page.isHidden('.round-badge__roads'));
+    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 2 actions$/);
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left/);
+    for (let turns = 0; turns < 40; turns++) {
+      if (await page.evaluate(() => window.__GRIDLOCK__.getGame().phase === 'ended')) break;
+      if (turns === 4) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/);
+      await page.click('#action-end-turn');
+    }
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().phase === 'ended');
     const dialog = page.locator('#results-dialog');
     await dialog.waitFor({ state: 'visible' });
@@ -502,6 +537,72 @@ for (const vp of VIEWPORTS) {
   } catch (err) {
     failures++;
     console.error(`✘ completion: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+// Hostile takeover (City era): a rival block shows price, pressure vs control, and refusals.
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlockById } = await import('/js/core/board.js');
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      // Seat 2's House (control 3) and a bare lot, next to seat 1's Market and Corner Store.
+      for (const [id, seat, type, level] of [['r2c2', 2, 'residential', 1], ['r3c3', 2, 'vacant', 0],
+        ['r2c3', 1, 'commercial', 2], ['r1c2', 1, 'commercial', 1]]) {
+        Object.assign(getBlockById(g.board, id), { ownerSeat: seat });
+        applyDevelopment(getBlockById(g.board, id), type, level);
+      }
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 4; }
+      refreshBonuses(g.board);
+      return ids.at(-1);
+    });
+    // EXPANSION: a rival block only opens the inspector.
+    await page.click('#board [data-block="r2c2"]');
+    assert.equal(await page.locator('#build-dialog[open]').count(), 0, 'no takeovers before the City era');
+    assert.match(await page.textContent('#inspector'), /Your pressure\s*8 vs 3/);
+    await pave(page, page.locator(`[data-road="${last}"]`));
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+
+    await page.click('#board [data-block="r2c2"]');
+    const panel = page.locator('#build-dialog');
+    await panel.waitFor({ state: 'visible' });
+    const text = await panel.textContent();
+    assert.match(text, /Your pressure 8/);
+    assert.match(text, /Control 3/);
+    assert.match(text, /Takeover \$3,750: .* receives the market value \$3,000; \$750 is lost/);
+    await panel.locator('[data-takeover]').click();
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().board.blocks.find((b) => b.id === 'r2c2').ownerSeat === 1);
+    assert.match(await page.textContent('#toasts'), /Took over C3/);
+    assert.match(await page.textContent('#hud-era'), /1 action$/);
+
+    // A second takeover the same turn is refused, with the reason on the panel.
+    await page.click('#board [data-block="r3c3"]');
+    await panel.waitFor({ state: 'visible' });
+    assert.match(await panel.textContent(), /Only 1 takeover per turn/);
+    assert.equal(await panel.locator('[data-takeover]').getAttribute('aria-disabled'), 'true');
+    await panel.locator('[data-action="close"]').click();
+    const log = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'takeover'));
+    assert.deepEqual(log.map((e) => [e.seat, e.from, e.label, e.cost]), [[1, 2, 'C3', 3750]]);
+    assert.deepEqual(errors, []);
+    console.log('✔ hostile takeover: City era only, price + pressure vs control, one per turn');
+  } catch (err) {
+    failures++;
+    console.error(`✘ takeover: ${err.message}`);
   } finally {
     await context.close();
   }
@@ -529,7 +630,12 @@ for (const vp of VIEWPORTS) {
     await pave(page, page.locator('[data-road="h-0-0"]'));
     await page.waitForLoadState('networkidle');
     assert.equal(await page.locator('[data-road="h-0-0"] .road__tile').count(), 1);
-    assert.equal(await page.locator('[data-block="r0c0"] .block__prop').count(), 2);
+    // Level 3: annex, two corners and a street piece; the street piece is hidden on a phone this narrow.
+    assert.equal(await page.locator('[data-block="r0c0"] .block__prop').count(), 4);
+    for (const slot of ['annex', 'corner-left', 'corner-right']) {
+      assert.ok(await page.locator(`[data-block="r0c0"] .block__prop--${slot}`).isVisible(), slot);
+    }
+    assert.equal(await page.locator('[data-block="r0c0"] .block__prop--street').isVisible(), false);
     assert.deepEqual(errors, []);
     console.log('✔ art pipeline (hi-DPI phone)');
   } catch (err) {
@@ -895,6 +1001,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board);
       ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       const b = getBlock(g.board, 5, 5);
       if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
@@ -1040,6 +1147,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board);
       ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       const b = getBlock(g.board, 5, 5);
       if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
@@ -1193,6 +1301,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1257,6 +1366,7 @@ const recordVibration = () => {
       const g = window.__GRIDLOCK__.getGame();
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) b.abandoned = b.ownerSeat == null ? (b.abandonedBy = 1, true) : b.abandoned;
       return ids.at(-1);
     });
@@ -1267,7 +1377,7 @@ const recordVibration = () => {
     await page.click('#results-dialog [data-results-action="title"]');
     await page.getByRole('button', { name: 'Statistics' }).click();
     assert.equal(await page.isVisible('#career-empty'), true, 'empty career');
-    assert.equal(await page.textContent('#career-badge-count'), '0 / 12');
+    assert.equal(await page.textContent('#career-badge-count'), '0 / 24');
     await page.locator('[data-screen="stats"] [data-nav="back"]').click();
 
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
@@ -1277,8 +1387,10 @@ const recordVibration = () => {
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
         if (vacant) { vacant.click(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
-        if (!road) break;
-        road.click();
+        const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)'); // CITY era
+        if (road) road.click();
+        else if (endTurn) endTurn.click();
+        else break;
       }
     });
     await page.locator('#results-dialog').waitFor({ state: 'visible' });
@@ -1300,9 +1412,9 @@ const recordVibration = () => {
     assert.equal(await page.isVisible('#career-empty'), false);
     assert.match(await page.textContent('#career-stats'), /Matches completed\s*1/);
     assert.equal(await page.locator('#career-mayors tbody tr').count(), 2);
-    assert.equal(await page.locator('#career-badges .badge').count(), 12);
+    assert.equal(await page.locator('#career-badges .badge').count(), 24);
     assert.ok(await page.locator('#career-badges .badge.is-earned').count() >= 3);
-    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 12$/);
+    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 24$/);
     await noHorizontalScroll(page, 'statistics');
     await page.screenshot({ path: 'test-results/career-stats.png', fullPage: true });
 
@@ -1446,6 +1558,7 @@ const recordVibration = () => {
     g.eventPool = [];
     const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
     ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+    g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
     for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
     return ids.at(-1);
   });
@@ -1633,6 +1746,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1688,6 +1802,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1809,6 +1924,7 @@ const recordVibration = () => {
       return g.phase === 'playing' && g.players[g.turnIndex].controller !== 'cpu' ? chooseRoad(g, { difficulty: 'normal' }).road : null;
     });
     if (road) await page.click(`#board [data-road="${road}"]`);
+    else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn'); // CITY era
   }
   /** Plays until `done`: people move via humanStep; CPU turns run themselves (Skip speeds them up). */
   async function playUntil(page, done, { skip = true, limit = 600 } = {}) {
@@ -2412,6 +2528,7 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
       const game = window.__GRIDLOCK__.getGame();
       const ids = allRoadIds(game.board).filter((id) => game.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { game.board.roads[id] = 1; });
+      game.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of game.board.blocks) if (b.ownerSeat == null) b.ownerSeat = 1 + ((b.row + b.col) % 4);
       return ids.at(-1);
     });

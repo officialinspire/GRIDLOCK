@@ -4,11 +4,25 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
+**V1.4:** the City era after the roads are paved, development-driven scoring with Prestige, strategic building effects, hostile takeovers, bankruptcy recovery, twelve new achievements and denser city blocks (see the release notes below).
+
 **V1.3:** a start screen and the INSPIRE Software intro, a downtown Fredericksburg main menu, two music themes with crossfades, and new sound effects for every building type and city event (see the release notes below).
 
 **V1.2:** installable offline play, a richer sound and haptics layer, a first-game tutorial, rule presets, career statistics and achievements, strategic forecasts, replayable cities with challenge links, and a simulation-backed balance pass (see the release notes below).
 
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.4 release notes
+
+- **City era:** paving the final road starts the City era instead of ending the match: no more roads, 4 full rounds (`CITY_ERA`), 2 City Actions per turn and an **End Turn** button. The HUD shows the era, City round and actions left. See [How to play](#how-to-play).
+- **Development decides victory:** City Value = 100% cash + 70% land + 100% construction + $150 per Prestige point; ties go to Prestige, development levels, cash, then blocks. See [Scoring](#scoring).
+- **Strategic effects:** Prestige from Parks, Civic and Landmarks (industry beside homes costs it unless a park buffers it), takeover defence from Residential, Civic and Landmarks, takeover pressure from Commercial, cheaper construction next to your own Industry. See [Strategic effects](#strategic-effects).
+- **Hostile takeovers** (City era): beat a rival block's control with adjacent development to buy it at 125% of market value, one per turn, protected afterwards. CPU mayors take one only when it clearly pays. See [Hostile takeovers](#hostile-takeovers).
+- **Bankruptcy & recovery:** never ends the match or removes a mayor; recovery capital shrinks each time but never reaches $0, and a growing City Value / Prestige penalty makes it never worth doing on purpose.
+- **Achievements:** 24 badges, including twelve new ones for takeovers, fortresses, mixed use, all six types, heavy industry, civic shelter, park networks, whole districts, income, debt-free wins, Prestige and big cities.
+- **City look:** Level 2 blocks gain corner props, Level 3 blocks an annex and a parked vehicle or street furniture; developed blocks outweigh the ownership overlay.
+- **Results:** Prestige, development levels, takeovers made/lost and bankruptcies per mayor, with the penalty in the City Value breakdown.
+- **Saved games:** saves from V1.3 load and continue in the Expansion era with the new rules; inconsistent or unknown-version saves are ignored, never half-loaded.
 
 ### V1.3 release notes
 
@@ -155,7 +169,7 @@ Whole-game win rates are in [CPU simulation](#cpu-simulation). Hard decides in a
 
 ### CPU city strategy
 
-`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, and "pave" (done managing). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave".
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
 
 It has no economy formulas of its own:
 - Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
@@ -168,7 +182,7 @@ It has no economy formulas of its own:
 | **Normal** | The best net income per turn × turns left + City Value change: adjacency bonuses, upkeep and today's event prices and income are all in the forecast. Leaves land vacant when nothing pays back before the city is finished | Reserve + next turn's upkeep and repair bills | Gives up the least net income per dollar raised |
 | **Hard** | The same judged harder: active events count only for the rounds they have left, civic shelter is worth 15% of the neighbouring income it protects, a build that leaves a district one block short counts half the bonus it would bring, and it needs a return of at least 5% per dollar | Reserve + next turn's charges even if income were halved, plus a possible Fire repair | Least (income lost over the turns left + City Value lost) per dollar of debt covered |
 
-All three declare bankruptcy only when selling everything couldn't cover the debt (the rules allow nothing else). The tuning constants live in `CPU` in `config.js`. In 30 all-CPU Standard games with the three difficulties at each table (seats rotated), average City Value was $23.6k for Easy, $38.5k for Normal and $40.8k for Hard; there were no bankruptcies, and all six categories got built.
+All three declare bankruptcy only when selling everything couldn't cover the debt (the rules allow nothing else). The tuning constants live in `CPU` in `config.js`. In 60 all-CPU Standard games under the V1.4 rules (City era, Prestige scoring, takeovers; `npm run simulate:cpu -- --games 60 --modes standard`), average City Value was $31.9k for Easy, $50.7k for Normal and $52.6k for Hard, with no illegal moves or stalls in 12,325 decisions. Normal and Hard now lean heavily on Parks and Landmarks (about 40% and 30–38% of their builds), since cheap Prestige scores well; all six categories still get built.
 
 **Reading the city's events (Hard).** Income from anything bought now is first paid at the owner's *next* turn start, so Hard counts an event's boost or penalty only for the paydays it will actually cover. An event ending this round adds nothing.
 - **Surcharges:** upkeep follows the price actually paid, so a surcharge costs every turn after too. When a Housing Boom's surcharge ends this round and waiting one turn is worth more, Hard holds off (reason `wait-for-price`); Normal pays it.
@@ -210,9 +224,15 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 **Each full round:** there is a 65% chance of a **city event** and otherwise a calm round. At most two events overlap. Civic buildings shield nearby blocks from emergencies and their repair bills.
 
-**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with $2,000.
+**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with recovery capital ($2,000, less each further time, never below $500) and a final-score penalty that grows with each bankruptcy. You're never out of the game.
 
-**End:** when every block is enclosed, unfinished income, upkeep and repairs are settled first. Highest **City Value** uses all cash and land plus 75% of actual construction investment. See [Scoring](#scoring).
+**Two eras.** Everything above is the **EXPANSION** era. Paving the final road does not end the match: it starts the **CITY** era.
+- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free), then plays a City turn; the rest of that round is City turns too.
+- Then **4 full City rounds** (`CITY_ERA.ROUNDS` in `js/config.js`). Income, upkeep, repairs and city events carry on as normal.
+- Each City turn gives **2 City Actions** (`CITY_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or opening bidding on an abandoned block each cost one. Selling to clear debt and declaring bankruptcy are free, so a mayor can always recover. Choose **End Turn** when done; unused actions are lost.
+- The round badge shows the era: *Expansion*, then e.g. *City 2/4 · 1 action*.
+
+**End:** the match ends after the last seat of the last City round, so every mayor has had the same number of turns. Highest **City Value** wins: all cash + 70% of land + all actual construction investment + Prestige. See [Scoring](#scoring). (With `CITY_ERA.ROUNDS` set to 0 the match ends on the final road instead, after unfinished income, upkeep and repairs are settled.)
 
 ### Controls
 
@@ -231,7 +251,26 @@ Settings (saved on the device): sound on/off, master/effects/ambience volume, ci
 
 - **Career:** matches completed, blocks captured, longest capture chain (and who), buildings developed (builds + upgrades), highest City Value (and who), bankruptcies, events survived, and favourite development category.
 - **Mayors:** games played, games won and best City Value for each mayor name used on this device (hot-seat friendly).
-- **12 achievements**, shown as papercraft rosettes (earned ones in colour with who and when, locked ones in grey): Ribbon Cutting, Mayor of the Year, Chain Reaction, Land Baron, Skyline, Master Builder, Big City, Comeback Kid, Storm Chaser, Purist, Photo Finish and Veteran Mayor. New ones also appear on the results screen. When several mayors qualify in the same match, the credit goes to a winner first, then seat order.
+- **24 achievements**, shown as papercraft rosettes (earned ones in colour with who and when, locked ones in grey). New ones also appear on the results screen. When several mayors qualify in the same match, the credit goes to a winner first, then seat order.
+  - Classic: Ribbon Cutting, Mayor of the Year, Chain Reaction, Land Baron, Skyline, Master Builder, Big City, Comeback Kid (win after a bankruptcy), Storm Chaser, Purist, Photo Finish and Veteran Mayor.
+  - City & strategy (thresholds in `GOALS` in `js/core/career.js`):
+
+    | Badge | Earned by |
+    | --- | --- |
+    | Hostile Bid | your first hostile takeover |
+    | Fortress City | ending a City-era match with 5+ blocks, each at control 4+, none lost to a takeover |
+    | Mixed Use | finishing with a mixed-use cluster |
+    | Full Palette | finishing with all six building types |
+    | Heavy Industry | finishing with three Level 3 Industrial blocks |
+    | Safe Streets | finishing with 6+ blocks under civic protection |
+    | Green Belt | finishing with 4+ connected parks |
+    | District Boss | owning every block of a district (Downtown, Midtown or Suburbs) |
+    | Cash Machine | finishing on $4,000+ income per turn |
+    | Balanced Budget | winning without the balance ever going below $0 (read from the ledger) |
+    | Toast of the Town | finishing with 20+ Prestige |
+    | Metropolis | finishing with 20+ development levels |
+
+  Every rule reads the frozen final board, log and ledger (`summarizeMatch`), so the result is deterministic.
 
 A match counts only if it was genuinely played to the end: all 84 roads paved through play (move log), every balance reconciling with the money ledger, and every owned or developed block traceable to a logged capture, build or purchase. Games finished by debug/test staging fail these checks and are never recorded, even with `?debug`. Each match counts once.
 
@@ -291,11 +330,11 @@ The precache is named after a **content hash** of all its files (`gridlock-preca
 
 `core/scoring.js` is pure and deterministic.
 
-- **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
-- **City Value** uses configurable coefficients: 100% cash + 100% land + 75% of actual construction cost invested in retained levels. Development earns income and bonuses, but no longer converts spending automatically into equal score. Debt lowers value, and abandoned blocks count for nobody.
-- **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
-- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
-- **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
+- **Fair final settlement:** the match ends at a round boundary (after the last City round), so every mayor has had the same turns. If it ends on the final road instead (`CITY_ERA.ROUNDS` = 0), every mayor is first advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
+- **City Value** uses configurable coefficients (`ECONOMY.SCORING`): 100% cash + 70% land + 100% of actual construction cost invested in retained levels + $150 per **Prestige** point. Discounted land and full-value buildings mean a developed city beats a sprawl of empty lots. Debt lowers value, and abandoned blocks count for nobody.
+- **Ranking:** City Value, then Prestige, then total development levels, then cash, then blocks owned. Players equal on all five share the rank (co-winners), listed in seat order. Results are computed once when the match ends and frozen in `game.results`, so viewing the board afterwards can't change them.
+- **Results screen:** a card for every player showing City Value (with its cash / land / buildings / Prestige breakdown, minus any bankruptcy penalty), cash, Prestige, levels built, blocks owned, income, takeovers made and lost, bankruptcies, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies · hostile takeovers. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
+- **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Most Prestigious, Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
 
 ## Economy
 
@@ -308,7 +347,9 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
 | Undeveloped blocks | $0 recurring income |
 | Property shown in HUD | Land value plus actual invested construction cost basis |
-| Final building score | 75% of actual invested construction cost basis |
+| Final land score | 70% of land value |
+| Final building score | 100% of actual invested construction cost basis |
+| Prestige | $150 of City Value per point (see [Strategic effects](#strategic-effects)) |
 | Net worth | Cash plus net property value |
 
 ### Development
@@ -341,7 +382,7 @@ The Build panel and inspector show what a move will really do, without clutterin
 - **Upgrade card:** cost, your income, upkeep and net per turn (now → after), City Value (now → after), this block's income (and its normal income if an event is changing it), price/income events, and bonuses it would activate on this or neighbouring blocks. Bonuses already active are listed above it.
 - **Inspector:** income (▲/▼ when a city event changes it; tooltip shows the normal amount), upkeep, net per turn, property value, how much the block **adds to City Value**, event price effects for upgrades, active bonuses and events.
 
-Forecasts have no formulas of their own: `js/core/forecast.js` runs the real `buildOnBlock` / `upgradeBlock` on a copy of the game and reads the result with the same functions the game uses (`playerStats`, `scorePlayer`, `effectiveBlockIncome`, `blockUpkeep`, `blockImpacts` / `costImpacts`, and the bonuses `refreshBonuses` writes). So a forecast is exactly what will happen; tests prove it against real transactions and the next turn's actual income and upkeep. Note that building usually *lowers* City Value at first (cash counts in full, construction at 75%), and pays back through income.
+Forecasts have no formulas of their own: `js/core/forecast.js` runs the real `buildOnBlock` / `upgradeBlock` on a copy of the game and reads the result with the same functions the game uses (`playerStats`, `scorePlayer`, `effectiveBlockIncome`, `blockUpkeep`, `blockImpacts` / `costImpacts`, and the bonuses `refreshBonuses` writes). So a forecast is exactly what will happen; tests prove it against real transactions and the next turn's actual income and upkeep. Construction counts in full, so a build changes City Value only by the Prestige it brings; it pays back through income (minus upkeep).
 
 ### Adjacency & district bonuses
 
@@ -351,13 +392,42 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 | --- | --- | --- |
 | Residential district | 3+ connected Residential | +20% each |
 | Commercial district | 3+ connected Commercial | +25% each |
-| Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +10% per park |
+| Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +15% per park |
 | Mixed-use | A connected Residential/Commercial/Park cluster containing all three | +10% each member |
 | Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Shields covered blocks from emergencies and their repair bills |
 
 `core/bonuses.js` → `refreshBonuses(board)` recomputes everything from scratch after every capture and every build/upgrade. The results are stored on each block as `bonuses`, `bonusIncome` and `protectedBy`. There's no incremental state, so nothing goes stale. Bonuses are a percentage of the block's **base** (level) income and never compound on each other. Each bonus type applies at most once per block, and connected groups are found with an iterative flood fill that tracks visited blocks, so cycles can't double count. Turn income pays base plus bonuses.
 
 In the UI: the HUD income includes bonuses, with a small ★ and a tooltip giving the bonus amount. Board badges get a ★ when a block earns a bonus. The details panel and Build panel list each bonus and any civic protection. A toast announces newly gained bonus income.
+
+### Strategic effects
+
+Each category also has a strategic role, computed by `js/core/strategy.js` from the same neighbourhood data. All numbers are in `ECONOMY.STRATEGY` in `js/config.js`. Only developed, owned, active blocks produce effects; "nearby" is within `RADIUS` (1: the four blocks across a road).
+
+| Category | Effect (defaults) |
+| --- | --- |
+| Residential | Takeover **defence**: +1 control per level to itself and nearby own blocks |
+| Commercial | Extra takeover **pressure**: +2 per level on adjacent rival blocks |
+| Park | **Prestige** +1 per level; +1 Prestige to each adjacent own block (max 2 parks count); +15% income for adjacent homes |
+| Civic | Prestige +1 per level; takeover defence +1 per level nearby; event protection as before |
+| Industrial | Top income; builds and upgrades next to your own Industrial block cost **10% less**; **−1 Prestige per level** when next to any Residential, unless an adjacent own Park buffers it |
+| Landmark | Prestige **+3 per level**; takeover defence **+2 per level** nearby |
+
+- **Prestige** is summed per player (never below 0) and scores $150 per point. The HUD card, the inspector and the Build panel show it, and every build option shows its Prestige change.
+- `refreshBonuses` stores each block's `prestige`, `prestigeNotes` and `control` for display; scoring and the rules recompute them, so they never go stale.
+
+### Hostile takeovers
+
+In the **CITY era** a mayor can take over a rival's block. The rules are in `js/core/takeover.js`; the strengths are pure functions in `js/core/strategy.js`; every number is in `ECONOMY.TAKEOVER` in `js/config.js`. Abandoned-property auctions are a separate system (`js/core/finance.js`).
+
+- **controlStrength** of an owned block = 1 (ownership) + its building level + its owner's Residential / Civic / Landmark levels within 1 block (×1 / ×1 / ×2, itself included) + 1 per owner's developed block across a road from it.
+- **developmentPressure** of a player on a rival block = 1 per their developed block across a road from it, plus 2 per level for each of those that is Commercial.
+- A takeover needs pressure **greater** than control. It is allowed only in the attacker's City-era Manage City, never while they are in debt, costs **one City Action**, and at most **one** happens per player turn.
+- **Price:** the attacker pays **125%** of the block's market value (land + list-price development). The defender receives the market value; the 25% premium is lost to redevelopment and transaction costs.
+- Ownership moves with the development intact. The block is then **protected** until the next full round is done (`shieldedUntil`), so it can't bounce straight back.
+- Each takeover is logged (`{ type: 'takeover', round, seat, from, block, label, cost, marketValue, premium, pressure, control }`) and appears in the ledger as `takeover` for both mayors.
+- **UI:** in the City era, tapping a rival's block opens the takeover view: price and where the money goes, your pressure against its control (with where each comes from), and the reason when it isn't possible. The inspector shows control, protection and your pressure.
+- **CPU:** Normal and Hard mayors run the takeover on a copy and take it only when it returns at least 25% of its price over the turns left (income net of upkeep × turns + City Value change) and leaves the reserve plus two turns of upkeep in hand (`CPU.TAKEOVER`); Easy never tries. In simulated all-CPU games, the takeovers that arose were weak blocks that didn't pay, so bots passed on them.
 
 ### Rule presets
 
@@ -419,13 +489,17 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 - **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
-  - Roads stay as they are, the debt is written off, and the player stays in the game with **$2,000 Fresh Start** capital.
+  - Roads stay as they are, the debt is written off, and the player stays in the game with **recovery capital**: $2,000 the first time, then half the previous amount each time, never below $500 (`FINANCE.RECOVERY`).
+  - Bankruptcy never ends the match or removes a player. The bankrupt mayor carries on with the same turn (pave in EXPANSION, End Turn in the CITY era, where bankruptcy costs no City Action) and plays every later turn.
+  - **Score penalty** (`FINANCE.BANKRUPTCY_PENALTY`): the nth bankruptcy costs n × $1,000 of final City Value (so 1, 2, 3 bankruptcies cost $1,000, $3,000, $6,000 in all) and 2 Prestige each. The results card shows it in the City Value breakdown.
+  - Any queued event repair bills and takeover protection on the abandoned blocks are dropped. Ruins keep their buildings on the board (dark, marked *Abandoned*), can't be taken over, and go to redevelopment.
+  - **Messaging:** the bankruptcy card lists the debt written off, blocks abandoned, recovery capital, the total penalty so far and what another bankruptcy would pay. The HUD card shows **↺n Recovering** for the rest of that round and the next (tooltip: penalty so far, next recovery capital), the turn prompt says *Recovering from bankruptcy*, and the log entry records era, count, capital, penalty and next capital.
 - **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.
   - Former owners can't buy back their own ruins.
-  - Fresh Start capital is paid for the first 2 bankruptcies only.
+  - Recovery capital shrinks with each bankruptcy while the score penalty grows faster, so going bankrupt on purpose never pays; the $500 floor means nobody is stuck at $0.
   - Bankruptcy always ends distress, so a turn can never deadlock.
   - `ownershipProblems(game)` checks that every owner exists and every abandoned block is ownerless.
 
@@ -700,7 +774,12 @@ The ten original sprite sheets stay at the repo root, **unmodified**; `tests/uni
 | `effects.png` | `effects` | Capture/build bursts, event cards, bankruptcy |
 | `title_menu decor.png` | `title` | Logo, skyline, pins, shields |
 
-**Tabletop look:** each block is a paper cut-out lifted off a kraft-paper board. Stacked drop shadows read as cardstock, and developed blocks gain a layer per level. Level 2 adds one street prop and Level 3 a second (trees, lamps, mailboxes, power poles…), placed at the kerb so buildings stay readable. Claimed blocks carry the owner's flag, frame and tint. The board frame is a stack of card sheets.
+**Tabletop look:** each block is a paper cut-out lifted off a kraft-paper board. Stacked drop shadows read as cardstock, and developed blocks gain a layer per level. Blocks grow denser as they level (`blockScene` in `js/art.js`, existing sprites only):
+- **Level 1:** the primary building.
+- **Level 2:** plus two corner props at the kerb (trees, lamps, mailboxes, hydrants, utility poles, planters…).
+- **Level 3:** plus an annex behind the main building (a duplex, café, warehouse, oak, statue or fountain) and a street piece in front (a parked car, van, truck or bike, a bus stop or traffic light), so the lot reads as a dense mini city block. On the smallest phones the street piece is dropped to keep the block readable.
+
+Claimed blocks carry the owner's flag, frame, tint and symbol mark. As a block develops, the tint, frame and flag fade back so the city dominates the ownership overlay; the symbol mark stays at every level for colour-blind players, and every block's spoken label is unchanged. The board frame is a stack of card sheets.
 
 **Readability rules:** props and decor never sit on roads, and nothing floats over the board. The district key sits in a strip under the board, never over it; on short landscape screens the chrome slims down and the key is left out so the board keeps every pixel. Unbuilt roads stay as high-contrast pencil lines, and paved ones keep a thin builder-coloured curb.
 
@@ -731,4 +810,4 @@ screenshots are uploaded as workflow artifacts.
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches.
 
-The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie, a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. A replay run opens a challenge link (setup pre-filled, address bar cleaned, `?debug` kept), checks New Seed/Random/invalid seeds, plays an Urban Chaos city, checks the seed in the pause menu and results, copies the link (and the selectable-text fallback when the clipboard refuses), then Replay Same City with the same moves must roll the identical event sequence, Play Again must deal a new seed, and the link opened plainly must deal the same city. A play-options run (desktop and phone) checks the three title buttons fit above the fold, what each opens (Local Multiplayer all Human; Custom / Mixed a Custom Game with Mixed seats; Play Solo Player 1 Human + three Normal CPUs), then plays a first Solo game: the tutorial counts nine tips and shows the CPU note, the active bot's card glows, the strip states its intent, the board is locked and refuses a click, Pause from the strip stops the bots, Speed up is pressed and saved, and control returns to the human with no leftover highlight. A seat-controller run checks the Solo / Local Friends / Mixed presets (Local Friends by default, with locked all-Human seats as before), CPU difficulty and bot names, the no-Human-seat and Custom seat-count validation, the CPU tags in game and on the results screen, and that the table survives reload + Continue, Play Again and Replay Same City. Three CPU runs play real games: Solo (the bots play themselves with the thinking strip and a refused board click; pause stops them; Speed up and Skip work; a reload mid-bot-turn resumes with no repeated road; the whole city is played out with no handoff screen, and nothing moves after the end), Mixed Human/CPU/Human/CPU (the handoff appears only when a different person takes over, a Hard bot in debt sells its way out, and a person-opened auction gets a sealed bot bid that wins), and a bot opening bidding itself (people may bid, leaving passes, and the bot then finishes its turn). A 3-people + 1-bot run on a phone with reduced motion and haptics checks that handoffs appear only between people (never before or after the bot, except when a different person takes over), that the bot's moves never vibrate the phone, that nothing animates, and that sound stays unlocked around the bot's turn. A start-screen run (desktop and phone) opens a fresh session on the start screen (the right prompt for touch or keyboard, the INSPIRE logo, the downtown street, no sound before a tap), taps through the INSPIRE intro (or Skip) to the main menu with focus on Play Solo and every button on screen, follows the music theme through the menu, a game, the pause menu and Save & Quit, checks a reload skips the start screen, turns Music off in Settings, and fetches the music, video and logo; a keyboard run starts with Enter, skips with Escape and checks the key never presses a menu button. The other runs start as a player already past the start screen this session. An accessibility audit visits every screen and the pause, capture, build and results dialogs with reduced motion on: every visible control must have an accessible name, every rendered `aria-labelledby`/`aria-describedby`/`for` reference must resolve, ids must be unique, open dialogs must be labelled, and nothing may be animating; the in-app Reduce Motion setting must also stop all animation and persist. It uses a local `playwright` install if there is one and otherwise falls back to a global install.
+The smoke test runs the whole flow through the real UI: title → how to play → settings persistence → setup → keyboard navigation → rotation and handoff → inert completed roads → capture and bonus-road chains → Leave Vacant, build and upgrade → income feedback → complete city → progressive results → rematch → save/restore → confirmed abandon. It does this at desktop, laptop, tablet, phone and phone-landscape sizes, plus a staged four-way tie played through the City era with End Turn (era chip, prompt, no Pave Road), a City-era hostile takeover (Expansion refuses it; price, pressure vs control, one per turn), a hi-DPI phone art check (WebP loaded, 9-slice frames, road/junction tiles, progression props, no collapsed sprites), distress → recovery → bankruptcy (recovery capital, penalty, the Recovering chip and prompt) → contested redevelopment, a seeded Fire footprint, district bonuses, touch confirmation/cancellation, animation/reduced-motion paths, and audio (no AudioContext before a gesture, volume sliders and persistence, ambience only in game and ducked by pause, the top-bar mute, a capture chain, and the sound settings on a phone), and touch: every haptic pattern on a phone (recorded from `navigator.vibrate`), the tap-through guard, the Haptics setting and its persistence, touch-target sizes in portrait and rotated landscape, desktop without haptics, and a touchscreen laptop where finger taps preview but mouse clicks pave. Two tutorial runs play a first game through all eight tips in context (without dismissing most of them, proving they never block play) and check that completion persists; and skip → reload → no tips, then Replay Tutorial from How To Play (next game) and from Settings (current game). The other tests start as returning players with the tutorial finished. A rule-preset run checks the setup descriptions, Urban Chaos with a Custom 3-player table (mode shown in game, pause and results; an event in round 2; kept by reload/Continue and Play Again), and Classic (no events or calm-round notes). A career run checks that a debug-staged ending records nothing, that a Classic match played to the end through the game's own controls records stats and awards Ribbon Cutting, Mayor of the Year and Purist (shown on the results screen and the Statistics screen, surviving a reload), and that corrupt stored data shows a fresh record with the old data kept aside. A strategic-information run checks the forecast lines, tooltip and compare table during a Housing Boom with a district bonus to gain, then builds and upgrades for real and confirms cost, net per turn, City Value and income matched the forecast, plus the inspector's details. A replay run opens a challenge link (setup pre-filled, address bar cleaned, `?debug` kept), checks New Seed/Random/invalid seeds, plays an Urban Chaos city, checks the seed in the pause menu and results, copies the link (and the selectable-text fallback when the clipboard refuses), then Replay Same City with the same moves must roll the identical event sequence, Play Again must deal a new seed, and the link opened plainly must deal the same city. A play-options run (desktop and phone) checks the three title buttons fit above the fold, what each opens (Local Multiplayer all Human; Custom / Mixed a Custom Game with Mixed seats; Play Solo Player 1 Human + three Normal CPUs), then plays a first Solo game: the tutorial counts nine tips and shows the CPU note, the active bot's card glows, the strip states its intent, the board is locked and refuses a click, Pause from the strip stops the bots, Speed up is pressed and saved, and control returns to the human with no leftover highlight. A seat-controller run checks the Solo / Local Friends / Mixed presets (Local Friends by default, with locked all-Human seats as before), CPU difficulty and bot names, the no-Human-seat and Custom seat-count validation, the CPU tags in game and on the results screen, and that the table survives reload + Continue, Play Again and Replay Same City. Three CPU runs play real games: Solo (the bots play themselves with the thinking strip and a refused board click; pause stops them; Speed up and Skip work; a reload mid-bot-turn resumes with no repeated road; the whole city is played out with no handoff screen, and nothing moves after the end), Mixed Human/CPU/Human/CPU (the handoff appears only when a different person takes over, a Hard bot in debt sells its way out, and a person-opened auction gets a sealed bot bid that wins), and a bot opening bidding itself (people may bid, leaving passes, and the bot then finishes its turn). A 3-people + 1-bot run on a phone with reduced motion and haptics checks that handoffs appear only between people (never before or after the bot, except when a different person takes over), that the bot's moves never vibrate the phone, that nothing animates, and that sound stays unlocked around the bot's turn. A start-screen run (desktop and phone) opens a fresh session on the start screen (the right prompt for touch or keyboard, the INSPIRE logo, the downtown street, no sound before a tap), taps through the INSPIRE intro (or Skip) to the main menu with focus on Play Solo and every button on screen, follows the music theme through the menu, a game, the pause menu and Save & Quit, checks a reload skips the start screen, turns Music off in Settings, and fetches the music, video and logo; a keyboard run starts with Enter, skips with Escape and checks the key never presses a menu button. The other runs start as a player already past the start screen this session. An accessibility audit visits every screen and the pause, capture, build and results dialogs with reduced motion on: every visible control must have an accessible name, every rendered `aria-labelledby`/`aria-describedby`/`for` reference must resolve, ids must be unique, open dialogs must be labelled, and nothing may be animating; the in-app Reduce Motion setting must also stop all animation and persist. It uses a local `playwright` install if there is one and otherwise falls back to a global install.

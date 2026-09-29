@@ -42,6 +42,20 @@
   font-variant-numeric: tabular-nums;
 }
 .round-badge__roads-icon { width: 18px; }
+/* Era chip: "Expansion", then "City 2/4 · 1 action" (hud.js). */
+.round-badge__era {
+  margin-left: 4px;
+  padding: 1px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 0.8em;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: var(--paper-edge);
+  font-variant-numeric: tabular-nums;
+}
+.round-badge__era[data-era='city'] { color: var(--ink); background: var(--gold); }
+.round-badge__era.is-spent { opacity: 0.75; }
 
 .turn-banner {
   --player: var(--steel);
@@ -452,8 +466,28 @@
   width: auto;
   filter: drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.35));
 }
-.block__prop--0 { left: -5%; }
-.block__prop--1 { right: -5%; }
+/* Scene slots (js/art.js blockScene): Level 2 corner props; Level 3 adds an annex behind the
+   main building and a street piece at the kerb, so the lot reads as a dense mini city block. */
+.block__prop--corner-left { left: -5%; }
+.block__prop--corner-right { right: -5%; }
+.block__prop--annex {
+  z-index: 0; /* behind the main building, peeking out on the right */
+  left: auto;
+  right: -3%;
+  top: 8%;
+  bottom: auto;
+  height: 58%;
+  filter: saturate(0.85) drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.3));
+}
+/* The street piece parks on the top kerb, clear of the level badge along the bottom. */
+.block__prop--street { left: 4%; top: -6%; bottom: auto; height: 26%; z-index: 3; }
+/* The city dominates the ownership overlays as it grows (the owner mark stays for every level). */
+.block--developed .block__tint { opacity: 0.16; }
+.block--lv3 .block__tint { opacity: 0.08; }
+.block--developed .block__flag { width: 28%; top: -12%; }
+.block--lv3 .block__flag { width: 22%; }
+.block--lv2 .block__frame { opacity: 0.8; }
+.block--lv3 .block__frame { opacity: 0.6; }
 .block__frame { inset: -2%; width: 104%; height: 104%; opacity: 0.95; }
 .block__seal {
   left: 28%;
@@ -1048,7 +1082,7 @@ html[data-coords='on'] .block__coord { display: block; }
 .block__badge .pip { width: clamp(4px, 0.9cqw, 7px); height: clamp(4px, 0.9cqw, 7px); border-width: 1px; }
 .block--developed .block__building { bottom: 16%; }
 .block--lv2 .block__building { width: 86%; left: 7%; }
-.block--lv3 .block__building { width: 92%; left: 4%; bottom: 14%; }
+.block--lv3 .block__building { width: 74%; left: 2%; bottom: 16%; } /* room for the annex and street piece */
 .block.is-just-built { animation: capture-pop 520ms var(--ease-pop); }
 
 /* ---------- Build / Upgrade panel ---------- */
@@ -1098,6 +1132,23 @@ html[data-coords='on'] .block__coord { display: block; }
   text-transform: none;
   color: var(--ink);
 }
+/* Strategic effects (core/strategy.js): category effect lines, Prestige changes, industry discount. */
+.build-option__effect { font-size: 0.72rem; line-height: 1.2; color: var(--ink-soft); }
+.build-option__prestige { font-size: 0.78rem; font-weight: 900; }
+.build-option__prestige.is-up { color: #2f7a2f; }
+.build-option__prestige.is-down { color: #b0322a; }
+.price__industry { font-size: 0.75rem; font-weight: 700; color: #6a5a2a; }
+.build-panel__effect { margin: 4px 0; font-size: 0.85rem; color: var(--ink-soft); }
+/* Takeover view (core/takeover.js): pressure vs control, price, reason when refused. */
+.takeover__duel { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 8px 0; }
+.takeover__side { display: grid; gap: 2px; margin: 0; padding: 6px 8px; border: 2px solid var(--paper-edge); border-radius: var(--radius-sm); }
+.takeover__side small { color: var(--ink-soft); font-size: 0.75rem; }
+.takeover__vs { font-family: var(--font-display); font-size: 1.6rem; color: var(--ink-soft); }
+.takeover__duel.is-winning .takeover__vs { color: #2f7a2f; }
+.takeover__price { font-size: 0.85rem; margin: 4px 0; }
+.takeover__reason { font-size: 0.9rem; font-weight: 700; color: #b0322a; margin: 4px 0; }
+.build-panel__city-actions { margin-top: 2px; font-size: 0.7rem; color: var(--ink); }
+.build-panel__city-actions.is-spent { color: var(--ink-soft); text-decoration: line-through; }
 .build-panel__hint { font-size: 0.9rem; color: var(--ink-soft); }
 
 .build-panel__grid {
@@ -1496,9 +1547,11 @@ html[data-coords='on'] .block__coord { display: block; }
 }
 .player-card__debt { color: var(--paper-hi); background: var(--red); animation: debt-pulse 1.2s ease-in-out infinite; }
 .player-card__fresh { background: var(--paper-hi); color: var(--ink-soft); }
+.player-card__fresh.is-recovering { background: var(--gold); color: var(--ink); }
 @keyframes debt-pulse { 50% { transform: scale(1.08); } }
 
 .turn-prompt.is-distress { background: #f6d4cf; border-color: var(--red); color: var(--red-deep); }
+#action-end-turn.is-ready { outline: 3px solid var(--gold); outline-offset: 2px; }
 #action-finance { flex: 0 1 200px; animation: debt-pulse 1.2s ease-in-out infinite; }
 
 .board.is-locked .road:not(.is-built) { cursor: not-allowed; }

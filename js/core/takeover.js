@@ -1,0 +1,141 @@
+/**
+ * Hostile redevelopment: taking over a rival's block in the CITY era. Numbers live in
+ * ECONOMY.TAKEOVER (config.js); the strengths (controlStrength, developmentPressure) are pure
+ * reads in core/strategy.js. Abandoned-property auctions stay in core/finance.js; this module
+ * reuses the same money helpers (debit/credit with a ledger reason) and ownership refresh.
+ *
+ * Rules:
+ *   - CITY era, in the attacker's Manage City, never while the attacker is in debt.
+ *   - Only an owned, active rival block, not shielded by a recent takeover.
+ *   - Pressure must be greater than the block's control.
+ *   - Costs one City Action; at most PER_TURN takeovers per player turn.
+ *   - The attacker pays PREMIUM_PERCENT of the block's market value; the defender receives the
+ *     market value; the premium is lost to redevelopment and transaction costs.
+ *   - The development moves with the block. It is then shielded until SHIELD_ROUNDS full rounds
+ *     have passed (the rest of this round and the next one, by default).
+ */
+import { ECONOMY } from '../config.js';
+import { getBlockById } from './board.js';
+import { refreshBonuses } from './bonuses.js';
+import { credit, debit, canAfford, isInDistress, TXN } from './economy.js';
+import {
+  currentPlayer, getPlayer, outOfCityActions, spendCityAction, PHASES, TURN_PHASES, ERAS,
+} from './game.js';
+import { controlStrength, developmentPressure } from './strategy.js';
+
+const T = ECONOMY.TAKEOVER;
+
+export const TAKEOVER_ERRORS = Object.freeze({
+  GAME_OVER: 'game-over',
+  NO_BLOCK: 'no-such-block',
+  NOT_RIVAL: 'not-rival-block',
+  NOT_CITY_ERA: 'not-city-era',
+  WRONG_PHASE: 'wrong-turn-phase',
+  IN_DISTRESS: 'in-distress',
+  ONE_PER_TURN: 'one-takeover-per-turn',
+  SHIELDED: 'recently-taken-over',
+  CONTROL_HOLDS: 'control-holds',
+  NO_ACTIONS: 'no-city-actions',
+  INSUFFICIENT_FUNDS: 'insufficient-funds',
+});
+
+/** Why a takeover isn't possible, in words (build panel, inspector, CPU notes). */
+export const TAKEOVER_REASONS = Object.freeze({
+  [TAKEOVER_ERRORS.GAME_OVER]: 'The game is over.',
+  [TAKEOVER_ERRORS.NO_BLOCK]: 'That block does not exist.',
+  [TAKEOVER_ERRORS.NOT_RIVAL]: 'Only a rival\'s owned block can be taken over.',
+  [TAKEOVER_ERRORS.NOT_CITY_ERA]: 'Takeovers open in the City era, once every road is paved.',
+  [TAKEOVER_ERRORS.WRONG_PHASE]: 'Take over blocks during your City turn.',
+  [TAKEOVER_ERRORS.IN_DISTRESS]: 'Clear your debt before a takeover.',
+  [TAKEOVER_ERRORS.ONE_PER_TURN]: `Only ${T.PER_TURN} takeover per turn.`,
+  [TAKEOVER_ERRORS.SHIELDED]: 'Recently taken over: protected until the next full round is done.',
+  [TAKEOVER_ERRORS.CONTROL_HOLDS]: 'Not enough pressure: your adjacent development must beat the owner\'s control.',
+  [TAKEOVER_ERRORS.NO_ACTIONS]: 'No City Actions left this turn.',
+  [TAKEOVER_ERRORS.INSUFFICIENT_FUNDS]: 'Not enough cash for the takeover.',
+});
+
+const pct = (amount, percent) => Math.round((amount * percent) / 100);
+
+/** True while a block taken over recently can't be taken again. */
+export const isShielded = (game, block) => block.shieldedUntil != null && game.round <= block.shieldedUntil;
+
+/** Takeovers the current player has made this turn. */
+export const takeoversThisTurn = (game) => game.city?.takeovers ?? 0;
+
+/**
+ * Everything about taking `blockId` over for the current player, with the first reason it's
+ * refused: { ok, error?, reason?, blockId, owner, marketValue, premium, cost, pressure,
+ * pressureParts, control, controlParts, shieldedUntil, shortfall }. The figures are filled in
+ * for any rival block, so the UI can show them next to the reason.
+ */
+export function quoteTakeover(game, blockId) {
+  const block = getBlockById(game.board, blockId);
+  const quote = {
+    ok: false, blockId, owner: null, marketValue: 0, premium: 0, cost: 0,
+    pressure: 0, pressureParts: null, control: 0, controlParts: null, shieldedUntil: null, shortfall: 0,
+  };
+  const refuse = (error) => ({ ...quote, error, reason: TAKEOVER_REASONS[error] });
+  if (game.phase !== PHASES.PLAYING) return refuse(TAKEOVER_ERRORS.GAME_OVER);
+  if (!block) return refuse(TAKEOVER_ERRORS.NO_BLOCK);
+  const player = currentPlayer(game);
+  if (block.ownerSeat == null || block.abandoned || block.ownerSeat === player.seat) return refuse(TAKEOVER_ERRORS.NOT_RIVAL);
+
+  const { pressure, parts: pressureParts } = developmentPressure(game.board, player.seat, block);
+  const { control, parts: controlParts } = controlStrength(game.board, block);
+  const marketValue = block.marketValue;
+  const cost = pct(marketValue, T.PREMIUM_PERCENT);
+  Object.assign(quote, {
+    owner: block.ownerSeat, marketValue, cost, premium: cost - marketValue,
+    pressure, pressureParts, control, controlParts, shieldedUntil: block.shieldedUntil ?? null,
+  });
+
+  if (game.era !== ERAS.CITY) return refuse(TAKEOVER_ERRORS.NOT_CITY_ERA);
+  if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return refuse(TAKEOVER_ERRORS.WRONG_PHASE);
+  if (isInDistress(player)) return refuse(TAKEOVER_ERRORS.IN_DISTRESS);
+  if (takeoversThisTurn(game) >= T.PER_TURN) return refuse(TAKEOVER_ERRORS.ONE_PER_TURN);
+  if (isShielded(game, block)) return refuse(TAKEOVER_ERRORS.SHIELDED);
+  if (pressure <= control) return refuse(TAKEOVER_ERRORS.CONTROL_HOLDS);
+  if (outOfCityActions(game)) return refuse(TAKEOVER_ERRORS.NO_ACTIONS);
+  if (!canAfford(player, cost)) return { ...refuse(TAKEOVER_ERRORS.INSUFFICIENT_FUNDS), shortfall: cost - player.cash };
+  return { ...quote, ok: true };
+}
+
+/**
+ * Takes `blockId` over for the current player. Returns the refused quote, or
+ * { ok:true, block, from, cost, marketValue, premium, pressure, control, type, level, shieldedUntil }.
+ */
+export function takeoverBlock(game, blockId) {
+  const quote = quoteTakeover(game, blockId);
+  if (!quote.ok) return quote;
+  const block = getBlockById(game.board, blockId);
+  const attacker = currentPlayer(game);
+  const defender = getPlayer(game, quote.owner);
+  const paid = debit(game, attacker, quote.cost, TXN.TAKEOVER, { block: block.id, from: defender.seat, premium: quote.premium });
+  if (!paid.ok) return { ...quote, ok: false, error: TAKEOVER_ERRORS.INSUFFICIENT_FUNDS, reason: TAKEOVER_REASONS[TAKEOVER_ERRORS.INSUFFICIENT_FUNDS] };
+  credit(game, defender, quote.marketValue, TXN.TAKEOVER, { block: block.id, to: attacker.seat });
+  spendCityAction(game);
+  game.city.takeovers = takeoversThisTurn(game) + 1;
+
+  block.ownerSeat = attacker.seat;
+  block.shieldedUntil = game.round + T.SHIELD_ROUNDS;
+  refreshBonuses(game.board);
+
+  game.lastDevelopment = { block: block.id, seat: attacker.seat, type: block.type, level: block.level, takeover: defender.seat };
+  game.log.push({
+    type: 'takeover', round: game.round, seat: attacker.seat, from: defender.seat, block: block.id, label: block.label,
+    cost: quote.cost, marketValue: quote.marketValue, premium: quote.premium, pressure: quote.pressure, control: quote.control,
+  });
+  return {
+    ok: true, block: block.id, from: defender.seat, cost: quote.cost, marketValue: quote.marketValue, premium: quote.premium,
+    pressure: quote.pressure, control: quote.control, type: block.type, level: block.level, shieldedUntil: block.shieldedUntil,
+  };
+}
+
+/** Rival blocks the current player's pressure beats right now, with their quotes (any may still be refused). */
+export function takeoverCandidates(game) {
+  const me = currentPlayer(game);
+  return game.board.blocks
+    .filter((b) => b.ownerSeat != null && !b.abandoned && b.ownerSeat !== me.seat)
+    .map((b) => quoteTakeover(game, b.id))
+    .filter((q) => q.pressure > q.control);
+}

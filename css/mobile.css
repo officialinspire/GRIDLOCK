@@ -144,6 +144,7 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
   .player-card__name { font-size: 0.72rem; }
   .player-card__stats { grid-template-columns: 1fr 1fr; }
   .stat--cash { grid-column: 1 / -1; }
+  .stat--prestige { display: none; } /* no room in one row of four: see the block inspector */
   .stat dd { font-size: 0.72rem; }
   .stat__icon { width: 11px; }
   .stat { grid-template-columns: 11px auto; }
@@ -152,6 +153,9 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
 /* Narrow phones: drop the roads counter from the badge so the turn banner fits. */
 @media (max-width: 440px) {
   .round-badge__roads { display: none; }
+  /* Small boards: keep the building and corners readable; drop the Level 3 street piece. */
+  .block__prop--street { display: none; }
+  .round-badge__era { margin-left: 0; padding: 0 6px; font-size: 0.75em; }
 }
 
 /* ---------- Block details bottom sheet (compact layouts) ---------- */

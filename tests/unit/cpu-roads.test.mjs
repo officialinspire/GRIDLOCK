@@ -204,9 +204,12 @@ test('no decision when no road can be paved', () => {
 
 /* ---------------- whole games ---------------- */
 
-/** CPU against CPU: every seat plays chooseRoad's road through placeRoad. */
+/**
+ * CPU against CPU: every seat plays chooseRoad's road through placeRoad. Roads only, so the match
+ * ends on the final road (no CITY era).
+ */
 function cpuGame(difficulties, seed) {
-  const game = createGame({ seats: difficulties.map((difficulty, i) => ({ seat: i + 1, controller: 'cpu', difficulty })), seed, mode: 'classic' });
+  const game = createGame({ seats: difficulties.map((difficulty, i) => ({ seat: i + 1, controller: 'cpu', difficulty })), seed, mode: 'classic', cityRounds: 0 });
   let moves = 0;
   while (game.phase === 'playing') {
     assert.ok(++moves < 500, 'game finishes');

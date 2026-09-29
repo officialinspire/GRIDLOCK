@@ -9,8 +9,9 @@ import {
   blockIncome, calculateIncome, propertyValue, netWorth, MONEY_ERRORS, TXN,
 } from '../../js/core/economy.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, playerStats, PHASES,
+  createGame, placeRoad, currentPlayer, getPlayer, playerStats, ERAS,
 } from '../../js/core/game.js';
+import { playOutCity } from './_city.mjs';
 
 // Event-free games: these tests pin exact income flows (events have their own suite).
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), eventPool: [] });
@@ -31,8 +32,8 @@ test('economy constants are centralized and sane', () => {
   assert.equal(ECONOMY.CAPTURE_REWARD, 500);
   assert.equal(ECONOMY.UNDEVELOPED_INCOME, 0);
   assert.ok(Object.isFrozen(ECONOMY));
-  assert.ok(ECONOMY.SCORING.INVESTED_BUILDING > 0 && ECONOMY.SCORING.INVESTED_BUILDING < 1,
-    'development retains score value without being an automatic dollar-for-dollar conversion');
+  assert.deepEqual({ ...ECONOMY.SCORING }, { CASH: 1, LAND: 0.7, INVESTED_BUILDING: 1, PRESTIGE: 150 },
+    'development counts in full, land is discounted, Prestige has a dollar value');
   for (const v of [ECONOMY.STARTING_CASH, ECONOMY.CAPTURE_REWARD, ...Object.values(ECONOMY.LAND_VALUE)]) {
     assert.ok(isValidAmount(v), `bad constant ${v}`);
   }
@@ -48,7 +49,8 @@ test('every player starts with $12,000', () => {
   assert.deepEqual(game.players.map((p) => p.cash), [12000, 12000, 12000, 12000]);
   assert.deepEqual(playerStats(game, game.players[0]), {
     cash: 12000, blocks: 0, income: 0, normalIncome: 0, eventDelta: 0, upkeep: 0, distress: false, bankruptcies: 0,
-    bonus: 0, property: 0, netWorth: 12000,
+    bonus: 0, property: 0, netWorth: 12000, prestige: 0,
+    bankruptcyPenalty: 0, nextRecoveryCapital: ECONOMY.FINANCE.RECOVERY.CAPITAL, recovering: false,
   });
 });
 
@@ -241,7 +243,7 @@ test('full 4-player games keep every balance valid and reconcile with the ledger
     // Develop a few blocks mid-game so turn income flows too.
     const pool = allRoadIds(game.board);
     let developed = false;
-    while (game.phase === PHASES.PLAYING) {
+    while (game.era === ERAS.EXPANSION) {
       // Once someone has captured a block, put a building on it so turn income flows.
       const owned = !developed && game.board.blocks.find((b) => b.ownerSeat != null);
       if (owned) { applyDevelopment(owned, 'industrial', 3); developed = true; }
@@ -249,6 +251,8 @@ test('full 4-player games keep every balance valid and reconcile with the ledger
       assert.equal(placeRoad(game, id).ok, true);
       for (const p of game.players) assert.ok(isValidAmount(p.cash), `seat ${p.seat} cash ${p.cash}`);
     }
+    playOutCity(game);
+    for (const p of game.players) assert.ok(isValidAmount(p.cash), `seat ${p.seat} cash ${p.cash}`);
     assert.ok(game.ledger.some((e) => e.reason === TXN.TURN_INCOME), 'turn income was exercised');
     for (const p of game.players) {
       const fromLedger = game.ledger.filter((e) => e.seat === p.seat).reduce((n, e) => n + e.delta, 0);

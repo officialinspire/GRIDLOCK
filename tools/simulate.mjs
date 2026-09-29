@@ -3,7 +3,8 @@
  * Deterministic balance simulator: plays hundreds of complete games through the real
  * rules engine (js/core) with scripted mayors, then reports game length, bankruptcies,
  * what gets built, final cash / City Value spread, city events, seat-order bias and
- * capture chains.
+ * capture chains. Games run to the real end: the EXPANSION era's roads, then the CITY era's
+ * rounds (City Actions only; each mayor ends its City turn when done investing).
  *
  *   npm run simulate -- [--games 600] [--seed 1] [--mode standard|classic|chaos|all] [--json]
  *
@@ -21,7 +22,9 @@
  *   spender   the planner's roads; spends every dollar on the highest-income build or
  *             upgrade it can afford, with no reserve (can distress and bankruptcy happen?)
  */
-import { createGame, placeRoad, currentPlayer, resolveCapture, TURN_PHASES, PHASES } from '../js/core/game.js';
+import {
+  createGame, placeRoad, currentPlayer, resolveCapture, endCityTurn, cityTurnsLeft, TURN_PHASES, PHASES, ERAS,
+} from '../js/core/game.js';
 import { blocksOwnedBy, allRoadIds, roadBlocks, blockRoadIds, totalRoads } from '../js/core/board.js';
 import { buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL } from '../js/core/development.js';
 import { distressStatus, declareBankruptcy, downgradeBlock } from '../js/core/finance.js';
@@ -102,6 +105,8 @@ function chooseRoad(game, persona, rand) {
  * the safe roads, since each one tends to spoil another) plus one per chain, per mayor.
  */
 function turnsLeft(game) {
+  const city = cityTurnsLeft(game);
+  if (city != null) return city; // CITY era: known exactly
   const { board } = game;
   const free = allRoadIds(board).filter((id) => !(id in board.roads));
   const safe = safeRoads(board, free).length;
@@ -192,9 +197,6 @@ export function playGame({ seed, mode, personas }) {
     const me = currentPlayer(game);
     const persona = personaOf(me.seat);
     if (me.cash < 0) { resolveDistress(game); continue; }
-    if (game.turnPhase === TURN_PHASES.MANAGE_CITY) {
-      invest(game, persona, rand, blocksOwnedBy(game.board, me.seat).map((b) => b.id));
-    }
     if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP) {
       while (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures.length) {
         const id = game.pendingCaptures[0];
@@ -202,7 +204,11 @@ export function playGame({ seed, mode, personas }) {
         if (game.pendingCaptures[0] === id) resolveCapture(game, id);
       }
     }
-    const result = placeRoad(game, chooseRoad(game, persona, rand));
+    // (After the final road's captures, the CITY era carries on straight into Manage City.)
+    if (game.turnPhase === TURN_PHASES.MANAGE_CITY) {
+      invest(game, persona, rand, blocksOwnedBy(game.board, me.seat).map((b) => b.id));
+    }
+    const result = game.era === ERAS.CITY ? endCityTurn(game) : placeRoad(game, chooseRoad(game, persona, rand));
     if (!result.ok) throw new Error(`seed ${seed}: move refused (${result.error})`);
   }
   return game;

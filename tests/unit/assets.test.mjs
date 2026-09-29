@@ -5,7 +5,7 @@ import { readFile, access } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { SHEETS, getSpriteRect, parseSpriteRef, sheetSlug, GENERATED_DIR } from '../../js/assets.js';
-import { ART, allArtRefs, progressionProps } from '../../js/art.js';
+import { ART, allArtRefs, progressionProps, blockScene, SCENE_SLOTS } from '../../js/art.js';
 import { CATEGORY_ORDER, levelArt } from '../../js/core/buildings.js';
 import { CITY_EVENTS } from '../../js/config.js';
 import { SHEET_FILES, UI_CUTS, slug } from '../../tools/build-assets.mjs';
@@ -84,12 +84,19 @@ test('every city event has a lightweight board treatment', () => {
   for (const event of CITY_EVENTS.POOL) assert.ok(ART.event[event.id].length > 0, event.id);
 });
 
-test('visual progression adds props with level; buildings exist for every level', () => {
+test('visual progression: L1 building only, L2 corner props, L3 a dense mini-block', () => {
   for (const type of CATEGORY_ORDER) {
-    assert.deepEqual(progressionProps(type, 1), []);
-    assert.equal(progressionProps(type, 2).length, 1);
-    assert.equal(progressionProps(type, 3).length, 2);
+    assert.deepEqual(blockScene(type, 1), [], `${type}: the primary structure alone`);
+    assert.deepEqual(blockScene(type, 2).map((p) => p.slot), ['corner-left', 'corner-right']);
+    assert.deepEqual(blockScene(type, 3).map((p) => p.slot), ['annex', 'corner-left', 'corner-right', 'street']);
+    assert.deepEqual(blockScene(type, 2).map((p) => p.ref), blockScene(type, 3).slice(1, 3).map((p) => p.ref), 'each level adds to the last');
+    assert.deepEqual(progressionProps(type, 3), blockScene(type, 3).map((p) => p.ref));
+    for (const { ref, slot } of blockScene(type, 3)) {
+      assert.ok(SCENE_SLOTS.includes(slot));
+      assert.ok(getSpriteRect(...parseSpriteRef(ref)), `${type}: ${ref} is a real sprite`);
+    }
+    assert.equal(new Set(blockScene(type, 3).map((p) => p.ref)).size, 4, `${type}: four different pieces`);
     for (let lv = 1; lv <= 3; lv++) assert.ok(levelArt(type, lv));
   }
-  assert.deepEqual(progressionProps('vacant', 3), []);
+  assert.deepEqual(blockScene('vacant', 3), []);
 });

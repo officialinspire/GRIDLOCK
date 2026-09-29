@@ -13,6 +13,8 @@
 import { ECONOMY, GAME_MODES } from '../config.js';
 import { CATEGORY_ORDER } from './buildings.js';
 import { allRoadIds, totalRoads } from './board.js';
+import { components, BONUS } from './bonuses.js';
+import { controlStrength } from './strategy.js';
 import { isCpu } from './seats.js';
 
 export const CAREER_KEY = 'gridlock.career.v1';
@@ -20,6 +22,18 @@ export const CAREER_BACKUP_KEY = 'gridlock.career.corrupt';
 export const CAREER_VERSION = 1;
 const MAX_MAYORS = 60;
 const MAX_RECENT = 25;
+
+/** Thresholds for the strategy badges below. */
+export const GOALS = Object.freeze({
+  FORTRESS_BLOCKS: 5,
+  FORTRESS_CONTROL: 4,
+  FACTORIES: 3,
+  SHELTERED: 6,
+  PARK_NETWORK: 4,
+  INCOME: 4000,
+  PRESTIGE: 20,
+  LEVELS: 20,
+});
 
 /**
  * Achievements: `test(player, match, career)` runs for each mayor after a match
@@ -38,6 +52,19 @@ export const ACHIEVEMENTS = Object.freeze([
   { id: 'purist', name: 'Purist', text: 'Win a Classic match.', icon: 'icons:crown', test: (p, m) => p.won && m.mode === 'classic' },
   { id: 'photo-finish', name: 'Photo Finish', text: 'Share first place in a tie.', icon: 'icons:swap', test: (p, m) => p.won && m.tie },
   { id: 'veteran', name: 'Veteran Mayor', text: 'Complete 10 matches on this device.', icon: 'title:shield', test: (p, m, c) => c.totals.matches >= 10 },
+  // City-era, development and strategy badges (facts from summarizeMatch; thresholds in GOALS).
+  { id: 'hostile-bid', name: 'Hostile Bid', text: 'Make your first hostile takeover.', icon: 'icons:swap', test: (p) => p.takeovers >= 1 },
+  { id: 'fortress', name: 'Fortress City', text: `End the City era with ${GOALS.FORTRESS_BLOCKS}+ blocks at control ${GOALS.FORTRESS_CONTROL}+, none lost.`, icon: 'title:shield', test: (p, m) => m.cityEra && p.takeoversLost === 0 && p.blocks >= GOALS.FORTRESS_BLOCKS && p.minControl >= GOALS.FORTRESS_CONTROL },
+  { id: 'mixed-use', name: 'Mixed Use', text: 'Finish with a mixed-use cluster.', icon: 'icons:home', test: (p) => p.mixedUse },
+  { id: 'full-palette', name: 'Full Palette', text: 'Finish with all six building types.', icon: 'icons:star', test: (p) => p.categoryTypes >= CATEGORY_ORDER.length },
+  { id: 'heavy-industry', name: 'Heavy Industry', text: `Finish with ${GOALS.FACTORIES} Level 3 Industrial blocks.`, icon: 'icons:gear', test: (p) => p.industrialL3 >= GOALS.FACTORIES },
+  { id: 'safe-streets', name: 'Safe Streets', text: `Finish with ${GOALS.SHELTERED}+ blocks under civic protection.`, icon: 'icons:building', test: (p) => p.sheltered >= GOALS.SHELTERED },
+  { id: 'green-belt', name: 'Green Belt', text: `Finish with ${GOALS.PARK_NETWORK} connected parks.`, icon: 'icons:tree', test: (p) => p.parkNetwork >= GOALS.PARK_NETWORK },
+  { id: 'district-boss', name: 'District Boss', text: 'Own every block of a district.', icon: 'icons:map', test: (p) => p.fullDistrict },
+  { id: 'cash-machine', name: 'Cash Machine', text: `Finish earning $${GOALS.INCOME.toLocaleString('en-US')}+ per turn.`, icon: 'icons:coins', test: (p) => p.income >= GOALS.INCOME },
+  { id: 'balanced-budget', name: 'Balanced Budget', text: 'Win without ever falling into debt.', icon: 'icons:save', test: (p) => p.won && p.neverInDebt },
+  { id: 'toast-of-the-town', name: 'Toast of the Town', text: `Finish with ${GOALS.PRESTIGE}+ Prestige.`, icon: 'icons:crown', test: (p) => p.prestige >= GOALS.PRESTIGE },
+  { id: 'metropolis', name: 'Metropolis', text: `Finish with ${GOALS.LEVELS}+ development levels.`, icon: 'title:skyline', test: (p) => p.totalLevels >= GOALS.LEVELS },
 ]);
 
 export function emptyCareer() {
@@ -173,6 +200,37 @@ function chainsBySeat(log) {
   return best;
 }
 
+/**
+ * A mayor's end-of-match city, read from the frozen board, log and ledger (deterministic):
+ * takeovers made/lost, mixed-use, building types, Level 3 factories, civic shelter, the largest
+ * park network, a whole district, income, Prestige, levels, the weakest control, and whether
+ * the mayor's balance was ever below $0.
+ */
+function boardFacts(game, row) {
+  const { board } = game;
+  const seat = row.seat;
+  const owned = board.blocks.filter((b) => b.ownerSeat === seat && !b.abandoned);
+  const developed = owned.filter((b) => b.level > 0 && b.type !== 'vacant');
+  const parks = components(board, (b) => b.ownerSeat === seat && !b.abandoned && b.level > 0 && b.type === 'park');
+  const districts = new Map();
+  for (const b of board.blocks) districts.set(b.district, [...(districts.get(b.district) ?? []), b]);
+  return {
+    takeovers: game.log.filter((e) => e.type === 'takeover' && e.seat === seat).length,
+    takeoversLost: game.log.filter((e) => e.type === 'takeover' && e.from === seat).length,
+    mixedUse: developed.some((b) => (b.bonuses ?? []).some((x) => x.id === BONUS.MIXED_USE)),
+    categoryTypes: new Set(developed.map((b) => b.type)).size,
+    industrialL3: developed.filter((b) => b.type === 'industrial' && b.level === 3).length,
+    sheltered: owned.filter((b) => (b.protectedBy ?? []).length > 0).length,
+    parkNetwork: Math.max(0, ...parks.map((group) => group.length)),
+    fullDistrict: [...districts.values()].some((blocks) => blocks.every((b) => b.ownerSeat === seat && !b.abandoned)),
+    income: row.income,
+    prestige: row.prestige,
+    totalLevels: row.totalLevels,
+    minControl: owned.length ? Math.min(...owned.map((b) => controlStrength(board, b).control)) : 0,
+    neverInDebt: game.ledger.every((e) => e.seat !== seat || e.balance >= 0),
+  };
+}
+
 /** Facts about a finished match that stats and achievements are computed from. */
 export function summarizeMatch(game) {
   const chains = chainsBySeat(game.log);
@@ -194,12 +252,14 @@ export function summarizeMatch(game) {
       maxLevel: Math.max(0, ...[...builds, ...mine('upgrade')].map((e) => e.level)),
       categories: builds.reduce((acc, e) => ({ ...acc, [e.category]: (acc[e.category] ?? 0) + 1 }), {}),
       bankruptcies: row.bankruptcies,
+      ...boardFacts(game, row),
     };
   });
   return {
     id: `${game.seed}:${game.mode ?? 'standard'}:${game.round}:${game.ledger.length}:${game.results.rows.map((r) => r.cityValue).join('/')}`,
     mode: game.mode ?? 'standard',
     tie: winners.size > 1,
+    cityEra: game.era === 'city',
     eventsSurvived: game.events.history.length,
     players,
   };

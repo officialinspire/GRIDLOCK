@@ -10,7 +10,10 @@ import { VACANT, CATEGORY_ORDER, getCategory } from './buildings.js';
 import { debit, canAfford, TXN, isValidAmount } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
 import { adjustedCost } from './events.js';
-import { currentPlayer, PHASES, TURN_PHASES } from './game.js';
+import { industryDiscount as industryDiscountFor } from './strategy.js';
+import {
+  currentPlayer, PHASES, TURN_PHASES, outOfCityActions, spendCityAction,
+} from './game.js';
 
 const DEV = ECONOMY.DEVELOPMENT;
 export const MAX_LEVEL = DEV.MAX_LEVEL;
@@ -25,6 +28,7 @@ export const DEV_ERRORS = Object.freeze({
   MAX_LEVEL: 'max-level',
   INSUFFICIENT_FUNDS: 'insufficient-funds',
   WRONG_PHASE: 'wrong-turn-phase',
+  NO_ACTIONS: 'no-city-actions', // CITY era: this turn's City Actions are spent
 });
 
 /* ---------------- derived tables ---------------- */
@@ -108,6 +112,18 @@ function baseCheck(game, block) {
 }
 
 /**
+ * The price of a build/upgrade: the list price with active city events applied (eventCost),
+ * then the builder's industrial discount (core/strategy.js) when an own Industrial block is
+ * adjacent. Returns { cost, actualCost, eventCost, industryDiscount }.
+ */
+function constructionPrice(game, block, type, listCost, seat) {
+  const eventCost = adjustedCost(game, type, listCost); // active city events can change prices
+  const industryDiscount = industryDiscountFor(game.board, seat, block);
+  const cost = industryDiscount ? Math.round((eventCost * (100 - industryDiscount)) / 100) : eventCost;
+  return { cost, actualCost: cost, eventCost, industryDiscount };
+}
+
+/**
  * What building `type` on a vacant block would cost and pay.
  * Returns { ok, error?, type, level: 1, cost, income, incomeGain, shortfall }.
  */
@@ -121,8 +137,11 @@ export function quoteBuild(game, blockId, type) {
 
   const next = TABLE[type][1];
   const player = currentPlayer(game);
-  const cost = adjustedCost(game, type, next.cost); // active city events can change prices
-  Object.assign(quote, { cost, actualCost: cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  const price = constructionPrice(game, block, type, next.cost, player.seat);
+  Object.assign(quote, { ...price, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  const { cost } = price;
+  // Priced first so the panel can still show what it would cost next turn.
+  if (outOfCityActions(game)) return { ...quote, error: DEV_ERRORS.NO_ACTIONS };
   if (!canAfford(player, cost)) {
     return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
@@ -140,8 +159,11 @@ export function quoteUpgrade(game, blockId) {
 
   const next = TABLE[block.type][block.level + 1];
   const player = currentPlayer(game);
-  const cost = adjustedCost(game, block.type, next.cost);
-  Object.assign(quote, { cost, actualCost: cost, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  const price = constructionPrice(game, block, block.type, next.cost, player.seat);
+  Object.assign(quote, { ...price, baseCost: next.cost, income: next.income, incomeGain: next.income - block.income });
+  const { cost } = price;
+  // Priced first so the panel can still show what it would cost next turn.
+  if (outOfCityActions(game)) return { ...quote, error: DEV_ERRORS.NO_ACTIONS };
   if (!canAfford(player, cost)) {
     return { ...quote, error: DEV_ERRORS.INSUFFICIENT_FUNDS, shortfall: cost - player.cash };
   }
@@ -160,6 +182,7 @@ function commit(game, block, quote, reason) {
     constructionCosts: [...(block.constructionCosts ?? []), quote.actualCost],
   });
   refreshBonuses(game.board); // development changed
+  spendCityAction(game); // CITY era Manage City only
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, fromLevel };
   game.log.push({ type: reason, seat: player.seat, block: block.id, category: quote.type, level: quote.level, cost: quote.cost });
   return { ok: true, block: block.id, type: block.type, level: block.level, cost: quote.cost, income: block.income, value: block.value };

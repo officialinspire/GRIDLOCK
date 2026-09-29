@@ -1,8 +1,8 @@
 /** Versioned, defensive persistence for an active local match. UI-only state is never saved. */
 import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, ECONOMY } from '../config.js';
 import { EVENT_POOL } from './events.js';
-import { PHASES, TURN_PHASES } from './game.js';
-import { DISTRICTS, blockId, isValidRoad } from './board.js';
+import { PHASES, TURN_PHASES, ERAS, createCityState } from './game.js';
+import { DISTRICTS, blockId, isValidRoad, totalRoads } from './board.js';
 import { CATEGORY_ORDER } from './buildings.js';
 import { refreshBonuses } from './bonuses.js';
 import { getMode, resolveRules } from './modes.js';
@@ -52,7 +52,26 @@ function validBlock(block) {
     && block.constructionCosts.every((cost) => integer(cost) && cost >= 0)
     && block.constructionCosts.reduce((sum, cost) => sum + cost, 0) === block.investedCostBasis
     && block.value === block.price + block.investedCostBasis
-    && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0);
+    && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0)
+    && (block.shieldedUntil == null || integer(block.shieldedUntil));
+}
+
+/**
+ * Era state: EXPANSION until every road is paved, then CITY with a consistent round window and
+ * no more City Actions than a turn grants.
+ */
+function validEra(game) {
+  const { city } = game;
+  if (!plainObject(city) || !integer(city.rounds) || city.rounds < 0
+    || !integer(city.actionsPerTurn) || city.actionsPerTurn < 1) return false;
+  const complete = Object.keys(game.board.roads).length === totalRoads(game.board);
+  if (game.era === ERAS.EXPANSION) return !complete;
+  if (game.era !== ERAS.CITY || !complete || city.rounds < 1) return false;
+  return integer(city.startRound) && integer(city.endRound) && integer(city.actionsLeft)
+    && integer(city.takeovers) && city.takeovers >= 0
+    && city.endRound === city.startRound + city.rounds - 1 && game.round >= city.startRound - 1 && game.round <= city.endRound
+    && city.actionsLeft >= 0 && city.actionsLeft <= city.actionsPerTurn
+    && game.turnPhase !== TURN_PHASES.PAVE_ROAD && game.turnPhase !== TURN_PHASES.BONUS_ROAD;
 }
 
 /** A saved rules snapshot must have the shape the event engine reads. */
@@ -73,6 +92,7 @@ function validGame(game) {
       || seats.has(player.seat) || !integer(player.cash) || typeof player.name !== 'string'
       || typeof player.color !== 'string' || typeof player.symbol !== 'string' || typeof player.hex !== 'string'
       || !integer(player.bankruptcies) || !integer(player.lastEconomicRound)
+      || (player.lastBankruptcyRound != null && !integer(player.lastBankruptcyRound))
       || !controllerOf(player)) return false;
     seats.add(player.seat);
   }
@@ -82,6 +102,7 @@ function validGame(game) {
   if (!integer(game.round) || game.round < 1 || !integer(game.turnIndex)
     || game.turnIndex < 0 || game.turnIndex >= game.players.length) return false;
   if (!Object.values(TURN_PHASES).includes(game.turnPhase) || !Array.isArray(game.pendingCaptures)) return false;
+  if (!validEra(game)) return false;
   if (!plainObject(game.events) || !Array.isArray(game.events.active) || !Array.isArray(game.events.history)
     || !Array.isArray(game.events.repairs) || !integer(game.events.nextUid)) return false;
   const blockIds = new Set(game.board.blocks.map((block) => block.id));
@@ -163,6 +184,21 @@ export function loadActiveGame(storage = globalThis.localStorage) {
       for (const player of migrated.game.players) {
         if (plainObject(player) && player.controller === undefined) Object.assign(player, { controller: 'human', difficulty: null });
       }
+    }
+    // Saves from before the CITY era existed are always mid-EXPANSION (the match used to end
+    // on the final road), so they continue with this build's City rules.
+    if (plainObject(migrated?.game) && migrated.game.era === undefined) {
+      migrated.game.era = ERAS.EXPANSION;
+      migrated.game.city = createCityState();
+    }
+    // Saves from before takeovers: nobody has taken one this turn.
+    if (plainObject(migrated?.game?.city) && migrated.game.city.takeovers === undefined) migrated.game.city.takeovers = 0;
+    // Saves from before takeover shields and recovery tracking: nothing shielded, no recent bankruptcy.
+    if (Array.isArray(migrated?.game?.board?.blocks)) {
+      for (const block of migrated.game.board.blocks) if (plainObject(block) && block.shieldedUntil === undefined) block.shieldedUntil = null;
+    }
+    if (Array.isArray(migrated?.game?.players)) {
+      for (const player of migrated.game.players) if (plainObject(player) && player.lastBankruptcyRound === undefined) player.lastBankruptcyRound = null;
     }
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.
