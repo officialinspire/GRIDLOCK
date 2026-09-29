@@ -373,16 +373,28 @@ Each category also has a strategic role, computed by `js/core/strategy.js` from 
 
 | Category | Effect (defaults) |
 | --- | --- |
-| Residential | **Control**: +1 per level to itself and nearby own blocks |
-| Commercial | **Pressure**: +1 per level on nearby rival blocks (takeovers) |
+| Residential | Takeover **defence**: +1 control per level to itself and nearby own blocks |
+| Commercial | Extra takeover **pressure**: +2 per level on adjacent rival blocks |
 | Park | **Prestige** +1 per level; +1 Prestige to each adjacent own block (max 2 parks count); +15% income for adjacent homes |
-| Civic | Prestige +1 per level; control +1 per level nearby; event protection as before |
+| Civic | Prestige +1 per level; takeover defence +1 per level nearby; event protection as before |
 | Industrial | Top income; builds and upgrades next to your own Industrial block cost **10% less**; **−1 Prestige per level** when next to any Residential, unless an adjacent own Park buffers it |
-| Landmark | Prestige **+3 per level**; control **+2 per level** nearby |
+| Landmark | Prestige **+3 per level**; takeover defence **+2 per level** nearby |
 
 - **Prestige** is summed per player (never below 0) and scores $150 per point. The HUD card, the inspector and the Build panel show it, and every build option shows its Prestige change.
-- **Control** of an owned block = 1 + nearby own Residential/Civic/Landmark levels. **Pressure** by a player = their nearby Commercial levels. In Manage City, a player whose pressure on a rival's block is **greater** than its control can **take it over** (tap it): they pay the owner 110% of the block's value (land + construction spend) and get the block with its buildings. In the CITY era a takeover costs a City Action. CPU mayors (Normal and Hard) take over when the real transaction, run on a copy, pays back over the turns left.
 - `refreshBonuses` stores each block's `prestige`, `prestigeNotes` and `control` for display; scoring and the rules recompute them, so they never go stale.
+
+### Hostile takeovers
+
+In the **CITY era** a mayor can take over a rival's block. The rules are in `js/core/takeover.js`; the strengths are pure functions in `js/core/strategy.js`; every number is in `ECONOMY.TAKEOVER` in `js/config.js`. Abandoned-property auctions are a separate system (`js/core/finance.js`).
+
+- **controlStrength** of an owned block = 1 (ownership) + its building level + its owner's Residential / Civic / Landmark levels within 1 block (×1 / ×1 / ×2, itself included) + 1 per owner's developed block across a road from it.
+- **developmentPressure** of a player on a rival block = 1 per their developed block across a road from it, plus 2 per level for each of those that is Commercial.
+- A takeover needs pressure **greater** than control. It is allowed only in the attacker's City-era Manage City, never while they are in debt, costs **one City Action**, and at most **one** happens per player turn.
+- **Price:** the attacker pays **125%** of the block's market value (land + list-price development). The defender receives the market value; the 25% premium is lost to redevelopment and transaction costs.
+- Ownership moves with the development intact. The block is then **protected** until the next full round is done (`shieldedUntil`), so it can't bounce straight back.
+- Each takeover is logged (`{ type: 'takeover', round, seat, from, block, label, cost, marketValue, premium, pressure, control }`) and appears in the ledger as `takeover` for both mayors.
+- **UI:** in the City era, tapping a rival's block opens the takeover view: price and where the money goes, your pressure against its control (with where each comes from), and the reason when it isn't possible. The inspector shows control, protection and your pressure.
+- **CPU:** Normal and Hard mayors run the takeover on a copy and take it only when it returns at least 25% of its price over the turns left (income net of upkeep × turns + City Value change) and leaves the reserve plus two turns of upkeep in hand (`CPU.TAKEOVER`); Easy never tries. In simulated all-CPU games, the takeovers that arose were weak blocks that didn't pay, so bots passed on them.
 
 ### Rule presets
 

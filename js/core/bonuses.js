@@ -18,7 +18,7 @@
  */
 import { ECONOMY } from '../config.js';
 import { neighbors } from './board.js';
-import { blockPrestige, blockControl } from './strategy.js';
+import { blockPrestige, controlStrength } from './strategy.js';
 
 const CFG = ECONOMY.BONUSES;
 
@@ -145,7 +145,7 @@ export function refreshBonuses(board) {
     const prestige = blockPrestige(board, block);
     block.prestige = prestige.points;
     block.prestigeNotes = prestige.notes;
-    block.control = blockControl(board, block).control;
+    block.control = controlStrength(board, block).control;
   }
   return board;
 }

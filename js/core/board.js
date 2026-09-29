@@ -56,6 +56,8 @@ export function createBoard(rows = BOARD_ROWS, cols = BOARD_COLS) {
         prestige: 0,
         prestigeNotes: [],
         control: 0,
+        // Round until which a block taken over (core/takeover.js) can't be taken again.
+        shieldedUntil: null,
         // Set by bankruptcy (core/finance.js): ownerless, development kept but inactive.
         abandoned: false,
         abandonedBy: null,

@@ -2,7 +2,7 @@
  * Compact Build/Upgrade panel for a block the current player owns.
  * Vacant (Level 0): choose a category or Leave Vacant.
  * Developed: upgrade one level (up to MAX_LEVEL) or keep as is.
- * Also: abandoned blocks (redevelopment) and rival blocks your pressure beats (takeover).
+ * Also: abandoned blocks (redevelopment) and, in the City era, rival blocks (takeover).
  * Every option shows its category's strategic effects (core/strategy.js) and Prestige change.
  * All numbers come from core/development.js (which reads ECONOMY.DEVELOPMENT).
  */
@@ -18,7 +18,7 @@ import { formatCash, formatDelta, blockIncome, bonusIncome } from '../core/econo
 import { bonusList } from './bonusView.js';
 import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
-import { currentPlayer, getPlayer, usesCityAction, TURN_PHASES } from '../core/game.js';
+import { currentPlayer, getPlayer, usesCityAction, TURN_PHASES, ERAS } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
 import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
@@ -26,9 +26,9 @@ import { buzz } from './haptics.js';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned,
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES, FIN_ERRORS,
-  quoteTakeover, takeoverBlock,
 } from '../core/finance.js';
-import { CATEGORY_EFFECTS, canPressure } from '../core/strategy.js';
+import { quoteTakeover, takeoverBlock, TAKEOVER_ERRORS } from '../core/takeover.js';
+import { CATEGORY_EFFECTS } from '../core/strategy.js';
 import { ECONOMY } from '../config.js';
 
 let state = { game: null, blockId: null, onChange: () => {}, onLeave: () => {} };
@@ -44,9 +44,7 @@ const ERROR_TEXT = {
   [DEV_ERRORS.WRONG_PHASE]: 'Develop during Manage City, or immediately after capturing this block.',
   // Same code from development.js and finance.js.
   [DEV_ERRORS.NO_ACTIONS]: 'No City Actions left this turn. End your turn to continue.',
-  [FIN_ERRORS.CONTROL_HOLDS]: 'The owner\'s control holds: you need more nearby Commercial pressure.',
   [FIN_ERRORS.IN_DISTRESS]: 'Clear your debt first.',
-  [FIN_ERRORS.NOT_RIVAL]: 'Only a rival\'s block can be taken over.',
 };
 
 /** CITY era: how many City Actions this turn has left (under the cash box). */
@@ -83,7 +81,7 @@ function header(game, block, player) {
           title: 'How much this block adds to your City Value (the final score)',
         }, `Adds ${formatCash(blockContribution(game, block.id))} to City Value`),
         h('span', { class: 'build-panel__prestige', title: 'This block\'s Prestige (each point scores at the end)' }, `Prestige ${block.prestige ?? 0}`),
-        h('span', { class: 'build-panel__control', title: 'Takeover defence: rivals need more nearby Commercial pressure than this' }, `Control ${block.control ?? 0}`),
+        h('span', { class: 'build-panel__control', title: 'Takeover defence in the City era: a rival needs more adjacent pressure than this' }, `Control ${block.control ?? 0}`),
       ),
     ),
     h('div', { class: 'build-panel__cash' },
@@ -256,11 +254,19 @@ function abandonedView(game, block, player) {
   ];
 }
 
-/** A rival's block your Commercial pressure has broken: buy it (development included) from its owner. */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * A rival's block in the CITY era: what a takeover would cost, your pressure against its control
+ * (with where each comes from), and why it's refused when it is (core/takeover.js).
+ */
 function takeoverView(game, block, player) {
   const owner = getPlayer(game, block.ownerSeat);
   const art = levelArt(block.type, block.level);
   const q = quoteTakeover(game, block.id);
+  const cp = q.controlParts;
+  const pp = q.pressureParts;
+  const beats = q.pressure > q.control;
   return [
     h('header', { class: 'build-panel__head' },
       art ? createSprite(art.sprite, { className: 'build-panel__art' }) : createSprite(ART.owner.seal(block.ownerSeat), { className: 'build-panel__art build-panel__art--seal' }),
@@ -268,17 +274,27 @@ function takeoverView(game, block, player) {
         h('h3', { id: 'build-title', class: 'build-panel__title' }, `Block ${block.label} · ${owner.name}'s`),
         h('p', { class: 'build-panel__sub' }, `${DISTRICTS[block.district].label} · ${describeDevelopment(block)}`),
         h('p', { class: 'build-panel__stats' },
-          h('span', {}, `Your pressure ${q.pressure}`), h('span', {}, `Control ${q.control}`),
           h('span', { title: 'This block\'s Prestige, which moves with it' }, `Prestige ${block.prestige ?? 0}`))),
       h('div', { class: 'build-panel__cash' }, h('span', {}, 'Your cash'), h('strong', {}, formatCash(player.cash)), actionsNote(game)),
     ),
-    h('p', { class: 'build-panel__hint' },
-      `Your shops out-pressure ${owner.name} here. Take the block over, buildings and all, for `
-      + `${ECONOMY.STRATEGY.TAKEOVER.pricePercent}% of its value, paid to ${owner.name}.`),
-    q.error === FIN_ERRORS.INSUFFICIENT_FUNDS && h('p', { class: 'price__short' }, `Need ${formatCash(q.shortfall)} more`),
+    h('div', { class: `takeover__duel${beats ? ' is-winning' : ''}` },
+      h('p', { class: 'takeover__side' },
+        h('strong', {}, `Your pressure ${q.pressure}`),
+        h('small', {}, `${plural(pp.adjacent, 'adjacent building')}${pp.commercial ? ` + ${pp.commercial} Commercial` : ''}`)),
+      h('span', { class: 'takeover__vs', 'aria-hidden': 'true' }, beats ? '›' : '≤'),
+      h('p', { class: 'takeover__side' },
+        h('strong', {}, `Control ${q.control}`),
+        h('small', {}, [`${cp.base} ownership`, cp.level && `${cp.level} level`, cp.defence && `${cp.defence} defence`,
+          cp.support && `${cp.support} support`].filter(Boolean).join(' + '))),
+    ),
+    h('p', { class: 'takeover__price' },
+      `Takeover ${formatCash(q.cost)}: ${owner.name} receives the market value ${formatCash(q.marketValue)}; `
+      + `${formatCash(q.premium)} is lost to redevelopment costs. The buildings come with it, protected from takeover until the next full round is done.`),
+    !q.ok && h('p', { class: 'takeover__reason', role: 'note' },
+      q.error === TAKEOVER_ERRORS.INSUFFICIENT_FUNDS ? `Not enough cash: need ${formatCash(q.shortfall)} more.` : q.reason),
     h('div', { class: 'build-panel__actions' },
       h('button', { type: 'button', class: 'btn btn--gold', dataset: { takeover: block.id }, 'aria-disabled': q.ok ? null : 'true' },
-        createSprite('icons:coins', { className: 'btn__icon' }), h('span', {}, `Take over · ${formatCash(q.cost)}`)),
+        createSprite('icons:coins', { className: 'btn__icon' }), h('span', {}, `Take over · ${formatCash(q.cost)} · 1 City Action`)),
       h('button', { type: 'button', class: 'btn', dataset: { action: 'close' } },
         createSprite('icons:undo', { className: 'btn__icon' }), h('span', {}, 'Leave it'))),
   ];
@@ -286,11 +302,13 @@ function takeoverView(game, block, player) {
 
 function handleTakeover(result) {
   if (!result.ok) {
-    refuse(result.error, result.shortfall);
+    buzz('error');
+    toast(result.reason ?? 'You can’t take that block over.', { tone: 'warn', duration: 2200 });
     render();
     return;
   }
-  toast(`Took over the block from ${getPlayer(state.game, result.from).name} · −${formatCash(result.cost)}`, { tone: 'success' });
+  const block = getBlockById(state.game.board, result.block);
+  toast(`Took over ${block.label} from ${getPlayer(state.game, result.from).name} · −${formatCash(result.cost)}`, { tone: 'success' });
   $('#build-dialog').close();
   state.onChange({ ...result, bonusBefore: Infinity });
 }
@@ -387,8 +405,8 @@ function handleAuction(mode) {
 }
 
 /**
- * True if the current player may open the panel: their own block, an abandoned one, or (in
- * Manage City) a rival's block their Commercial pressure beats, to take it over.
+ * True if the current player may open the panel: their own block, an abandoned one, or (in a
+ * City-era Manage City) a rival's block, to see or make a takeover.
  */
 export function canManage(game, blockId) {
   const block = game && getBlockById(game.board, blockId);
@@ -397,7 +415,9 @@ export function canManage(game, blockId) {
     || (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures[0] === block.id);
   if (!legalPhase) return false;
   const seat = currentPlayer(game).seat;
-  if (game.turnPhase === TURN_PHASES.MANAGE_CITY && canPressure(game.board, seat, block)) return true;
+  // City era: any rival block opens the takeover view (with the reason when it can't be taken).
+  if (game.era === ERAS.CITY && game.turnPhase === TURN_PHASES.MANAGE_CITY
+    && block.ownerSeat != null && !block.abandoned && block.ownerSeat !== seat) return true;
   return block.ownerSeat === seat || (block.abandoned && block.ownerSeat == null);
 }
 

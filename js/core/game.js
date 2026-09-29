@@ -51,7 +51,7 @@ export const MOVE_ERRORS = Object.freeze({
 export function createCityState(rounds = CITY_ERA.ROUNDS, actionsPerTurn = CITY_ERA.ACTIONS_PER_TURN) {
   if (!Number.isSafeInteger(rounds) || rounds < 0) throw new RangeError(`Invalid City rounds ${rounds}`);
   if (!Number.isSafeInteger(actionsPerTurn) || actionsPerTurn < 1) throw new RangeError(`Invalid City actions ${actionsPerTurn}`);
-  return { rounds, actionsPerTurn, startRound: null, endRound: null, actionsLeft: 0 };
+  return { rounds, actionsPerTurn, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 };
 }
 
 export function sanitizeName(name, fallback) {
@@ -216,6 +216,7 @@ export function beginTurn(game) {
   game.turnPhase = TURN_PHASES.MANAGE_CITY;
   game.pendingCaptures = [];
   if (game.era === ERAS.CITY) game.city.actionsLeft = game.city.actionsPerTurn;
+  game.city.takeovers = 0; // hostile takeovers this turn (core/takeover.js)
   return game.turnStartIncome;
 }
 

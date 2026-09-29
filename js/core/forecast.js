@@ -13,7 +13,8 @@ import { quoteBuild, quoteUpgrade, buildOnBlock, upgradeBlock, DEV_ERRORS } from
 import { effectiveBlockIncome, blockImpacts, costImpacts } from './events.js';
 import { blockUpkeep, blockIncome } from './economy.js';
 import { scorePlayer } from './scoring.js';
-import { blockPrestige, blockControl, pressureOn, canPressure } from './strategy.js';
+import { blockPrestige, controlStrength } from './strategy.js';
+import { quoteTakeover } from './takeover.js';
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
@@ -38,10 +39,10 @@ export function blockDetails(game, blockId) {
     net: income - upkeep,
     prestige: prestige.points, // this block's Prestige for its owner (core/strategy.js)
     prestigeNotes: prestige.notes,
-    control: blockControl(game.board, block).control, // defence against takeovers (0 when unowned)
-    // Pressure the current player puts on a rival's block, and whether it beats the control.
-    pressure: me && block.ownerSeat != null && block.ownerSeat !== me.seat ? pressureOn(game.board, me.seat, block) : null,
-    contestable: Boolean(me) && canPressure(game.board, me.seat, block),
+    control: controlStrength(game.board, block).control, // takeover defence (0 when unowned)
+    shieldedUntil: block.shieldedUntil ?? null, // recently taken over: safe while round ≤ this
+    // For a rival's block: the current player's takeover quote (pressure, cost, reason if refused).
+    takeover: me && block.ownerSeat != null && !block.abandoned && block.ownerSeat !== me.seat ? quoteTakeover(game, blockId) : null,
     contribution: blockContribution(game, blockId),
     bonuses: (block.bonuses ?? []).map((b) => ({ ...b })),
     eventIncome: blockImpacts(game, block),

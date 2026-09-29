@@ -1,18 +1,19 @@
 /**
- * Strategic category effects: Prestige, control (defence), pressure (attack) and the
- * industrial construction discount. Numbers live in ECONOMY.STRATEGY (config.js).
+ * Strategic category effects: Prestige, takeover control (defence) and development pressure
+ * (attack), and the industrial construction discount. Numbers live in ECONOMY.STRATEGY and
+ * ECONOMY.TAKEOVER (config.js); the takeover rules themselves are in core/takeover.js.
  *
  * Every function here is a pure, deterministic read of the board: only developed, owned,
  * active (not abandoned) blocks produce effects, and nothing depends on iteration luck.
- * refreshBonuses (core/bonuses.js) stores each block's Prestige and control on the block for
+ * refreshBonuses (core/bonuses.js) stores each block's Prestige and control strength on it for
  * the UI; scoring and the rules call these functions directly, so they can never go stale.
  *
- *   Residential  control for nearby own blocks
- *   Commercial   pressure on nearby rival blocks (takeovers, core/finance.js)
+ *   Residential  defends nearby own blocks against takeovers
+ *   Commercial   extra takeover pressure on adjacent rival blocks (core/takeover.js)
  *   Park         Prestige, +Prestige for adjacent own blocks (and its Residential income bonus)
- *   Civic        Prestige, control nearby (and its event protection)
+ *   Civic        Prestige, takeover defence nearby (and its event protection)
  *   Industrial   cheaper construction next door; −Prestige next to Residential unless a Park buffers it
- *   Landmark     major Prestige, strong control nearby
+ *   Landmark     major Prestige, strong takeover defence nearby
  */
 import { ECONOMY } from '../config.js';
 import { neighbors } from './board.js';
@@ -33,12 +34,12 @@ export const PRESTIGE_LABELS = Object.freeze({
 
 /** Short, player-facing summary of each category's strategic effects (build panel, How to Play). */
 export const CATEGORY_EFFECTS = Object.freeze({
-  residential: `Defends nearby blocks: +${S.CONTROL.perLevel.residential} control per level`,
-  commercial: `Pressure on nearby rival blocks: +${S.PRESSURE.perLevel.commercial} per level (takeovers)`,
+  residential: `Defends nearby blocks against takeovers: +${ECONOMY.TAKEOVER.CONTROL.defence.residential} control per level`,
+  commercial: `Takeover pressure on adjacent rival blocks: +${ECONOMY.TAKEOVER.PRESSURE.commercialPerLevel} per level (City era)`,
   park: `+${S.PRESTIGE.perLevel.park} Prestige per level, +${S.PRESTIGE.parkNeighbour} to each adjacent own block; boosts homes`,
-  civic: `+${S.PRESTIGE.perLevel.civic} Prestige per level, +${S.CONTROL.perLevel.civic} control nearby; shields emergencies`,
+  civic: `+${S.PRESTIGE.perLevel.civic} Prestige per level, +${ECONOMY.TAKEOVER.CONTROL.defence.civic} control per level nearby; shields emergencies`,
   industrial: `Top income; builds next door cost ${S.INDUSTRY.costDiscountPercent}% less; −Prestige beside homes unless a park buffers it`,
-  landmark: `+${S.PRESTIGE.perLevel.landmark} Prestige per level, +${S.CONTROL.perLevel.landmark} control per level nearby`,
+  landmark: `+${S.PRESTIGE.perLevel.landmark} Prestige per level, +${ECONOMY.TAKEOVER.CONTROL.defence.landmark} control per level nearby`,
 });
 
 /** Developed, owned and active: the only blocks that produce effects. */
@@ -81,34 +82,51 @@ export function prestigeFor(board, seat, { exclude = null } = {}) {
   return Math.max(0, total);
 }
 
-/* ---------------- control & pressure ---------------- */
+/* ---------------- takeover strengths (rules in core/takeover.js) ---------------- */
 
-/** Control (defence) of an owned block: { control, notes: [{ block, type, points }] }; 0 when unowned. */
-export function blockControl(board, block) {
-  if (block.ownerSeat == null || block.abandoned) return { control: 0, notes: [] };
-  const notes = [];
+const T = ECONOMY.TAKEOVER;
+
+/**
+ * controlStrength of an owned block: how hard it is to take over.
+ * { control, parts: { base, level, defence, support } }; 0 for unowned or abandoned blocks.
+ *   base     ownership
+ *   level    its own building level
+ *   defence  its owner's Residential / Civic / Landmark levels nearby (itself included)
+ *   support  its owner's developed blocks across a road from it
+ */
+export function controlStrength(board, block) {
+  const parts = { base: 0, level: 0, defence: 0, support: 0 };
+  if (block.ownerSeat == null || block.abandoned) return { control: 0, parts };
+  parts.base = T.CONTROL.base;
+  if (isActive(block)) parts.level = T.CONTROL.perLevel * block.level;
   for (const source of nearbyBlocks(board, block)) {
-    if (!isActive(source) || source.ownerSeat !== block.ownerSeat) continue;
-    const points = (S.CONTROL.perLevel[source.type] ?? 0) * source.level;
-    if (points) notes.push({ block: source.id, label: source.label, type: source.type, points });
+    if (isActive(source) && source.ownerSeat === block.ownerSeat) parts.defence += (T.CONTROL.defence[source.type] ?? 0) * source.level;
   }
-  return { control: S.CONTROL.base + notes.reduce((sum, n) => sum + n.points, 0), notes };
+  parts.support = neighbors(board, block)
+    .filter((n) => isActive(n) && n.ownerSeat === block.ownerSeat).length * T.CONTROL.supportPerAdjacent;
+  return { control: parts.base + parts.level + parts.defence + parts.support, parts };
 }
 
-/** Pressure `seat` puts on `block`: its developed pressure buildings (Commercial) nearby. */
-export function pressureOn(board, seat, block) {
-  let pressure = 0;
-  for (const source of nearbyBlocks(board, block)) {
+/**
+ * developmentPressure `seat` puts on `block`: its developed blocks across a road from it, each
+ * worth PRESSURE.perAdjacent, Commercial ones also PRESSURE.commercialPerLevel × level.
+ * { pressure, parts: { adjacent, commercial } }; 0 on the seat's own or unowned blocks.
+ */
+export function developmentPressure(board, seat, block) {
+  const parts = { adjacent: 0, commercial: 0 };
+  if (block.ownerSeat == null || block.abandoned || block.ownerSeat === seat) return { pressure: 0, parts };
+  for (const source of neighbors(board, block)) {
     if (!isActive(source) || source.ownerSeat !== seat) continue;
-    pressure += (S.PRESSURE.perLevel[source.type] ?? 0) * source.level;
+    parts.adjacent += T.PRESSURE.perAdjacent;
+    if (source.type === 'commercial') parts.commercial += T.PRESSURE.commercialPerLevel * source.level;
   }
-  return pressure;
+  return { pressure: parts.adjacent + parts.commercial, parts };
 }
 
-/** True when `seat` could take `block` over on pressure alone (price, phase and cash aside). */
-export function canPressure(board, seat, block) {
-  if (block.ownerSeat == null || block.abandoned || block.ownerSeat === seat) return false;
-  return pressureOn(board, seat, block) > blockControl(board, block).control;
+/** True when `seat`'s pressure on `block` beats its control (every other takeover rule aside). */
+export function pressureBeatsControl(board, seat, block) {
+  const { pressure } = developmentPressure(board, seat, block);
+  return pressure > 0 && pressure > controlStrength(board, block).control;
 }
 
 /* ---------------- industry ---------------- */

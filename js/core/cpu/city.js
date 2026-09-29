@@ -10,7 +10,7 @@
  *   { action: 'downgrade' | 'sell', blockId }   raise cash while in debt
  *   { action: 'bankruptcy' }             only when selling everything can't cover the debt
  *   { action: 'redevelop', blockId, mode }   open a sealed-bid auction for an abandoned block
- *   { action: 'takeover', blockId }      buy a rival's block its Commercial pressure has broken
+ *   { action: 'takeover', blockId }      CITY era: take over a rival's block (core/takeover.js)
  *   { action: 'pave' }                   done managing: go pave a road (EXPANSION era)
  *   { action: 'end-turn' }               done managing, or out of City Actions (CITY era)
  *   { action: null, error }              nothing to decide now
@@ -65,9 +65,8 @@ import { CATEGORY_ORDER } from '../buildings.js';
 import {
   distressStatus, declareBankruptcy, quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment,
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES,
-  quoteTakeover, takeoverBlock,
 } from '../finance.js';
-import { canPressure } from '../strategy.js';
+import { quoteTakeover, takeoverBlock, takeoverCandidates } from '../takeover.js';
 import { forecastDevelopment, blockDetails } from '../forecast.js';
 import { scorePlayer } from '../scoring.js';
 import { eventRules } from '../modes.js';
@@ -85,6 +84,7 @@ export const CITY_REASONS = Object.freeze({
   NO_CASH: 'no-cash', // nothing affordable
   RANDOM: 'random', // easy: an unplanned but sensible purchase
   NO_ACTIONS: 'no-actions', // CITY era: this turn's City Actions are spent
+  TAKEOVER: 'takeover', // CITY era: a rival block worth taking over, with a clear margin
   PASS: 'pass', // easy: chose not to spend this time
 });
 
@@ -485,11 +485,12 @@ function chooseRedevelopment(game, level, reserve, profile) {
   return best;
 }
 
-/* ---------------- takeovers (rival blocks under Commercial pressure) ---------------- */
+/* ---------------- hostile takeovers (CITY era, core/takeover.js) ---------------- */
 
 /**
  * What taking `blockId` over is worth to the current mayor: the real takeover run on a copy,
- * read back as (net income per turn × turns left + City Value change). Null when not possible.
+ * read back as (net income per turn × turns left + City Value change), plus the cash and upkeep
+ * it would leave. Null when the rules refuse it.
  */
 function takeoverValue(game, blockId, turns) {
   const q = quoteTakeover(game, blockId);
@@ -503,24 +504,29 @@ function takeoverValue(game, blockId, turns) {
   const after = getPlayer(sim, seat);
   const statsAfter = playerStats(sim, after);
   const net = (statsAfter.income - statsAfter.upkeep) - (statsBefore.income - statsBefore.upkeep);
-  return { cost: q.cost, surplus: net * turns + scorePlayer(sim, after).cityValue - valueBefore, cashAfter: after.cash, upkeepAfter: statsAfter.upkeep };
+  return {
+    cost: q.cost, surplus: net * turns + scorePlayer(sim, after).cityValue - valueBefore,
+    cashAfter: after.cash, upkeepAfter: statsAfter.upkeep,
+  };
 }
 
-/** Normal/Hard, Manage City: the rival block most worth taking over, if any. */
+/**
+ * Normal/Hard, CITY era Manage City: the rival block most worth taking over, judged
+ * conservatively (CPU.TAKEOVER): enough paydays left, a clear return on the price, and cash to
+ * spare afterwards. Easy never tries. Null when nothing qualifies.
+ */
 function chooseTakeover(game, level, reserve, profile) {
-  if (level === 'easy') return null;
-  const me = currentPlayer(game);
+  if (level === 'easy' || game.era !== ERAS.CITY) return null;
   const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
+  if (turns < CPU.TAKEOVER.MIN_TURNS) return null;
   let best = null;
-  for (const block of game.board.blocks) {
-    if (!canPressure(game.board, me.seat, block)) continue;
-    const value = takeoverValue(game, block.id, turns);
-    if (!value || value.surplus <= 0) continue;
-    // Keep the reserve and next turn's upkeep in hand, as for any purchase.
-    if (value.cashAfter < reserve + value.upkeepAfter) continue;
+  for (const q of takeoverCandidates(game)) {
+    if (!q.ok) continue;
+    const value = takeoverValue(game, q.blockId, turns);
+    if (!value || value.surplus < value.cost * CPU.TAKEOVER.MIN_RETURN) continue;
+    if (value.cashAfter < reserve + value.upkeepAfter * CPU.TAKEOVER.CASH_TURNS) continue;
     const score = value.surplus * weight(profile, 'redevelop');
-    if (level === 'hard' && value.surplus / Math.max(1, value.cost) < CPU.HARD_MIN_ROI) continue;
-    if (!best || score > best.score) best = { action: 'takeover', blockId: block.id, reason: CITY_REASONS.DEVELOP, cost: value.cost, score };
+    if (!best || score > best.score) best = { action: 'takeover', blockId: q.blockId, reason: CITY_REASONS.TAKEOVER, cost: value.cost, score };
   }
   return best;
 }

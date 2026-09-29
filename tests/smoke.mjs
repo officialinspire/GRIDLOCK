@@ -185,7 +185,7 @@ for (const vp of VIEWPORTS) {
 
     await page.getByRole('button', { name: 'How To Play' }).click();
     assert.ok(await page.isVisible('[data-screen="howto"]'));
-    assert.equal(await page.locator('.howto-card').count(), 11);
+    assert.equal(await page.locator('.howto-card').count(), 12); // incl. Prestige & Takeovers
     await noHorizontalScroll(page, 'howto');
     await shot('2-howto');
     await page.locator('[data-screen="howto"] [data-nav="back"]').click();
@@ -530,6 +530,72 @@ for (const vp of VIEWPORTS) {
   } catch (err) {
     failures++;
     console.error(`✘ completion: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+// Hostile takeover (City era): a rival block shows price, pressure vs control, and refusals.
+{
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    const last = await page.evaluate(async () => {
+      const { allRoadIds, getBlockById } = await import('/js/core/board.js');
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      const ids = allRoadIds(g.board);
+      ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      // Seat 2's House (control 3) and a bare lot, next to seat 1's Market and Corner Store.
+      for (const [id, seat, type, level] of [['r2c2', 2, 'residential', 1], ['r3c3', 2, 'vacant', 0],
+        ['r2c3', 1, 'commercial', 2], ['r1c2', 1, 'commercial', 1]]) {
+        Object.assign(getBlockById(g.board, id), { ownerSeat: seat });
+        applyDevelopment(getBlockById(g.board, id), type, level);
+      }
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 4; }
+      refreshBonuses(g.board);
+      return ids.at(-1);
+    });
+    // EXPANSION: a rival block only opens the inspector.
+    await page.click('#board [data-block="r2c2"]');
+    assert.equal(await page.locator('#build-dialog[open]').count(), 0, 'no takeovers before the City era');
+    assert.match(await page.textContent('#inspector'), /Your pressure\s*8 vs 3/);
+    await pave(page, page.locator(`[data-road="${last}"]`));
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+
+    await page.click('#board [data-block="r2c2"]');
+    const panel = page.locator('#build-dialog');
+    await panel.waitFor({ state: 'visible' });
+    const text = await panel.textContent();
+    assert.match(text, /Your pressure 8/);
+    assert.match(text, /Control 3/);
+    assert.match(text, /Takeover \$3,750: .* receives the market value \$3,000; \$750 is lost/);
+    await panel.locator('[data-takeover]').click();
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().board.blocks.find((b) => b.id === 'r2c2').ownerSeat === 1);
+    assert.match(await page.textContent('#toasts'), /Took over C3/);
+    assert.match(await page.textContent('#hud-era'), /1 action$/);
+
+    // A second takeover the same turn is refused, with the reason on the panel.
+    await page.click('#board [data-block="r3c3"]');
+    await panel.waitFor({ state: 'visible' });
+    assert.match(await panel.textContent(), /Only 1 takeover per turn/);
+    assert.equal(await panel.locator('[data-takeover]').getAttribute('aria-disabled'), 'true');
+    await panel.locator('[data-action="close"]').click();
+    const log = await page.evaluate(() => window.__GRIDLOCK__.getGame().log.filter((e) => e.type === 'takeover'));
+    assert.deepEqual(log.map((e) => [e.seat, e.from, e.label, e.cost]), [[1, 2, 'C3', 3750]]);
+    assert.deepEqual(errors, []);
+    console.log('✔ hostile takeover: City era only, price + pressure vs control, one per turn');
+  } catch (err) {
+    failures++;
+    console.error(`✘ takeover: ${err.message}`);
   } finally {
     await context.close();
   }

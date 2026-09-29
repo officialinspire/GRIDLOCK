@@ -64,7 +64,7 @@ test('CITY_ERA is configured in config.js: 4 full rounds, 2 City Actions per tur
   assert.equal(CITY_ERA.ACTIONS_PER_TURN, 2);
   const game = createGame({ seats: seats() });
   assert.equal(game.era, ERAS.EXPANSION);
-  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: null, endRound: null, actionsLeft: 0 });
+  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 });
   assert.deepEqual(eraStatus(game), { era: 'expansion', rounds: 4, round: 0, roundsLeft: 4, actionsLeft: null, actionsPerTurn: 2 });
   assert.equal(cityTurnsLeft(game), null);
   assert.throws(() => createGame({ seats: seats(), cityRounds: -1 }), RangeError);
@@ -103,7 +103,7 @@ test('paving the final road starts the CITY era instead of ending the match', ()
   assert.equal(game.phase, PHASES.PLAYING);
   assert.equal(game.results, null);
   assert.equal(game.era, ERAS.CITY);
-  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: round + 1, endRound: round + 4, actionsLeft: 2 });
+  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: round + 1, endRound: round + 4, actionsLeft: 2, takeovers: 0 });
   assert.ok(game.log.some((e) => e.type === 'era' && e.era === 'city'));
   // The final capture keeps its Develop Now choice (free), then the mover's City turn.
   assert.equal(currentPlayer(game).seat, 1);
@@ -327,7 +327,7 @@ test('saves from before eras load as EXPANSION; inconsistent era state is reject
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   const legacy = loadActiveGame(storage);
   assert.equal(legacy.game.era, ERAS.EXPANSION);
-  assert.deepEqual(legacy.game.city, { rounds: CITY_ERA.ROUNDS, actionsPerTurn: CITY_ERA.ACTIONS_PER_TURN, startRound: null, endRound: null, actionsLeft: 0 });
+  assert.deepEqual(legacy.game.city, { rounds: CITY_ERA.ROUNDS, actionsPerTurn: CITY_ERA.ACTIONS_PER_TURN, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 });
 
   const city = cityGame();
   const good = memoryStorage();

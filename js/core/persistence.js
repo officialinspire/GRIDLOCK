@@ -52,7 +52,8 @@ function validBlock(block) {
     && block.constructionCosts.every((cost) => integer(cost) && cost >= 0)
     && block.constructionCosts.reduce((sum, cost) => sum + cost, 0) === block.investedCostBasis
     && block.value === block.price + block.investedCostBasis
-    && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0);
+    && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0)
+    && (block.shieldedUntil == null || integer(block.shieldedUntil));
 }
 
 /**
@@ -67,6 +68,7 @@ function validEra(game) {
   if (game.era === ERAS.EXPANSION) return !complete;
   if (game.era !== ERAS.CITY || !complete || city.rounds < 1) return false;
   return integer(city.startRound) && integer(city.endRound) && integer(city.actionsLeft)
+    && integer(city.takeovers) && city.takeovers >= 0
     && city.endRound === city.startRound + city.rounds - 1 && game.round >= city.startRound - 1 && game.round <= city.endRound
     && city.actionsLeft >= 0 && city.actionsLeft <= city.actionsPerTurn
     && game.turnPhase !== TURN_PHASES.PAVE_ROAD && game.turnPhase !== TURN_PHASES.BONUS_ROAD;
@@ -188,6 +190,8 @@ export function loadActiveGame(storage = globalThis.localStorage) {
       migrated.game.era = ERAS.EXPANSION;
       migrated.game.city = createCityState();
     }
+    // Saves from before takeovers: nobody has taken one this turn.
+    if (plainObject(migrated?.game?.city) && migrated.game.city.takeovers === undefined) migrated.game.city.takeovers = 0;
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.
     refreshBonuses(migrated.game.board);

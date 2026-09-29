@@ -1119,6 +1119,14 @@ html[data-coords='on'] .block__coord { display: block; }
 .build-option__prestige.is-down { color: #b0322a; }
 .price__industry { font-size: 0.75rem; font-weight: 700; color: #6a5a2a; }
 .build-panel__effect { margin: 4px 0; font-size: 0.85rem; color: var(--ink-soft); }
+/* Takeover view (core/takeover.js): pressure vs control, price, reason when refused. */
+.takeover__duel { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 8px 0; }
+.takeover__side { display: grid; gap: 2px; margin: 0; padding: 6px 8px; border: 2px solid var(--paper-edge); border-radius: var(--radius-sm); }
+.takeover__side small { color: var(--ink-soft); font-size: 0.75rem; }
+.takeover__vs { font-family: var(--font-display); font-size: 1.6rem; color: var(--ink-soft); }
+.takeover__duel.is-winning .takeover__vs { color: #2f7a2f; }
+.takeover__price { font-size: 0.85rem; margin: 4px 0; }
+.takeover__reason { font-size: 0.9rem; font-weight: 700; color: #b0322a; margin: 4px 0; }
 .build-panel__city-actions { margin-top: 2px; font-size: 0.7rem; color: var(--ink); }
 .build-panel__city-actions.is-spent { color: var(--ink-soft); text-decoration: line-through; }
 .build-panel__hint { font-size: 0.9rem; color: var(--ink-soft); }

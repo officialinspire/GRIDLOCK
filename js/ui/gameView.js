@@ -40,8 +40,9 @@ import { chooseRoad } from '../core/cpu/roads.js';
 import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
 import { buildOnBlock, upgradeBlock } from '../core/development.js';
 import {
-  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers, takeoverBlock,
+  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers,
 } from '../core/finance.js';
+import { takeoverBlock } from '../core/takeover.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
@@ -113,9 +114,14 @@ function renderInspector(blockId, panel = $('#inspector')) {
       owner && row('Prestige', d.prestige
         ? `${d.prestige > 0 ? '+' : ''}${d.prestige}${d.prestigeNotes.length > 1 ? ` (${d.prestigeNotes.map((n) => `${n.label} ${n.points > 0 ? '+' : ''}${n.points}`).join(', ')})` : ''}`
         : '0', `Each Prestige point adds ${formatCash(ECONOMY.SCORING.PRESTIGE)} to City Value. Parks, Civic and Landmarks earn it; industry next to homes costs it`),
-      owner && row('Control', String(d.control), 'Takeover defence: base + nearby Residential, Civic and Landmark levels of the same owner'),
-      d.pressure != null && row('Your pressure', d.contestable ? `${d.pressure} › ${d.control}: you can take it over` : `${d.pressure} (needs more than ${d.control})`,
-        'Your nearby Commercial levels. Beat the block\'s control to buy it from its owner'),
+      owner && row('Control', String(d.control),
+        'Takeover defence: ownership + building level + nearby Residential, Civic and Landmark levels + adjacent own development'),
+      d.shieldedUntil != null && game.round <= d.shieldedUntil && row('Protected', `until round ${d.shieldedUntil} ends`,
+        'Recently taken over: it can\'t be taken again yet'),
+      d.takeover && row('Your pressure', d.takeover.ok
+        ? `${d.takeover.pressure} › ${d.takeover.control}: take over for ${formatCash(d.takeover.cost)}`
+        : `${d.takeover.pressure} vs ${d.takeover.control}`,
+      d.takeover.reason ?? 'Your adjacent developed blocks (Commercial count extra). Tap the block to take it over'),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),
@@ -631,13 +637,14 @@ function cpuPlan(g) {
       };
     case 'takeover':
       return {
-        text: `Taking over ${label(d.blockId)} (its shops out-pressure the owner)`,
+        text: `Hostile takeover of ${label(d.blockId)}: its development out-pressures the owner`,
         target: blockTarget(d.blockId),
         run: () => {
           const from = getBlockById(g.board, d.blockId).ownerSeat;
           const result = takeoverBlock(g, d.blockId);
           if (result.ok) {
-            toast(`${me.name} takes over ${label(d.blockId)} from ${getPlayer(g, from).name} · ${formatCash(result.cost)}`, { tone: 'warn', duration: 3000 });
+            toast(`${me.name} takes over ${label(d.blockId)} from ${getPlayer(g, from).name} · ${formatCash(result.cost)} `
+              + `(${formatCash(result.marketValue)} to the owner)`, { tone: 'warn', duration: 3200 });
             play('coins');
           }
           autosave();

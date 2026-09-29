@@ -169,29 +169,39 @@ export const ECONOMY = Object.freeze({
       industrialPenaltyPerLevel: 1,
     }),
 
-    /**
-     * Control (defence) of an owned block = base + Σ perLevel × level of its owner's developed
-     * blocks nearby (itself included). Pressure (attack) by a player on a block = Σ perLevel ×
-     * level of that player's developed Commercial blocks nearby. A rival whose pressure is greater
-     * than a block's control may take it over (TAKEOVER).
-     */
-    CONTROL: Object.freeze({
-      base: 1,
-      perLevel: Object.freeze({ residential: 1, civic: 1, landmark: 2 }),
-    }),
-    PRESSURE: Object.freeze({
-      perLevel: Object.freeze({ commercial: 1 }),
-    }),
-
-    /**
-     * Takeover: during Manage City a player may buy a rival's block (development included) when
-     * their pressure beats its control. The price, pricePercent of the block's value (land +
-     * construction spend), is paid to the owner. A CITY-era takeover costs a City Action.
-     */
-    TAKEOVER: Object.freeze({ pricePercent: 110 }),
-
     /** Industry: builds and upgrades adjacent to the builder's own developed Industrial block cost this % less. */
     INDUSTRY: Object.freeze({ costDiscountPercent: 10 }),
+  }),
+
+  /**
+   * Hostile takeovers (core/takeover.js; strengths in core/strategy.js). CITY era only.
+   *
+   * controlStrength of an owned block =
+   *     CONTROL.base (ownership)
+   *   + CONTROL.perLevel × its building level
+   *   + Σ CONTROL.defence[type] × level of its owner's developed Residential/Civic/Landmark
+   *     blocks within ECONOMY.STRATEGY.RADIUS (itself included)
+   *   + CONTROL.supportPerAdjacent × its owner's developed blocks across a road from it
+   * developmentPressure of a player on a rival block =
+   *     Σ over that player's developed blocks across a road from it:
+   *       PRESSURE.perAdjacent + PRESSURE.commercialPerLevel × level (Commercial only)
+   * A takeover needs pressure greater than control, costs one City Action, and at most
+   * PER_TURN happen per player turn. The attacker pays PREMIUM_PERCENT of the block's market
+   * value (land + list-price development); the defender receives the market value and the rest
+   * is lost to redevelopment costs. Ownership moves with the development intact, and the block
+   * is shielded from further takeovers until SHIELD_ROUNDS full rounds have passed.
+   */
+  TAKEOVER: Object.freeze({
+    CONTROL: Object.freeze({
+      base: 1,
+      perLevel: 1,
+      defence: Object.freeze({ residential: 1, civic: 1, landmark: 2 }),
+      supportPerAdjacent: 1,
+    }),
+    PRESSURE: Object.freeze({ perAdjacent: 1, commercialPerLevel: 2 }),
+    PREMIUM_PERCENT: 125,
+    PER_TURN: 1,
+    SHIELD_ROUNDS: 1,
   }),
 });
 
@@ -227,6 +237,13 @@ export const CPU = Object.freeze({
   HARD_ROLLOUT_SAFE_ROADS: 0,
   /** Hard: minimum expected return per dollar spent before it commits cash. */
   HARD_MIN_ROI: 0.05,
+  /**
+   * Takeovers (Normal/Hard only; Easy never attempts one). Conservative: the takeover, run for
+   * real on a copy, must return at least MIN_RETURN × its price over the turns left (income net of
+   * upkeep × turns + City Value change), there must be at least MIN_TURNS paydays left, and the
+   * cash left must cover the reserve plus CASH_TURNS turns of upkeep.
+   */
+  TAKEOVER: Object.freeze({ MIN_RETURN: 0.25, MIN_TURNS: 1, CASH_TURNS: 2 }),
   /** Hard: its cash floor covers next turn's charges as if income fell by this share… */
   HARD_INCOME_CUT: 0.5,
   /** …plus this share of a Fire repair bill when a Fire could hit one of its buildings. */
