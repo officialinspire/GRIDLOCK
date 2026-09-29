@@ -210,7 +210,7 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 **Each full round:** there is a 65% chance of a **city event** and otherwise a calm round. At most two events overlap. Civic buildings shield nearby blocks from emergencies and their repair bills.
 
-**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with $2,000.
+**Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with recovery capital ($2,000, less each further time, never below $500) and a final-score penalty that grows with each bankruptcy. You're never out of the game.
 
 **Two eras.** Everything above is the **EXPANSION** era. Paving the final road does not end the match: it starts the **CITY** era.
 - No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free), then plays a City turn; the rest of that round is City turns too.
@@ -456,13 +456,17 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 - **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
-  - Roads stay as they are, the debt is written off, and the player stays in the game with **$2,000 Fresh Start** capital.
+  - Roads stay as they are, the debt is written off, and the player stays in the game with **recovery capital**: $2,000 the first time, then half the previous amount each time, never below $500 (`FINANCE.RECOVERY`).
+  - Bankruptcy never ends the match or removes a player. The bankrupt mayor carries on with the same turn (pave in EXPANSION, End Turn in the CITY era, where bankruptcy costs no City Action) and plays every later turn.
+  - **Score penalty** (`FINANCE.BANKRUPTCY_PENALTY`): the nth bankruptcy costs n × $1,000 of final City Value (so 1, 2, 3 bankruptcies cost $1,000, $3,000, $6,000 in all) and 2 Prestige each. The results card shows it in the City Value breakdown.
+  - Any queued event repair bills and takeover protection on the abandoned blocks are dropped. Ruins keep their buildings on the board (dark, marked *Abandoned*), can't be taken over, and go to redevelopment.
+  - **Messaging:** the bankruptcy card lists the debt written off, blocks abandoned, recovery capital, the total penalty so far and what another bankruptcy would pay. The HUD card shows **↺n Recovering** for the rest of that round and the next (tooltip: penalty so far, next recovery capital), the turn prompt says *Recovering from bankruptcy*, and the log entry records era, count, capital, penalty and next capital.
 - **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.
   - Former owners can't buy back their own ruins.
-  - Fresh Start capital is paid for the first 2 bankruptcies only.
+  - Recovery capital shrinks with each bankruptcy while the score penalty grows faster, so going bankrupt on purpose never pays; the $500 floor means nobody is stuck at $0.
   - Bankruptcy always ends distress, so a turn can never deadlock.
   - `ownershipProblems(game)` checks that every owner exists and every abandoned block is ownerless.
 

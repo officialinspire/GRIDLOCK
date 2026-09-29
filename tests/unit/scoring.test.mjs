@@ -284,7 +284,7 @@ test('full random games: 4 ranked rows, consistent totals, deterministic from th
     assert.equal(res.rows.length, 4);
     assert.ok(res.winners.length >= 1);
     for (const row of res.rows) {
-      assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige);
+      assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige - row.bankruptcyPenalty);
       assert.ok(row.developed <= row.blocks);
     }
     const owned = res.rows.reduce((n, row) => n + row.blocks, 0);

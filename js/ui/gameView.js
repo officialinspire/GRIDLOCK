@@ -141,6 +141,8 @@ function renderPrompt() {
   const p = currentPlayer(game);
   prompt.style.setProperty('--player', p.hex);
   prompt.classList.toggle('is-distress', isInDistress(p));
+  // Just bankrupt this round: say so, so the fresh start is understood (the HUD card says it too).
+  const recovering = p.lastBankruptcyRound === game.round && !isInDistress(p) ? ' · Recovering from bankruptcy' : '';
   if (isInDistress(p)) {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
     return;
@@ -150,7 +152,7 @@ function renderPrompt() {
     const left = `${actionsLeft} City Action${actionsLeft === 1 ? '' : 's'} left`;
     prompt.textContent = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP
       ? `${p.name}: CAPTURE / DEVELOP · Resolve the final claimed block, then your City turn.`
-      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : ''}, then End Turn.`;
+      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : ''}, then End Turn.${recovering}`;
     return;
   }
   const copy = {
@@ -159,7 +161,7 @@ function renderPrompt() {
     [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Resolve each newly claimed block.',
     [TURN_PHASES.BONUS_ROAD]: 'BONUS ROAD · Pave another road.',
   }[game.turnPhase];
-  prompt.textContent = `${p.name}: ${copy}`;
+  prompt.textContent = `${p.name}: ${copy}${recovering}`;
 }
 
 /** Shows results once the final road's feedback (capture pop, toasts) has played and any dialog is closed. */
@@ -630,7 +632,10 @@ function cpuPlan(g) {
         text: 'Out of options: declaring bankruptcy',
         run: () => {
           const result = declareBankruptcy(g);
-          if (result.ok) toast(`${me.name} declares bankruptcy: ${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned`, { tone: 'warn', duration: 3200 });
+          if (result.ok) {
+            toast(`${me.name} declares bankruptcy: ${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned, `
+              + `restarts with ${formatCash(result.capital)} (final score −${formatCash(result.penalty.cityValue)})`, { tone: 'warn', duration: 3600 });
+          }
           autosave();
           render();
         },

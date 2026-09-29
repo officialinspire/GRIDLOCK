@@ -369,10 +369,17 @@ for (const vp of VIEWPORTS) {
     assert.ok(await fin.isVisible());
     await fin.locator('[data-sell="r4c5"]').click();
     await pave(page, road('h-3-4'));
+    assert.match(await fin.textContent(), /restarts you with \$2,000\. You stay in the game/);
     await fin.locator('#declare-bankruptcy').click();
-    assert.match(await fin.textContent(), /2 blocks abandoned/);
+    const card = await fin.textContent();
+    assert.match(card, /2 blocks abandoned/);
+    assert.match(card, /Recovery capital: \$2,000\. .* plays on this turn/);
+    assert.match(card, /Bankruptcy #1: final score −\$1,000 City Value and −2 Prestige/);
+    assert.match(card, /would pay only \$1,000/);
     await fin.getByRole('button', { name: 'Continue' }).click();
     assert.equal(await page.locator('#board .block--abandoned').count(), 2);
+    assert.match(await page.textContent('#turn-prompt'), /Recovering from bankruptcy/);
+    assert.match(await page.textContent('.player-card[data-seat="3"]'), /↺1 Recovering/);
 
     await pave(page, road('h-3-5'));
     const panel = page.locator('#build-dialog');

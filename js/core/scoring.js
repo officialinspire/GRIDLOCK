@@ -2,7 +2,8 @@
  * End-of-game scoring. Pure functions of game state (no DOM, no randomness),
  * so results are fully testable and deterministic.
  *
- *   City Value = cash score + land score + building-investment score + Prestige score.
+ *   City Value = cash score + land score + building-investment score + Prestige score
+ *                − bankruptcy penalty (Prestige is also reduced per bankruptcy).
  * Coefficients live in ECONOMY.SCORING: land is discounted and construction counts in
  * full, and Prestige (core/strategy.js) rewards well-planned development, so building a
  * city beats owning the most blocks.
@@ -17,7 +18,7 @@
 import { blocksOwnedBy, blockLabel } from './board.js';
 import { ECONOMY } from '../config.js';
 import { getCategory, levelArt } from './buildings.js';
-import { calculateIncome, investedIn } from './economy.js';
+import { calculateIncome, investedIn, bankruptcyPenalty } from './economy.js';
 import { prestigeFor } from './strategy.js';
 
 const isDev = (b) => b.level > 0 && b.type !== 'vacant';
@@ -51,7 +52,9 @@ export function scorePlayer(game, player, { exclude = null } = {}) {
   const scoredCash = Math.round(player.cash * ECONOMY.SCORING.CASH);
   const scoredLand = Math.round(landValue * ECONOMY.SCORING.LAND);
   const scoredBuildings = Math.round(buildingValue * ECONOMY.SCORING.INVESTED_BUILDING);
-  const prestige = prestigeFor(game.board, player.seat, { exclude });
+  // Bankruptcy costs Prestige points and a growing City Value penalty (ECONOMY.FINANCE.BANKRUPTCY_PENALTY).
+  const penalty = bankruptcyPenalty(player.bankruptcies ?? 0);
+  const prestige = Math.max(0, prestigeFor(game.board, player.seat, { exclude }) - penalty.prestige);
   const scoredPrestige = Math.round(prestige * ECONOMY.SCORING.PRESTIGE);
   const parks = developed.filter((b) => b.type === 'park');
   return {
@@ -66,7 +69,9 @@ export function scorePlayer(game, player, { exclude = null } = {}) {
     scoredLand,
     scoredBuildings,
     scoredPrestige,
-    cityValue: scoredCash + scoredLand + scoredBuildings + scoredPrestige,
+    bankruptcyPenalty: penalty.cityValue,
+    prestigePenalty: penalty.prestige,
+    cityValue: scoredCash + scoredLand + scoredBuildings + scoredPrestige - penalty.cityValue,
     blocks: owned.length,
     developed: developed.length,
     totalLevels: developed.reduce((s, b) => s + b.level, 0),

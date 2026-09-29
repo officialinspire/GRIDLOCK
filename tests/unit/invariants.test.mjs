@@ -194,7 +194,7 @@ function playFuzz(seed, nPlayers) {
   assert.equal(Object.keys(game.board.roads).length, allRoadIds(game.board).length);
   const results = computeResults(game);
   assert.deepEqual(game.results, results, 'frozen results match a fresh computation at the end');
-  for (const row of game.results.rows) assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige);
+  for (const row of game.results.rows) assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige - row.bankruptcyPenalty);
   assert.equal(game.phase, PHASES.ENDED);
   assert.equal(game.round, game.city.endRound, 'the match ends after the last City round');
   assert.ok(cityTurns >= game.city.rounds * game.players.length, 'every mayor played every City round');

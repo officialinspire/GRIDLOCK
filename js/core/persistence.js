@@ -92,6 +92,7 @@ function validGame(game) {
       || seats.has(player.seat) || !integer(player.cash) || typeof player.name !== 'string'
       || typeof player.color !== 'string' || typeof player.symbol !== 'string' || typeof player.hex !== 'string'
       || !integer(player.bankruptcies) || !integer(player.lastEconomicRound)
+      || (player.lastBankruptcyRound != null && !integer(player.lastBankruptcyRound))
       || !controllerOf(player)) return false;
     seats.add(player.seat);
   }

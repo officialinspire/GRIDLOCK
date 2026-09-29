@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { scorePlayer } from '../../js/core/scoring.js';
 import assert from 'node:assert/strict';
 
 import { ECONOMY } from '../../js/config.js';
@@ -153,14 +154,15 @@ test('bankruptcy is only allowed when selling everything can\'t cover the debt',
   assert.equal(distressStatus(g).canDeclare, true);
 });
 
-test('bankruptcy abandons every block, keeps roads, writes off debt and grants Fresh Start capital', () => {
+test('bankruptcy abandons every block, keeps roads, writes off debt and grants recovery capital', () => {
   const game = p2Insolvent();
   const roads = JSON.stringify(game.board.roads);
   const r = declareBankruptcy(game);
   assert.equal(r.ok, true);
   assert.deepEqual(r.abandoned.sort(), ['r2c2', 'r2c3', 'r2c4', 'r5c5']);
   assert.equal(r.debtForgiven, 5000);
-  assert.equal(r.capital, FIN.FRESH_START_CAPITAL);
+  assert.equal(r.capital, FIN.RECOVERY.CAPITAL);
+  assert.deepEqual(r.penalty, { cityValue: FIN.BANKRUPTCY_PENALTY.CITY_VALUE, prestige: FIN.BANKRUPTCY_PENALTY.PRESTIGE });
 
   const p2 = getPlayer(game, 2);
   assert.equal(p2.cash, 2000);
@@ -192,19 +194,27 @@ test('bankruptcy abandons every block, keeps roads, writes off debt and grants F
   assert.equal(placeRoad(game, 'h-0-0').ok, true);
 });
 
-test('Fresh Start capital is capped, so repeated bankruptcy can\'t farm money', () => {
+test('repeated bankruptcy: recovery capital shrinks but never hits $0, and the score penalty grows', () => {
   const game = calm();
   passToP2(game);
   const p2 = getPlayer(game, 2);
   const results = [];
-  for (let i = 0; i < FIN.FRESH_START_LIMIT + 2; i++) {
+  for (let i = 0; i < 5; i++) {
     p2.cash = -100;
-    results.push(declareBankruptcy(game).capital);
+    const r = declareBankruptcy(game);
+    results.push([r.capital, r.penalty.cityValue, r.penalty.prestige]);
     assert.equal(isInDistress(p2), false, 'every bankruptcy ends distress');
+    assert.equal(p2.cash, r.capital, 'no permanent $0 soft-lock');
   }
-  assert.deepEqual(results, [...Array(FIN.FRESH_START_LIMIT).fill(FIN.FRESH_START_CAPITAL), 0, 0]);
-  assert.equal(p2.bankruptcies, FIN.FRESH_START_LIMIT + 2);
-  assert.equal(p2.cash, 0);
+  const { CITY_VALUE: V, PRESTIGE: P } = FIN.BANKRUPTCY_PENALTY;
+  assert.deepEqual(results, [[2000, V, P], [1000, 3 * V, 2 * P], [500, 6 * V, 3 * P], [500, 10 * V, 4 * P], [500, 15 * V, 5 * P]]);
+  assert.equal(p2.bankruptcies, 5);
+  // Farming can't pay: each extra bankruptcy's penalty outgrows the capital it hands out.
+  assert.ok(5 * V > FIN.RECOVERY.MIN_CAPITAL);
+  const row = scorePlayer(game, p2);
+  assert.equal(row.bankruptcyPenalty, 15 * V);
+  assert.equal(row.cityValue, row.scoredCash + row.scoredLand + row.scoredBuildings + row.scoredPrestige - 15 * V);
+  assert.equal(game.log.filter((e) => e.type === 'bankruptcy').at(-1).count, 5);
 });
 
 test('a bankrupt player owes no upkeep afterwards, so they can\'t loop back into distress', () => {

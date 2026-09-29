@@ -154,7 +154,11 @@ function playerCard(game, seat) {
       h('span', { class: 'player-card__name' }, player.name),
       stats.distress && h('span', { class: 'player-card__debt' }, 'Debt'),
       !stats.distress && active && h('span', { class: 'player-card__turn' }, 'Turn'),
-      stats.bankruptcies > 0 && h('span', { class: 'player-card__fresh', title: `Bankrupt ${stats.bankruptcies}× (fresh start)` }, `↺${stats.bankruptcies}`),
+      stats.bankruptcies > 0 && h('span', {
+        class: `player-card__fresh${stats.recovering ? ' is-recovering' : ''}`,
+        title: `Bankrupt ${stats.bankruptcies}×${stats.recovering ? ', recovering' : ''}: final score −${formatCash(stats.bankruptcyPenalty)} City Value. `
+          + `Another bankruptcy would restart with ${formatCash(stats.nextRecoveryCapital)}.`,
+      }, stats.recovering ? `↺${stats.bankruptcies} Recovering` : `↺${stats.bankruptcies}`),
     ),
     // Second line when bots are at the table, on every card so they line up: "CPU · Hard · Tycoon"
     // or "Human". (An all-human table needs neither.)

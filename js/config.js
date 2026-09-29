@@ -108,10 +108,19 @@ export const ECONOMY = Object.freeze({
     UPKEEP_PERCENT: 7,
     /** Downgrading or selling refunds this % of the development cost removed. */
     SALE_REFUND_PERCENT: 50,
-    /** Capital a bankrupt player restarts with… */
-    FRESH_START_CAPITAL: 2000,
-    /** …for their first N bankruptcies; after that they restart with $0 (prevents farming). */
-    FRESH_START_LIMIT: 2,
+    /**
+     * Recovery capital a bankrupt player restarts with (core/finance.js recoveryCapital):
+     * CAPITAL for the first bankruptcy, then CAPITAL_DECAY_PERCENT of the previous amount each
+     * time, but never below MIN_CAPITAL, so a mayor is never stuck at $0 with nothing to do.
+     * Farming is prevented by the shrinking capital and the growing score penalty below.
+     */
+    RECOVERY: Object.freeze({ CAPITAL: 2000, CAPITAL_DECAY_PERCENT: 50, MIN_CAPITAL: 500 }),
+    /**
+     * Final-score penalty for going bankrupt (core/scoring.js). The nth bankruptcy costs
+     * CITY_VALUE × n (so 1, 2, 3 bankruptcies cost 1×, 3×, 6× CITY_VALUE in all) and PRESTIGE
+     * Prestige points each (a player's Prestige never goes below 0).
+     */
+    BANKRUPTCY_PENALTY: Object.freeze({ CITY_VALUE: 1000, PRESTIGE: 2 }),
     /** Buying an abandoned block: land at this % of land value, plus (to restore) this % of the ruin's invested cost. */
     REDEVELOP_LAND_PERCENT: 100,
     RESTORE_PERCENT: 40,

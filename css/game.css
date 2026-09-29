@@ -1527,6 +1527,7 @@ html[data-coords='on'] .block__coord { display: block; }
 }
 .player-card__debt { color: var(--paper-hi); background: var(--red); animation: debt-pulse 1.2s ease-in-out infinite; }
 .player-card__fresh { background: var(--paper-hi); color: var(--ink-soft); }
+.player-card__fresh.is-recovering { background: var(--gold); color: var(--ink); }
 @keyframes debt-pulse { 50% { transform: scale(1.08); } }
 
 .turn-prompt.is-distress { background: #f6d4cf; border-color: var(--red); color: var(--red-deep); }

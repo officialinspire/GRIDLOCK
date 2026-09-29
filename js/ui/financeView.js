@@ -2,7 +2,7 @@
  * Financial distress + bankruptcy UI.
  * - Distress panel: debt, what selling could raise, per-block Downgrade/Sell,
  *   and Declare Bankruptcy (only when selling can't cover the debt).
- * - Bankruptcy result card: abandoned blocks, debt written off, fresh start.
+ * - Bankruptcy result card: abandoned blocks, debt written off, recovery capital, score penalty.
  */
 import { $, h } from './dom.js';
 import { createSprite } from '../assets.js';
@@ -59,7 +59,9 @@ function distressView(game) {
     h('div', { class: 'finance-panel__bankrupt' },
       st.canDeclare
         ? [
-          h('p', {}, `Even selling everything can't cover the debt. Declaring bankruptcy abandons all ${blocksOwnedBy(game.board, player.seat).length} of your blocks, writes off the debt, and restarts you with ${formatCash(st.freshStart)}.`),
+          h('p', {}, `Even selling everything can't cover the debt. Declaring bankruptcy abandons all ${blocksOwnedBy(game.board, player.seat).length} of your blocks, `
+            + `writes off the debt, and restarts you with ${formatCash(st.recoveryCapital)}. You stay in the game, `
+            + `but your final City Value drops by ${formatCash(st.penaltyAdded.cityValue)} more and you lose ${st.penaltyAdded.prestige} Prestige.`),
           h('button', { type: 'button', class: 'btn btn--danger', id: 'declare-bankruptcy' },
             createSprite('icons:restart', { className: 'btn__icon' }), h('span', {}, 'Declare Bankruptcy')),
         ]
@@ -81,7 +83,9 @@ function bankruptcyView(game, result) {
     h('ul', { class: 'finance-panel__outcome' },
       h('li', {}, `${formatCash(result.debtForgiven)} debt written off`),
       h('li', {}, `${result.abandoned.length} block${result.abandoned.length === 1 ? '' : 's'} abandoned. Roads stay, buildings go dark. Other mayors can buy and restore them.`),
-      h('li', {}, result.capital > 0 ? `Fresh start: ${formatCash(result.capital)} capital` : 'No fresh-start capital left'),
+      h('li', {}, `Recovery capital: ${formatCash(result.capital)}. ${player.name} plays on this turn and every turn after.`),
+      h('li', {}, `Bankruptcy #${result.count}: final score −${formatCash(result.penalty.cityValue)} City Value and −${result.penalty.prestige} Prestige in all.`
+        + ` A further bankruptcy would pay only ${formatCash(result.nextCapital)} and cost more.`),
     ),
     h('div', { class: 'build-panel__actions' },
       h('button', { type: 'button', class: 'btn btn--gold', dataset: { action: 'close' } },

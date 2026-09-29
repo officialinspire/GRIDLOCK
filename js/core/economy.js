@@ -184,6 +184,26 @@ export function netWorth(game, player) {
   return player.cash + propertyValue(game.board, player.seat);
 }
 
+/**
+ * Recovery capital for a player going bankrupt after `prior` earlier bankruptcies
+ * (ECONOMY.FINANCE.RECOVERY): shrinks each time, never below MIN_CAPITAL.
+ */
+export function recoveryCapital(prior) {
+  const { CAPITAL, CAPITAL_DECAY_PERCENT, MIN_CAPITAL } = ECONOMY.FINANCE.RECOVERY;
+  const n = Math.max(0, prior | 0);
+  return Math.max(MIN_CAPITAL, Math.round(CAPITAL * (CAPITAL_DECAY_PERCENT / 100) ** n));
+}
+
+/**
+ * Final-score penalty for `bankruptcies` bankruptcies (ECONOMY.FINANCE.BANKRUPTCY_PENALTY):
+ * { cityValue, prestige }. The nth bankruptcy costs n × CITY_VALUE, so the total grows 1×, 3×, 6×…
+ */
+export function bankruptcyPenalty(bankruptcies) {
+  const { CITY_VALUE, PRESTIGE } = ECONOMY.FINANCE.BANKRUPTCY_PENALTY;
+  const n = Math.max(0, bankruptcies | 0);
+  return { cityValue: (CITY_VALUE * n * (n + 1)) / 2, prestige: PRESTIGE * n };
+}
+
 /** Pays the capture reward for each claimed block. Returns the total paid. */
 export function payCaptureReward(game, player, blockIds) {
   const total = ECONOMY.CAPTURE_REWARD * blockIds.length;

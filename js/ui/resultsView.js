@@ -39,7 +39,8 @@ function playerCard(row, awardsBySeat, isWinner, index, cpu) {
       h('strong', { class: 'result-card__city-value' }, formatCash(row.cityValue))),
     h('p', { class: 'result-card__breakdown' },
       `${formatCash(row.scoredCash)} cash + ${formatCash(row.scoredLand)} land + ${formatCash(row.scoredBuildings)} buildings`
-      + ` + ${formatCash(row.scoredPrestige)} Prestige`),
+      + ` + ${formatCash(row.scoredPrestige)} Prestige`
+      + (row.bankruptcyPenalty ? ` − ${formatCash(row.bankruptcyPenalty)} bankruptcy (${row.bankruptcies}×)` : '')),
     h('dl', { class: 'result-card__stats' },
       stat('Cash', formatCash(row.cash), row.cash < 0 ? 'is-negative' : ''),
       stat('Prestige', row.prestige),

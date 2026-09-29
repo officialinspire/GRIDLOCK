@@ -15,7 +15,7 @@ import {
 } from './board.js';
 import {
   calculateIncome, propertyValue, payCaptureReward, payTurnIncome, toAmount, bonusIncome,
-  chargeUpkeep, upkeepFor, isInDistress, charge, TXN,
+  chargeUpkeep, upkeepFor, isInDistress, charge, bankruptcyPenalty, recoveryCapital, TXN,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
 import { prestigeFor } from './strategy.js';
@@ -114,6 +114,7 @@ export function createGame({
         cash: toAmount(ECONOMY.STARTING_CASH),
         bankruptcies: 0,
         lastEconomicRound: 0,
+        lastBankruptcyRound: null, // round of the latest bankruptcy (recovery messaging)
       };
     });
 
@@ -171,7 +172,11 @@ export function playerStats(game, player) {
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
     property,
     netWorth: player.cash + property,
-    prestige: prestigeFor(game.board, player.seat), // scored at ECONOMY.SCORING.PRESTIGE per point
+    prestige: Math.max(0, prestigeFor(game.board, player.seat) - bankruptcyPenalty(player.bankruptcies).prestige), // as scored
+    // Recovery: the final-score penalty so far and what another bankruptcy would pay out.
+    bankruptcyPenalty: bankruptcyPenalty(player.bankruptcies).cityValue,
+    nextRecoveryCapital: recoveryCapital(player.bankruptcies),
+    recovering: player.lastBankruptcyRound != null && game.round - player.lastBankruptcyRound <= 1,
   };
 }
 
