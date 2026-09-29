@@ -4,8 +4,8 @@ import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES,
-  startPaving, resolveCapture,
+  createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES, ERAS,
+  startPaving, resolveCapture, endCityTurn, eraStatus,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides, roadBlocks } from '../core/board.js';
 import { describeDevelopment, getCategory } from '../core/buildings.js';
@@ -40,7 +40,7 @@ import { chooseRoad } from '../core/cpu/roads.js';
 import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
 import { buildOnBlock, upgradeBlock } from '../core/development.js';
 import {
-  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers,
+  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers, takeoverBlock,
 } from '../core/finance.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 
@@ -107,8 +107,15 @@ function renderInspector(blockId, panel = $('#inspector')) {
       owner && row('Net', `${formatDelta(d.net)}/turn`, 'Income minus upkeep'),
       owner && row('Property value', formatCash(blockValue(block)), 'Land plus what was actually paid for construction'),
       owner && d.contribution != null && row('Adds to City Value', formatCash(d.contribution),
-        `How much this block adds to ${owner.name}'s final score (land + ${Math.round(ECONOMY.SCORING.INVESTED_BUILDING * 100)}% of building investment)`),
+        `How much this block adds to ${owner.name}'s final score (${Math.round(ECONOMY.SCORING.LAND * 100)}% of land + `
+        + `${Math.round(ECONOMY.SCORING.INVESTED_BUILDING * 100)}% of building investment + the Prestige it brings)`),
       owner && d.eventPrice.length > 0 && row('Upgrade price', modifierText(d.eventPrice), 'City events changing build/upgrade prices for this category'),
+      owner && row('Prestige', d.prestige
+        ? `${d.prestige > 0 ? '+' : ''}${d.prestige}${d.prestigeNotes.length > 1 ? ` (${d.prestigeNotes.map((n) => `${n.label} ${n.points > 0 ? '+' : ''}${n.points}`).join(', ')})` : ''}`
+        : '0', `Each Prestige point adds ${formatCash(ECONOMY.SCORING.PRESTIGE)} to City Value. Parks, Civic and Landmarks earn it; industry next to homes costs it`),
+      owner && row('Control', String(d.control), 'Takeover defence: base + nearby Residential, Civic and Landmark levels of the same owner'),
+      d.pressure != null && row('Your pressure', d.contestable ? `${d.pressure} › ${d.control}: you can take it over` : `${d.pressure} (needs more than ${d.control})`,
+        'Your nearby Commercial levels. Beat the block\'s control to buy it from its owner'),
     ),
     block.abandoned && h('p', { class: 'inspector__note inspector__note--abandoned' },
       `Abandoned${block.abandonedBy ? ` by ${getPlayer(game, block.abandonedBy)?.name}` : ''}. Inactive until another mayor buys it.`),
@@ -130,6 +137,14 @@ function renderPrompt() {
   prompt.classList.toggle('is-distress', isInDistress(p));
   if (isInDistress(p)) {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
+    return;
+  }
+  if (game.era === ERAS.CITY) {
+    const { actionsLeft } = eraStatus(game);
+    const left = `${actionsLeft} City Action${actionsLeft === 1 ? '' : 's'} left`;
+    prompt.textContent = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP
+      ? `${p.name}: CAPTURE / DEVELOP · Resolve the final claimed block, then your City turn.`
+      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : ''}, then End Turn.`;
     return;
   }
   const copy = {
@@ -162,9 +177,15 @@ function renderActions() {
   const manageable = game && !cpuTurn && canManage(game, getSelectedBlock());
   build.disabled = !manageable;
   build.title = manageable ? 'Develop the selected block' : 'Select one of your blocks to develop it';
+  const managing = Boolean(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY) && !cpuTurn;
+  const city = game?.era === ERAS.CITY;
   const pave = $('#action-pave');
-  pave.hidden = !(game && game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY) || cpuTurn;
+  pave.hidden = !managing || city;
   pave.disabled = distress;
+  const endTurn = $('#action-end-turn');
+  endTurn.hidden = !managing || !city;
+  endTurn.disabled = distress;
+  endTurn.classList.toggle('is-ready', managing && city && game.city.actionsLeft === 0);
 }
 
 function render() {
@@ -330,6 +351,7 @@ function showEconomyFeedback(turnIncome, turnUpkeep, turnRepair) {
 
 
 const REJECT_MESSAGES = {
+  [MOVE_ERRORS.ROADS_CLOSED]: 'Every road is paved: it’s the City era.',
   [MOVE_ERRORS.TAKEN]: 'That road is already paved.',
   [MOVE_ERRORS.INVALID]: "That's not a road.",
   [MOVE_ERRORS.GAME_OVER]: 'The game is over.',
@@ -382,24 +404,76 @@ function handleRoad(id, { cpu = false } = {}) {
       { tone: 'capture', duration: 2200 });
   }
   if (result.gameEnded) {
-    stopCpu();
-    $('#board-frame').classList.add('is-city-complete');
-    // Career stats/achievements: counted only if this match was genuinely played to the end.
-    recordFinishedMatch(game);
-    clearActiveGame();
-    refreshSavedGameControls();
-    setTimeout(() => {
-      if (game?.results) {
-        play('win');
-        buzz('win');
-      }
-      showResults();
-    }, n > 0 ? 700 : 0);
+    finishMatch(n > 0 ? 700 : 0);
+    bus.emit('game:move', result);
+    return;
+  }
+  if (result.cityEra) announceCityEra();
+  autosave();
+  if (n > 0) showCaptureChoice();
+  passTurn(result, mover);
+}
+
+/** The match is over (final road with no City era, or the last City turn): results after a beat. */
+function finishMatch(delay) {
+  stopCpu();
+  $('#board-frame').classList.add('is-city-complete');
+  // Career stats/achievements: counted only if this match was genuinely played to the end.
+  recordFinishedMatch(game);
+  clearActiveGame();
+  refreshSavedGameControls();
+  setTimeout(() => {
+    if (game?.results) {
+      play('win');
+      buzz('win');
+    }
+    showResults();
+  }, delay);
+}
+
+/** Every road is paved: celebrate, and explain what the CITY era changes. */
+function announceCityEra() {
+  const { rounds, actionsPerTurn } = eraStatus(game);
+  flashFrame();
+  play('event', { kind: 'boon' });
+  toast(`Every road is paved! The City era begins: ${rounds} more round${rounds === 1 ? '' : 's'}, `
+    + `${actionsPerTurn} City Action${actionsPerTurn === 1 ? '' : 's'} per turn.`, { tone: 'success', duration: 4200 });
+}
+
+/** CITY era: the current mayor ends their turn (End Turn, or a CPU mayor's decision). */
+function handleEndTurn({ cpu = false } = {}) {
+  if (!game) return;
+  const mover = currentPlayer(game);
+  if (isCpu(mover) && !cpu) return;
+  if (!isCpu(mover)) lastHuman = mover.seat;
+  const result = endCityTurn(game);
+  if (!result.ok) {
+    play('error');
+    buzz('error');
+    toast(result.error === MOVE_ERRORS.IN_DISTRESS ? 'Resolve your debt before ending your turn.' : 'You can’t end your turn now.',
+      { tone: 'warn', duration: 1600 });
+    if (result.error === MOVE_ERRORS.IN_DISTRESS) openDistressPanel(game);
+    return;
+  }
+  clearSelection();
+  disarm();
+  chain = 0;
+  renderChain();
+  render();
+  if (result.gameEnded) {
+    finishMatch(0);
     bus.emit('game:move', result);
     return;
   }
   autosave();
-  if (n > 0) showCaptureChoice();
+  passTurn(result, mover);
+}
+
+/**
+ * After a move that may have passed play on (a road, or a City turn ending): the next mayor's
+ * chime, the pass-the-device screen, the new round's event card and their income feedback.
+ */
+function passTurn(result, mover) {
   const finishTransition = () => {
     if (result.event?.started) {
       play('event', { kind: getEventDef(result.event.started.id)?.kind, id: result.event.started.id });
@@ -491,6 +565,11 @@ function cpuPlan(g) {
   const label = (id) => getBlockById(g.board, id).label;
   const blockTarget = (id) => `#board [data-block="${id}"]`;
   switch (d.action) {
+    case 'end-turn':
+      return {
+        text: d.reason === 'no-actions' ? 'Out of City Actions: ending the turn' : 'Done for this City turn',
+        run: () => handleEndTurn({ cpu: true }),
+      };
     case 'pave':
       return {
         text: 'Done building: heading out to pave',
@@ -550,6 +629,21 @@ function cpuPlan(g) {
           render();
         },
       };
+    case 'takeover':
+      return {
+        text: `Taking over ${label(d.blockId)} (its shops out-pressure the owner)`,
+        target: blockTarget(d.blockId),
+        run: () => {
+          const from = getBlockById(g.board, d.blockId).ownerSeat;
+          const result = takeoverBlock(g, d.blockId);
+          if (result.ok) {
+            toast(`${me.name} takes over ${label(d.blockId)} from ${getPlayer(g, from).name} · ${formatCash(result.cost)}`, { tone: 'warn', duration: 3000 });
+            play('coins');
+          }
+          autosave();
+          render();
+        },
+      };
     case 'redevelop':
       return {
         text: `Opening bidding on abandoned ${label(d.blockId)}`,
@@ -579,6 +673,7 @@ function cpuFallback(g) {
     return { text: null, run: () => leaveCapturedBlock(blockId) };
   }
   if (g.turnPhase === TURN_PHASES.MANAGE_CITY && currentPlayer(g).cash >= 0) {
+    if (g.era === ERAS.CITY) return { text: null, run: () => handleEndTurn({ cpu: true }) };
     return { text: null, run: () => { if (startPaving(g)) autosave(); render(); } };
   }
   return null;
@@ -728,6 +823,7 @@ export function initGameView() {
   initFinanceView({ onChange: () => { autosave(); render(); } });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
+  $('#action-end-turn').addEventListener('click', () => handleEndTurn());
   $('#action-pave').addEventListener('click', () => {
     if (startPaving(game)) {
       clearSelection();

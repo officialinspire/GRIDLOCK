@@ -7,6 +7,7 @@ import {
 import { SAVE_KEY } from '../../js/core/persistence.js';
 import { CATEGORY_ORDER } from '../../js/core/buildings.js';
 import { playthrough, loadApi } from './_playthrough.mjs';
+import { playOutCity } from './_city.mjs';
 
 const api = await loadApi();
 const seats = (n) => Array.from({ length: n }, (_, i) => ({ seat: i + 1, name: `Mayor ${i + 1}` }));
@@ -21,7 +22,8 @@ function stagedFinish(seed) {
   const { game } = playthrough(api, { seats: seats(4), seed }, { stopAfterRoads: 20 });
   const ids = api.allRoadIds(game.board).filter((id) => !(id in game.board.roads));
   ids.slice(0, -1).forEach((id) => { game.board.roads[id] = 1; });
-  api.placeRoad(game, ids.at(-1)); // the last road is played for real, so the game ends
+  api.placeRoad(game, ids.at(-1)); // the last road is played for real…
+  playOutCity(game); // …and the CITY era played out, so the game ends
   return game;
 }
 
@@ -51,14 +53,17 @@ test('only genuinely completed matches count', () => {
   assert.equal(isGenuineMatch(cash), false);
 
   // A vacant owned block whose capture is erased from the log: ownership no longer traces to play.
-  const owned = play(2024);
+  // (No CITY era here: its builds would develop every vacant block the fixture needs.)
+  const expansionOnly = () => playthrough(api, { seats: seats(4), seed: 2024, gameType: 'standard', cityRounds: 0 }).game;
+  const owned = expansionOnly();
+  assert.equal(isGenuineMatch(owned), true);
   const touched = new Set([...owned.log, ...owned.ledger].map((e) => e.block).filter(Boolean));
   const block = owned.board.blocks.find((b) => b.ownerSeat != null && !touched.has(b.id));
   assert.ok(block, 'fixture has a vacant owned block');
   owned.log = owned.log.map((e) => (e.type === 'road' ? { ...e, captured: e.captured.filter((id) => id !== block.id) } : e));
   assert.equal(isGenuineMatch(owned), false, 'ownership with no logged capture or purchase');
 
-  const built = play(2024);
+  const built = expansionOnly();
   built.board.blocks.find((b) => b.ownerSeat != null && b.level === 0 && !built.log.some((e) => e.block === b.id)).level = 2;
   assert.equal(isGenuineMatch(built), false, 'development with no logged build');
 

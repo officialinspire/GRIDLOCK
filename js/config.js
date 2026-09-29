@@ -44,11 +44,16 @@ export const ECONOMY = Object.freeze({
   /** Recurring income from an owned block with no building on it. */
   UNDEVELOPED_INCOME: 0,
 
-  /** Final City Value coefficients. Development must repay its scoring discount through income. */
+  /**
+   * Final City Value = CASH × cash + LAND × land value + INVESTED_BUILDING × actual construction
+   * spend + PRESTIGE × Prestige points (dollars per point). Land is discounted and buildings count
+   * in full, so developing a city beats merely owning the most blocks.
+   */
   SCORING: Object.freeze({
     CASH: 1,
-    LAND: 1,
-    INVESTED_BUILDING: 0.75,
+    LAND: 0.7,
+    INVESTED_BUILDING: 1,
+    PRESTIGE: 150,
   }),
 
   /** Land value of a block by district; counts toward net property value. */
@@ -132,7 +137,7 @@ export const ECONOMY = Object.freeze({
     /** 3+ connected Commercial blocks: each gets +percent. */
     COMMERCIAL_DISTRICT: Object.freeze({ minSize: 3, percent: 25 }),
     /** Each directly adjacent Park adds +percentPerPark to a Residential block (up to maxParks). */
-    PARK_ADJACENCY: Object.freeze({ percentPerPark: 10, maxParks: 2, sameOwnerOnly: true }),
+    PARK_ADJACENCY: Object.freeze({ percentPerPark: 15, maxParks: 2, sameOwnerOnly: true }),
     /** A connected cluster of Residential/Commercial/Park containing all three: each member gets +percent. */
     MIXED_USE: Object.freeze({ percent: 10 }),
     /**
@@ -140,6 +145,53 @@ export const ECONOMY = Object.freeze({
      * Marks protected blocks so emergencies can be mitigated; no direct income effect.
      */
     CIVIC_PROTECTION: Object.freeze({ radiusByLevel: Object.freeze({ 1: 1, 2: 1, 3: 2 }), sameOwnerOnly: true }),
+  }),
+
+  /**
+   * Strategic category effects (core/strategy.js, derived with the adjacency data by
+   * refreshBonuses). Only developed, owned, active blocks produce effects. "Nearby" means within
+   * RADIUS (Manhattan distance, in blocks); "adjacent" means sharing a road (distance 1).
+   */
+  STRATEGY: Object.freeze({
+    RADIUS: 1,
+
+    /**
+     * Prestige: points that score PRESTIGE dollars each (SCORING). A block's own Prestige is
+     * perLevel × its level; a Park also gives each adjacent same-owner developed block
+     * parkNeighbour points (at most parkNeighbourMax Parks count per block). An Industrial block
+     * adjacent to any developed Residential block (anyone's) loses industrialPenaltyPerLevel × its
+     * level, unless an adjacent same-owner Park buffers it. A player's total never goes below 0.
+     */
+    PRESTIGE: Object.freeze({
+      perLevel: Object.freeze({ residential: 0, commercial: 0, park: 1, civic: 1, industrial: 0, landmark: 3 }),
+      parkNeighbour: 1,
+      parkNeighbourMax: 2,
+      industrialPenaltyPerLevel: 1,
+    }),
+
+    /**
+     * Control (defence) of an owned block = base + Σ perLevel × level of its owner's developed
+     * blocks nearby (itself included). Pressure (attack) by a player on a block = Σ perLevel ×
+     * level of that player's developed Commercial blocks nearby. A rival whose pressure is greater
+     * than a block's control may take it over (TAKEOVER).
+     */
+    CONTROL: Object.freeze({
+      base: 1,
+      perLevel: Object.freeze({ residential: 1, civic: 1, landmark: 2 }),
+    }),
+    PRESSURE: Object.freeze({
+      perLevel: Object.freeze({ commercial: 1 }),
+    }),
+
+    /**
+     * Takeover: during Manage City a player may buy a rival's block (development included) when
+     * their pressure beats its control. The price, pricePercent of the block's value (land +
+     * construction spend), is paid to the owner. A CITY-era takeover costs a City Action.
+     */
+    TAKEOVER: Object.freeze({ pricePercent: 110 }),
+
+    /** Industry: builds and upgrades adjacent to the builder's own developed Industrial block cost this % less. */
+    INDUSTRY: Object.freeze({ costDiscountPercent: 10 }),
   }),
 });
 
@@ -220,6 +272,22 @@ export const CPU = Object.freeze({
 });
 
 export const MAX_NAME_LENGTH = 16;
+
+/**
+ * Gameplay eras (core/game.js). EXPANSION is the road/capture game. Paving the final road starts
+ * CITY: no more roads, but income, upkeep and events carry on while mayors build, upgrade, sell
+ * and redevelop. The rest of the round in which the grid is finished is played as City turns,
+ * then CITY lasts ROUNDS more full rounds and the match ends after the last seat of the last one.
+ *
+ *   ROUNDS            full City rounds after the grid is complete (0: the match ends on the final road)
+ *   ACTIONS_PER_TURN  City Actions each mayor gets per City turn. A build, upgrade, voluntary sale
+ *                     or downgrade, or redevelopment purchase/auction costs one. Selling to clear
+ *                     debt, bankruptcy and developing a block just captured by the final road are free.
+ */
+export const CITY_ERA = Object.freeze({
+  ROUNDS: 4,
+  ACTIONS_PER_TURN: 2,
+});
 
 /**
  * City events (core/events.js). One event is drawn when a full round of play

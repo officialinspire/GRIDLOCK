@@ -1,8 +1,8 @@
 /**
  * CPU strategy for MANAGE CITY and CAPTURE / DEVELOP. Pure: chooseCityAction() returns the
  * next action and changes nothing; applyCityAction() plays a decision through the normal
- * game APIs. Ask, apply, ask again, until the answer is "pave" (Manage City) or the capture
- * choice is resolved.
+ * game APIs. Ask, apply, ask again, until the answer is "pave" / "end-turn" (Manage City) or
+ * the capture choice is resolved.
  *
  *   { action: 'build', blockId, type }   build Level 1 on a vacant block
  *   { action: 'upgrade', blockId }       raise a building one level
@@ -10,7 +10,9 @@
  *   { action: 'downgrade' | 'sell', blockId }   raise cash while in debt
  *   { action: 'bankruptcy' }             only when selling everything can't cover the debt
  *   { action: 'redevelop', blockId, mode }   open a sealed-bid auction for an abandoned block
- *   { action: 'pave' }                   done managing: go pave a road
+ *   { action: 'takeover', blockId }      buy a rival's block its Commercial pressure has broken
+ *   { action: 'pave' }                   done managing: go pave a road (EXPANSION era)
+ *   { action: 'end-turn' }               done managing, or out of City Actions (CITY era)
  *   { action: null, error }              nothing to decide now
  * Every decision also carries `reason` and, where relevant, `cost`, `score`, `net` (per turn)
  * and `cityValue` (the change).
@@ -54,14 +56,18 @@
  */
 import { CPU, CITY_EVENTS, ECONOMY } from '../../config.js';
 import { isCpu } from '../seats.js';
-import { currentPlayer, getPlayer, playerStats, resolveCapture, startPaving, TURN_PHASES, PHASES } from '../game.js';
+import {
+  currentPlayer, getPlayer, playerStats, resolveCapture, startPaving, endCityTurn, outOfCityActions, TURN_PHASES, PHASES, ERAS,
+} from '../game.js';
 import { blocksOwnedBy, getBlockById, neighbors } from '../board.js';
 import { buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL } from '../development.js';
 import { CATEGORY_ORDER } from '../buildings.js';
 import {
   distressStatus, declareBankruptcy, quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment,
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES,
+  quoteTakeover, takeoverBlock,
 } from '../finance.js';
+import { canPressure } from '../strategy.js';
 import { forecastDevelopment, blockDetails } from '../forecast.js';
 import { scorePlayer } from '../scoring.js';
 import { eventRules } from '../modes.js';
@@ -78,6 +84,7 @@ export const CITY_REASONS = Object.freeze({
   NOT_WORTH_IT: 'not-worth-it', // affordable, but it wouldn't pay back before the city is done
   NO_CASH: 'no-cash', // nothing affordable
   RANDOM: 'random', // easy: an unplanned but sensible purchase
+  NO_ACTIONS: 'no-actions', // CITY era: this turn's City Actions are spent
   PASS: 'pass', // easy: chose not to spend this time
 });
 
@@ -478,6 +485,46 @@ function chooseRedevelopment(game, level, reserve, profile) {
   return best;
 }
 
+/* ---------------- takeovers (rival blocks under Commercial pressure) ---------------- */
+
+/**
+ * What taking `blockId` over is worth to the current mayor: the real takeover run on a copy,
+ * read back as (net income per turn × turns left + City Value change). Null when not possible.
+ */
+function takeoverValue(game, blockId, turns) {
+  const q = quoteTakeover(game, blockId);
+  if (!q.ok) return null;
+  const sim = structuredClone(slim(game));
+  const seat = currentPlayer(sim).seat;
+  const before = getPlayer(sim, seat);
+  const statsBefore = playerStats(sim, before);
+  const valueBefore = scorePlayer(sim, before).cityValue;
+  if (!takeoverBlock(sim, blockId).ok) return null;
+  const after = getPlayer(sim, seat);
+  const statsAfter = playerStats(sim, after);
+  const net = (statsAfter.income - statsAfter.upkeep) - (statsBefore.income - statsBefore.upkeep);
+  return { cost: q.cost, surplus: net * turns + scorePlayer(sim, after).cityValue - valueBefore, cashAfter: after.cash, upkeepAfter: statsAfter.upkeep };
+}
+
+/** Normal/Hard, Manage City: the rival block most worth taking over, if any. */
+function chooseTakeover(game, level, reserve, profile) {
+  if (level === 'easy') return null;
+  const me = currentPlayer(game);
+  const turns = expectedTurnsLeft(game, { lookAhead: level === 'hard' });
+  let best = null;
+  for (const block of game.board.blocks) {
+    if (!canPressure(game.board, me.seat, block)) continue;
+    const value = takeoverValue(game, block.id, turns);
+    if (!value || value.surplus <= 0) continue;
+    // Keep the reserve and next turn's upkeep in hand, as for any purchase.
+    if (value.cashAfter < reserve + value.upkeepAfter) continue;
+    const score = value.surplus * weight(profile, 'redevelop');
+    if (level === 'hard' && value.surplus / Math.max(1, value.cost) < CPU.HARD_MIN_ROI) continue;
+    if (!best || score > best.score) best = { action: 'takeover', blockId: block.id, reason: CITY_REASONS.DEVELOP, cost: value.cost, score };
+  }
+  return best;
+}
+
 /* ---------------- entry points ---------------- */
 
 /**
@@ -502,11 +549,15 @@ export function chooseCityAction(game, { difficulty, seed, reserve } = {}) {
   }
   if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return { action: null, error: 'wrong-turn-phase' };
   if (me.cash < 0) return chooseDebtAction(game, level, rand);
+  // Done managing: pave (EXPANSION) or end the turn (CITY, where roads are closed).
+  const done = game.era === ERAS.CITY ? 'end-turn' : 'pave';
+  if (outOfCityActions(game)) return { action: done, reason: CITY_REASONS.NO_ACTIONS };
   const owned = blocksOwnedBy(game.board, me.seat).map((b) => b.id);
   const { pick, reason } = choosePurchase(game, level, owned, rand, keep, { capture: false, profile });
-  const redevelop = chooseRedevelopment(game, level, keep, profile);
-  if (redevelop && (!pick || redevelop.score > (pick.score ?? 0))) return redevelop;
-  return pick ?? { action: 'pave', reason };
+  // The best of a build/upgrade, a redevelopment auction and a takeover (Easy: builds only).
+  const options = [pick, chooseRedevelopment(game, level, keep, profile), chooseTakeover(game, level, keep, profile)].filter(Boolean);
+  if (!options.length) return { action: done, reason };
+  return options.reduce((a, b) => ((b.score ?? 0) > (a.score ?? 0) ? b : a));
 }
 
 /** Plays a decision from chooseCityAction() through the normal game APIs. */
@@ -527,7 +578,9 @@ export function applyCityAction(game, decision) {
     // Every eligible CPU seat bids; people add theirs as decision.humanBids (the auction panel).
     case 'redevelop': return resolveRedevelopmentAuction(game, decision.blockId, decision.mode,
       [...cpuBids(game, decision.blockId, decision.mode), ...(decision.humanBids ?? [])]);
+    case 'takeover': return takeoverBlock(game, decision.blockId);
     case 'pave': return { ok: startPaving(game) };
+    case 'end-turn': return endCityTurn(game);
     default: return { ok: false, error: decision?.error ?? 'no-action' };
   }
 }

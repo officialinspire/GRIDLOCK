@@ -25,7 +25,7 @@
  */
 import { ECONOMY, CPU } from '../../config.js';
 import { allRoadIds, roadBlocks, blockRoadIds, hasRoad } from '../board.js';
-import { validateRoad, currentPlayer } from '../game.js';
+import { validateRoad, currentPlayer, cityTurnsLeft } from '../game.js';
 import { stream, defaultCpuSeed } from './random.js';
 
 export { defaultCpuSeed };
@@ -309,9 +309,13 @@ function decideHard(pos, legal, rand, players, followUp = 1) {
  * judged from the board alone. Rough: the unpaved roads shared out, about one in two taken
  * as a turn-ending move. Look-ahead: once the safe roads run out the rest of the board goes
  * in a few long capture chains, so safe moves still to play (about half the safe roads)
- * plus one per likely chain, shared out.
+ * plus one per likely chain, shared out. (Deliberately conservative: the CITY era's rounds are
+ * not added, which keeps the tuned EXPANSION-era play.) Once the CITY era has begun, the turns
+ * left are known exactly.
  */
 export function expectedTurnsLeft(game, { lookAhead = false } = {}) {
+  const city = cityTurnsLeft(game);
+  if (city != null) return city;
   const pos = positionOf(game);
   const free = freeRoads(pos);
   const players = game.players.length;

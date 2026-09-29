@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseCityAction, applyCityAction, CITY_REASONS, defaultReserve } from '../../js/core/cpu/city.js';
+import { chooseCityAction, applyCityAction, cpuBids, CITY_REASONS, defaultReserve } from '../../js/core/cpu/city.js';
 import { chooseRoad } from '../../js/core/cpu/roads.js';
 import { CPU, ECONOMY } from '../../js/config.js';
-import { createGame, placeRoad, currentPlayer, getPlayer, playerStats, TURN_PHASES } from '../../js/core/game.js';
+import {
+  createGame, placeRoad, currentPlayer, getPlayer, playerStats, enterCityEra, endCityTurn, TURN_PHASES, ERAS,
+} from '../../js/core/game.js';
 import { getBlock, getBlockById, allRoadIds } from '../../js/core/board.js';
 import { applyDevelopment } from '../../js/core/development.js';
 import { refreshBonuses } from '../../js/core/bonuses.js';
@@ -18,8 +20,8 @@ const LEVELS = ['easy', 'normal', 'hard'];
  * `mode` picks the rule preset; the city's event pool is empty unless `events` (none are drawn
  * before round 2 either way, so the position is identical).
  */
-function captured({ cash, events = false, mode = 'standard' } = {}) {
-  const game = createGame({ seats: seats(), seed: 3, mode, ...(!events && { eventPool: [] }) });
+function captured({ cash, events = false, mode = 'standard', cityRounds } = {}) {
+  const game = createGame({ seats: seats(), seed: 3, mode, cityRounds, ...(!events && { eventPool: [] }) });
   for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) assert.ok(placeRoad(game, id).ok);
   assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
   if (cash != null) currentPlayer(game).cash = cash;
@@ -86,16 +88,20 @@ test('the cash reserve is configurable and always kept', () => {
   assert.ok(generous.action === 'vacant' || 5000 - generous.cost >= 4000);
 });
 
-test('near the end of the city, Normal and Hard keep the cash (building would not pay back)', () => {
-  const game = captured();
+test('near the end of the city, Normal and Hard build only for Prestige (income would not pay back)', () => {
+  // No CITY era: the match ends with the roads.
+  const game = captured({ cityRounds: 0 });
   // Pave everything else except a couple of far-away roads: the game is about to end.
   const keep = new Set(['h-6-5', 'v-5-6']);
   for (const id of allRoadIds(game.board)) if (!keep.has(id) && !(id in game.board.roads)) game.board.roads[id] = 1;
   // As in real play, every enclosed block has been claimed; only F6 (r5c5) is still open.
   for (const b of game.board.blocks) if (b.ownerSeat == null && b.id !== 'r5c5') b.ownerSeat = 1;
+  // Construction scores in full, so with no paydays left only Prestige makes a build worth it:
+  // the Landmark (the most Prestige per build), never an income building.
   for (const difficulty of ['normal', 'hard']) {
     const d = chooseCityAction(game, { difficulty, seed: 1 });
-    assert.deepEqual([d.action, d.reason], ['vacant', CITY_REASONS.NOT_WORTH_IT], difficulty);
+    assert.deepEqual([d.action, d.type], ['build', 'landmark'], difficulty);
+    assert.equal(d.cityValue, ECONOMY.STRATEGY.PRESTIGE.perLevel.landmark * ECONOMY.SCORING.PRESTIGE);
   }
 });
 
@@ -326,7 +332,8 @@ test('a CPU mayor opens bidding on a lot worth having, and the sealed bids settl
   assert.deepEqual([d.action, d.blockId, d.mode], ['redevelop', 'r2c2', 'rebuild']);
   // A person outbids it: the highest sealed bid wins.
   const outbid = structuredClone(game);
-  const r = applyCityAction(outbid, { ...d, humanBids: [{ seat: 1, bid: 9000 }] });
+  const botBid = cpuBids(game, d.blockId, d.mode).find((b) => b.seat === 2).bid;
+  const r = applyCityAction(outbid, { ...d, humanBids: [{ seat: 1, bid: botBid + ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT }] });
   assert.equal(r.winnerSeat, 1);
   // Nobody else bids: the bot wins at its own bid, paid through the real auction.
   const cash = currentPlayer(game).cash;
@@ -335,4 +342,63 @@ test('a CPU mayor opens bidding on a lot worth having, and the sealed bids settl
   assert.equal(getBlockById(game.board, 'r2c2').ownerSeat, 2);
   assert.equal(currentPlayer(game).cash, cash - won.cost);
   assert.ok(currentPlayer(game).cash >= CPU.RESERVE.hard);
+});
+
+/* ---------------- CITY era ---------------- */
+
+/** Every road paved and the CITY era under way; the current mayor (a CPU) owns a few vacant lots. */
+function cityTable(difficulty) {
+  const game = createGame({ seats: [1, 2].map((seat) => ({ seat, controller: 'cpu', difficulty })), seed: 9, eventPool: [] });
+  for (const id of allRoadIds(game.board)) game.board.roads[id] = 1;
+  game.board.blocks.forEach((b, i) => { b.ownerSeat = (i % 2) + 1; });
+  refreshBonuses(game.board);
+  assert.equal(enterCityEra(game), true);
+  currentPlayer(game).cash = 40000;
+  return game;
+}
+
+test('CITY era: CPU mayors spend at most their City Actions, then end the turn', () => {
+  for (const difficulty of LEVELS) {
+    const game = cityTable(difficulty);
+    const me = currentPlayer(game);
+    let spent = 0;
+    let d;
+    for (let i = 0; i < 10; i++) {
+      d = chooseCityAction(game, { seed: i });
+      assert.notEqual(d.action, 'pave', `${difficulty}: no paving in the CITY era`);
+      if (d.action === 'end-turn') break;
+      assert.ok(applyCityAction(game, d).ok, `${difficulty}: ${d.action}`);
+      spent++;
+    }
+    assert.equal(d.action, 'end-turn', `${difficulty}: the turn ends`);
+    assert.ok(spent <= game.city.actionsPerTurn, `${difficulty}: ${spent} actions`);
+    if (difficulty !== 'easy') assert.equal(d.reason, CITY_REASONS.NO_ACTIONS, `${difficulty}: plenty to build, so every action is used`);
+    const result = applyCityAction(game, d);
+    assert.equal(result.ok, true);
+    assert.notEqual(currentPlayer(game).seat, me.seat, 'play passes on');
+    assert.equal(game.city.actionsLeft, game.city.actionsPerTurn);
+  }
+});
+
+test('CITY era: on the very last turn, Normal and Hard spend their actions on Prestige only', () => {
+  for (const difficulty of ['normal', 'hard']) {
+    const game = cityTable(difficulty);
+    // Play on to the last seat of the last City round.
+    while (!(game.round === game.city.endRound && game.turnIndex === game.players.length - 1)) {
+      assert.ok(endCityTurn(game).ok);
+      currentPlayer(game).cash = 40000;
+    }
+    assert.equal(game.era, ERAS.CITY);
+    // No paydays left: income buildings are worth nothing more, Landmarks still score Prestige.
+    const built = [];
+    let d = chooseCityAction(game, { seed: 1 });
+    while (d.action === 'build' || d.action === 'upgrade') {
+      built.push(d.type ?? getBlockById(game.board, d.blockId).type); // a Landmark build or upgrade
+      assert.ok(applyCityAction(game, d).ok);
+      d = chooseCityAction(game, { seed: 1 });
+    }
+    assert.deepEqual(built, ['landmark', 'landmark'], difficulty);
+    assert.deepEqual([d.action, d.reason], ['end-turn', CITY_REASONS.NO_ACTIONS], difficulty);
+    assert.equal(applyCityAction(game, d).gameEnded, true);
+  }
 });

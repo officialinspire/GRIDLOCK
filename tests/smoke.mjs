@@ -37,6 +37,21 @@ const VIEWPORTS = [
   { name: 'phone-landscape', width: 844, height: 390, isMobile: true, hasTouch: true },
 ];
 
+/** CITY era: every mayor ends their City turns (clearing event cards and handoffs) until the results open. */
+async function playOutCityEra(page) {
+  for (let i = 0; i < 80; i++) {
+    if (await page.locator('#results-dialog[open]').count()) return;
+    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+      ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
+      if (await page.locator(`${sel}[open]`).count()) await page.click(click);
+    }
+    if (await page.locator('#finance-dialog[open]').count()) {
+      await page.locator('#finance-dialog').locator('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]').first().click();
+    } else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn');
+    else await page.waitForTimeout(50);
+  }
+}
+
 async function dismissEvent(page) {
   if (await page.locator('#event-dialog[open]').count()) await page.click('#event-continue');
 }
@@ -284,6 +299,7 @@ for (const vp of VIEWPORTS) {
       await pave(page, road(id));
       await dismissEvent(page);
     }
+    await playOutCityEra(page);
     await page.waitForSelector('#results-dialog[open]');
     assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null);
     assert.equal(await page.locator('#board .block--owned').count(), 36);
@@ -490,6 +506,18 @@ for (const vp of VIEWPORTS) {
       return ids.at(-1);
     });
     await pave(page, page.locator(`[data-road="${last}"]`));
+    // The final road starts the CITY era: no Pave Road, an End Turn button and the era in the HUD.
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    assert.ok(await page.isHidden('#action-pave'));
+    assert.ok(await page.isVisible('#action-end-turn'));
+    assert.ok(await page.isHidden('.round-badge__roads'));
+    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 2 actions$/);
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left/);
+    for (let turns = 0; turns < 40; turns++) {
+      if (await page.evaluate(() => window.__GRIDLOCK__.getGame().phase === 'ended')) break;
+      if (turns === 4) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/);
+      await page.click('#action-end-turn');
+    }
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().phase === 'ended');
     const dialog = page.locator('#results-dialog');
     await dialog.waitFor({ state: 'visible' });
@@ -895,6 +923,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board);
       ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       const b = getBlock(g.board, 5, 5);
       if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
@@ -1040,6 +1069,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board);
       ids.slice(0, -1).forEach((id) => { if (g.board.roads[id] == null) g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       const b = getBlock(g.board, 5, 5);
       if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
@@ -1193,6 +1223,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1257,6 +1288,7 @@ const recordVibration = () => {
       const g = window.__GRIDLOCK__.getGame();
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) b.abandoned = b.ownerSeat == null ? (b.abandonedBy = 1, true) : b.abandoned;
       return ids.at(-1);
     });
@@ -1277,8 +1309,10 @@ const recordVibration = () => {
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
         if (vacant) { vacant.click(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
-        if (!road) break;
-        road.click();
+        const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)'); // CITY era
+        if (road) road.click();
+        else if (endTurn) endTurn.click();
+        else break;
       }
     });
     await page.locator('#results-dialog').waitFor({ state: 'visible' });
@@ -1446,6 +1480,7 @@ const recordVibration = () => {
     g.eventPool = [];
     const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
     ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+    g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
     for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
     return ids.at(-1);
   });
@@ -1633,6 +1668,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1688,6 +1724,7 @@ const recordVibration = () => {
       g.eventPool = [];
       const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+      g.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
       return ids.at(-1);
     });
@@ -1809,6 +1846,7 @@ const recordVibration = () => {
       return g.phase === 'playing' && g.players[g.turnIndex].controller !== 'cpu' ? chooseRoad(g, { difficulty: 'normal' }).road : null;
     });
     if (road) await page.click(`#board [data-road="${road}"]`);
+    else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn'); // CITY era
   }
   /** Plays until `done`: people move via humanStep; CPU turns run themselves (Skip speeds them up). */
   async function playUntil(page, done, { skip = true, limit = 600 } = {}) {
@@ -2412,6 +2450,7 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
       const game = window.__GRIDLOCK__.getGame();
       const ids = allRoadIds(game.board).filter((id) => game.board.roads[id] == null);
       ids.slice(0, -1).forEach((id) => { game.board.roads[id] = 1; });
+      game.city.rounds = 0; // staged finish goes straight to results (the City era has its own scenario)
       for (const b of game.board.blocks) if (b.ownerSeat == null) b.ownerSeat = 1 + ((b.row + b.col) % 4);
       return ids.at(-1);
     });

@@ -2,12 +2,13 @@
  * End-of-game scoring. Pure functions of game state (no DOM, no randomness),
  * so results are fully testable and deterministic.
  *
- *   City Value = configured cash score + land score + building-investment score.
- * Coefficients live in ECONOMY.SCORING so development can earn its advantage
- * through income instead of converting every spent dollar directly into score.
+ *   City Value = cash score + land score + building-investment score + Prestige score.
+ * Coefficients live in ECONOMY.SCORING: land is discounted and construction counts in
+ * full, and Prestige (core/strategy.js) rewards well-planned development, so building a
+ * city beats owning the most blocks.
  *
- * Ranking: City Value, then tie-breakers blocks → developed blocks → cash.
- * Players equal on all four share the rank (co-winners), listed in seat order.
+ * Ranking: City Value, then tie-breakers Prestige → total development levels → cash →
+ * blocks owned. Players equal on all five share the rank (co-winners), listed in seat order.
  *
  * Distinctions are fun awards anyone can win (including the winner). A tie
  * shares the award; an award isn't given if its best value is 0 or if every
@@ -17,6 +18,7 @@ import { blocksOwnedBy, blockLabel } from './board.js';
 import { ECONOMY } from '../config.js';
 import { getCategory, levelArt } from './buildings.js';
 import { calculateIncome, investedIn } from './economy.js';
+import { prestigeFor } from './strategy.js';
 
 const isDev = (b) => b.level > 0 && b.type !== 'vacant';
 
@@ -49,6 +51,8 @@ export function scorePlayer(game, player, { exclude = null } = {}) {
   const scoredCash = Math.round(player.cash * ECONOMY.SCORING.CASH);
   const scoredLand = Math.round(landValue * ECONOMY.SCORING.LAND);
   const scoredBuildings = Math.round(buildingValue * ECONOMY.SCORING.INVESTED_BUILDING);
+  const prestige = prestigeFor(game.board, player.seat, { exclude });
+  const scoredPrestige = Math.round(prestige * ECONOMY.SCORING.PRESTIGE);
   const parks = developed.filter((b) => b.type === 'park');
   return {
     seat: player.seat,
@@ -57,10 +61,12 @@ export function scorePlayer(game, player, { exclude = null } = {}) {
     cash: player.cash,
     landValue,
     buildingValue,
+    prestige,
     scoredCash,
     scoredLand,
     scoredBuildings,
-    cityValue: scoredCash + scoredLand + scoredBuildings,
+    scoredPrestige,
+    cityValue: scoredCash + scoredLand + scoredBuildings + scoredPrestige,
     blocks: owned.length,
     developed: developed.length,
     totalLevels: developed.reduce((s, b) => s + b.level, 0),
@@ -74,9 +80,10 @@ export function scorePlayer(game, player, { exclude = null } = {}) {
 /** Ordered tie-breakers after City Value. Exported so the UI can explain them. */
 export const TIEBREAKERS = Object.freeze([
   { key: 'cityValue', label: 'City Value' },
-  { key: 'blocks', label: 'blocks owned' },
-  { key: 'developed', label: 'developed blocks' },
+  { key: 'prestige', label: 'Prestige' },
+  { key: 'totalLevels', label: 'total development levels' },
   { key: 'cash', label: 'cash' },
+  { key: 'blocks', label: 'blocks owned' },
 ]);
 
 function compare(a, b) {
@@ -103,6 +110,7 @@ export const DISTINCTIONS = Object.freeze([
     value: (s) => s.developed * 100 + s.totalLevels, // developed blocks, then total levels
     show: (v, s) => `${s.developed} developed`,
   },
+  { id: 'most-prestige', title: 'Most Prestigious', icon: 'icons:trophy', value: (s) => s.prestige, show: (v) => `${v} Prestige` },
   { id: 'greenest', title: 'Greenest City', icon: 'icons:tree', value: (s) => s.greenery, show: (v) => `${v} park level${v === 1 ? '' : 's'}` },
   { id: 'top-earner', title: 'Top Earner', icon: 'icons:clock', value: (s) => s.income, show: (v) => `+$${v.toLocaleString('en-US')}/turn` },
   {

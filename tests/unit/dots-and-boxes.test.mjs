@@ -7,8 +7,9 @@ import {
 } from '../../js/core/board.js';
 import {
   createGame, placeRoad, currentPlayer, roadsBuilt, roadsRemaining, standings, validateRoad,
-  MOVE_ERRORS, PHASES, TURN_PHASES, startPaving, resolveCapture,
+  MOVE_ERRORS, PHASES, TURN_PHASES, ERAS, startPaving, resolveCapture,
 } from '../../js/core/game.js';
+import { playOutCity } from './_city.mjs';
 
 const four = () => createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) });
 
@@ -207,20 +208,46 @@ test('captured blocks are never re-claimed', () => {
 
 /* ---------------- game end ---------------- */
 
-test('the game ends when the final block is claimed', () => {
+test('claiming the final block starts the CITY era: no bonus road, no more roads', () => {
   const game = four();
   const ids = allRoadIds(game.board);
   preset(game, ids.slice(0, -1)); // every road but the last
   game.board.blocks.slice(0, -1).forEach((b, i) => { b.ownerSeat = (i % 4) + 1; });
   assert.equal(game.phase, PHASES.PLAYING);
+  assert.equal(game.era, ERAS.EXPANSION);
   assert.equal(roadsRemaining(game), 1);
   const last = ids.at(-1); // v-5-6: right edge of F6
   const r = placeRoad(game, last);
   assert.deepEqual(r.captured, ['r5c5']);
-  assert.equal(r.gameEnded, true);
+  assert.equal(r.gameEnded, false);
+  assert.equal(r.cityEra, true);
   assert.equal(r.extraTurn, false);
-  assert.equal(game.phase, PHASES.ENDED);
+  assert.equal(game.phase, PHASES.PLAYING);
+  assert.equal(game.era, ERAS.CITY);
   assert.equal(roadsBuilt(game), 84);
+  // The capture is resolved as usual, then the same mayor manages the city (no bonus road).
+  assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
+  assert.equal(resolveCapture(game, 'r5c5'), true);
+  assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
+  assert.equal(startPaving(game), false);
+  assert.equal(validateRoad(game, 'h-0-0'), MOVE_ERRORS.ROADS_CLOSED);
+  assert.deepEqual(placeRoad(game, 'h-0-0'), { ok: false, error: MOVE_ERRORS.ROADS_CLOSED });
+  playOutCity(game);
+  assert.equal(game.phase, PHASES.ENDED);
+  assert.equal(validateRoad(game, 'h-0-0'), MOVE_ERRORS.GAME_OVER);
+});
+
+test('with 0 City rounds the game ends when the final block is claimed', () => {
+  const game = createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), cityRounds: 0 });
+  const ids = allRoadIds(game.board);
+  preset(game, ids.slice(0, -1));
+  game.board.blocks.slice(0, -1).forEach((b, i) => { b.ownerSeat = (i % 4) + 1; });
+  const r = placeRoad(game, ids.at(-1));
+  assert.deepEqual(r.captured, ['r5c5']);
+  assert.equal(r.gameEnded, true);
+  assert.equal(r.cityEra, false);
+  assert.equal(game.phase, PHASES.ENDED);
+  assert.equal(game.era, ERAS.EXPANSION);
   assert.equal(validateRoad(game, 'h-0-0'), MOVE_ERRORS.GAME_OVER);
 });
 
@@ -231,16 +258,17 @@ test('a full random game always claims all 36 blocks and conserves roads', () =>
     const game = four();
     const pool = allRoadIds(game.board);
     let moves = 0;
-    while (game.phase === PHASES.PLAYING) {
+    while (game.era === ERAS.EXPANSION) {
       const i = Math.floor(rand() * pool.length);
       const [id] = pool.splice(i, 1);
       const before = seatNow(game);
       const r = placeRoad(game, id);
       assert.equal(r.ok, true);
-      if (!r.gameEnded) assert.equal(seatNow(game) === before, r.captured.length > 0);
+      assert.equal(seatNow(game) === before, r.captured.length > 0 || r.cityEra);
       moves++;
     }
     assert.equal(moves, 84);
+    playOutCity(game);
     const total = standings(game).reduce((n, row) => n + row.blocks, 0);
     assert.equal(total, 36);
   }

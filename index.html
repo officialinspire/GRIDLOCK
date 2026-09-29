@@ -200,6 +200,13 @@
           <p><strong>★ Bonuses:</strong> 3+ connected homes or shops form a district, parks boost the homes next to them, and a connected home + shop + park cluster earns a mixed-use bonus.</p>
         </article>
         <article class="paper howto-card">
+          <span class="howto-card__icon" data-sprite="icons:crown"></span>
+          <h3>Prestige &amp; Takeovers</h3>
+          <p><strong>Prestige</strong> scores at the end: Parks, Civic buildings and especially Landmarks earn it, and parks add Prestige to the blocks beside them. Industry next to homes loses Prestige unless a park buffers it.</p>
+          <p><strong>Control</strong> defends your blocks: Residential, Civic and Landmark buildings raise it nearby. Rival <strong>Commercial</strong> buildings create <strong>pressure</strong>; if a rival's pressure beats a block's control they can take it over, paying you 110% of its value.</p>
+          <p>Industry makes builds next door 10% cheaper. Tap any block to see its Prestige and control.</p>
+        </article>
+        <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:clock"></span>
           <h3>City Events</h3>
           <p>After a full round there may be a calm round or a city event. At most two overlap; storms, fires, festivals, booms and recessions change income, prices or modest repair costs.</p>
@@ -214,8 +221,9 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>When every block is enclosed, every mayor finishes the same economic round. Highest <strong>City Value</strong> wins: all cash + all land + 75% of actual construction investment.</p>
-          <p>Ties go to more blocks, then more developed blocks, then more cash. Awards like Most Blocks and Greenest City go to standouts too.</p>
+          <p>Paving the final road starts the <strong>City era</strong>: no more roads, <strong>4 more rounds</strong> of income, upkeep and events, and <strong>2 City Actions</strong> per turn to build, upgrade, sell or redevelop. Then choose <strong>End Turn</strong>. Clearing debt never costs an action.</p>
+          <p>After the last City round, highest <strong>City Value</strong> wins: all cash + 70% of land + 100% of actual construction investment + $150 per <strong>Prestige</strong> point.</p>
+          <p>Ties go to more Prestige, then more development levels, then more cash, then more blocks. Awards like Most Prestigious and Greenest City go to standouts too.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:swap"></span>
@@ -387,6 +395,7 @@
           <span class="round-badge__icon" data-sprite="icons:clock"></span>
           <span>Round <strong id="hud-round">1</strong></span>
           <span class="round-badge__roads" title="Roads paved"><span class="round-badge__roads-icon" data-sprite="icons:road"></span><span id="hud-roads">0/84</span></span>
+          <span class="round-badge__era" id="hud-era" data-era="expansion">Expansion</span>
         </div>
         <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
         <button class="btn btn--icon btn--sm" id="mute-btn" aria-pressed="false" aria-label="Mute sound">
@@ -430,6 +439,9 @@
         </button>
         <button class="btn btn--gold" id="action-pave">
           <span class="btn__icon" data-sprite="icons:road"></span><span>Pave Road</span>
+        </button>
+        <button class="btn btn--gold" id="action-end-turn" hidden>
+          <span class="btn__icon" data-sprite="icons:play"></span><span>End Turn</span>
         </button>
         <p class="turn-prompt" id="turn-prompt" aria-live="polite"></p>
         <!-- Shown during CPU turns (js/ui/cpuDriver.js). -->
@@ -502,7 +514,7 @@
           <p class="results__kicker">City complete · final results</p>
           <h3 id="results-heading" class="results__title">City Complete!</h3>
           <p class="results__mode" id="results-mode"></p>
-          <p class="results__formula">City Value = cash + land + invested construction cost</p>
+          <p class="results__formula">City Value = cash + 70% land + building investment + Prestige</p>
         </header>
         <ol class="results__grid" id="results-list"></ol>
         <dl class="match-stats" id="match-stats" aria-label="Match statistics"></dl>

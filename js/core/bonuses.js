@@ -6,6 +6,7 @@
  *   block.bonuses      [{ id, label, percent, amount }]
  *   block.bonusIncome  sum of bonus amounts (whole dollars)
  *   block.protectedBy  ids of civic blocks whose radius covers this block
+ *   block.prestige / prestigeNotes / control   strategic effects (core/strategy.js), for display
  *
  * Guarantees (see tests/unit/bonuses.test.mjs):
  * - Pure recompute: calling it twice gives the same result; stale bonuses vanish.
@@ -17,6 +18,7 @@
  */
 import { ECONOMY } from '../config.js';
 import { neighbors } from './board.js';
+import { blockPrestige, blockControl } from './strategy.js';
 
 const CFG = ECONOMY.BONUSES;
 
@@ -137,6 +139,13 @@ export function refreshBonuses(board) {
     block.bonuses = list;
     block.bonusIncome = list.reduce((sum, b) => sum + b.amount, 0);
     block.protectedBy = protection.get(block.id);
+  }
+  // Strategic effects (core/strategy.js), stored for display after everything above is settled.
+  for (const block of board.blocks) {
+    const prestige = blockPrestige(board, block);
+    block.prestige = prestige.points;
+    block.prestigeNotes = prestige.notes;
+    block.control = blockControl(board, block).control;
   }
   return board;
 }

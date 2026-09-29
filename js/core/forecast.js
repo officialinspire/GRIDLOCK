@@ -13,6 +13,7 @@ import { quoteBuild, quoteUpgrade, buildOnBlock, upgradeBlock, DEV_ERRORS } from
 import { effectiveBlockIncome, blockImpacts, costImpacts } from './events.js';
 import { blockUpkeep, blockIncome } from './economy.js';
 import { scorePlayer } from './scoring.js';
+import { blockPrestige, blockControl, pressureOn, canPressure } from './strategy.js';
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
@@ -28,11 +29,19 @@ export function blockDetails(game, blockId) {
   if (!block) return null;
   const income = effectiveBlockIncome(game, block);
   const upkeep = block.ownerSeat != null ? blockUpkeep(block) : 0;
+  const prestige = blockPrestige(game.board, block);
+  const me = currentPlayer(game);
   return {
     income, // what it pays at its owner's next turn start (events applied)
     normalIncome: blockIncome(block), // base + bonuses, without events
     upkeep,
     net: income - upkeep,
+    prestige: prestige.points, // this block's Prestige for its owner (core/strategy.js)
+    prestigeNotes: prestige.notes,
+    control: blockControl(game.board, block).control, // defence against takeovers (0 when unowned)
+    // Pressure the current player puts on a rival's block, and whether it beats the control.
+    pressure: me && block.ownerSeat != null && block.ownerSeat !== me.seat ? pressureOn(game.board, me.seat, block) : null,
+    contestable: Boolean(me) && canPressure(game.board, me.seat, block),
     contribution: blockContribution(game, blockId),
     bonuses: (block.bonuses ?? []).map((b) => ({ ...b })),
     eventIncome: blockImpacts(game, block),
@@ -49,12 +58,14 @@ function position(game, seat, blockId) {
     if (b.ownerSeat !== seat) continue;
     for (const bonus of b.bonuses ?? []) bonuses.push({ block: b.id, blockLabel: b.label, ...bonus });
   }
+  const score = scorePlayer(game, player);
   return {
     cash: player.cash,
     income: stats.income,
     upkeep: stats.upkeep,
     net: stats.income - stats.upkeep,
-    cityValue: scorePlayer(game, player).cityValue,
+    cityValue: score.cityValue,
+    prestige: score.prestige,
     block: blockDetails(game, blockId),
     bonuses,
   };
@@ -66,7 +77,8 @@ const bonusKey = (b) => `${b.block}:${b.id}`;
  * Forecast building `type` on a vacant block, or upgrading it when `type` is omitted.
  * Returns { ok:false, error } if the move isn't possible for a reason other than cash;
  * otherwise { ok:true, affordable, shortfall, cost, baseCost, level, type, before, after,
- * delta: { income, upkeep, net, cityValue }, activated, eventPrice, eventIncome }.
+ * delta: { income, upkeep, net, cityValue, prestige }, industryDiscount, activated, eventPrice,
+ * eventIncome }.
  * When the player can't afford it, income/upkeep/bonuses are still forecast (they don't
  * depend on cash) and cash/City Value after are null.
  */
@@ -103,7 +115,9 @@ export function forecastDevelopment(game, blockId, type) {
       upkeep: after.upkeep - before.upkeep,
       net: after.net - before.net,
       cityValue: after.cityValue == null ? null : after.cityValue - before.cityValue,
+      prestige: after.prestige - before.prestige,
     },
+    industryDiscount: quote.industryDiscount ?? 0,
     // Bonuses this build switches on, on this block or on the player's other blocks.
     activated: after.bonuses.filter((b) => !had.has(bonusKey(b))),
     eventPrice: costImpacts(game, result.type),

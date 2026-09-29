@@ -1,9 +1,13 @@
 /**
  * Game state + turn flow. The core loop is 4-player Dots & Boxes played with
  * roads: build one road per turn; enclosing a block claims it and earns
- * another road. The game ends when every block is claimed.
+ * another road. That is the EXPANSION era. Paving the final road starts the
+ * CITY era (CITY_ERA in config.js): no more roads, a few City Actions per turn,
+ * and the match ends after CITY_ERA.ROUNDS further full rounds.
  */
-import { MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE } from '../config.js';
+import {
+  MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE, CITY_ERA,
+} from '../config.js';
 import { controllerOf, defaultNames, assignPersonalities } from './seats.js';
 import { resolveRules } from './modes.js';
 import {
@@ -14,11 +18,14 @@ import {
   chargeUpkeep, upkeepFor, isInDistress, charge, TXN,
 } from './economy.js';
 import { refreshBonuses } from './bonuses.js';
+import { prestigeFor } from './strategy.js';
 import { createEventState, onRoundStart, effectiveIncome, takeRepairExpenses, EVENT_POOL } from './events.js';
 import { randomSeed } from './rng.js';
 import { computeResults } from './scoring.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
+/** Gameplay eras: road/capture play, then (once every road is paved) city management only. */
+export const ERAS = Object.freeze({ EXPANSION: 'expansion', CITY: 'city' });
 export const TURN_PHASES = Object.freeze({
   MANAGE_CITY: 'manage-city',
   PAVE_ROAD: 'pave-road',
@@ -33,7 +40,19 @@ export const MOVE_ERRORS = Object.freeze({
   TAKEN: 'road-taken',
   IN_DISTRESS: 'in-distress',
   WRONG_PHASE: 'wrong-turn-phase',
+  ROADS_CLOSED: 'roads-closed', // the CITY era: every road is paved
+  NOT_CITY_ERA: 'not-city-era', // endCityTurn() during EXPANSION (turns end by paving)
 });
+
+/**
+ * City-era bookkeeping stored on the game (and its autosave). `rounds` and `actionsPerTurn` are
+ * copied from CITY_ERA when the game is created; the rest is filled in when the era starts.
+ */
+export function createCityState(rounds = CITY_ERA.ROUNDS, actionsPerTurn = CITY_ERA.ACTIONS_PER_TURN) {
+  if (!Number.isSafeInteger(rounds) || rounds < 0) throw new RangeError(`Invalid City rounds ${rounds}`);
+  if (!Number.isSafeInteger(actionsPerTurn) || actionsPerTurn < 1) throw new RangeError(`Invalid City actions ${actionsPerTurn}`);
+  return { rounds, actionsPerTurn, startRound: null, endRound: null, actionsLeft: 0 };
+}
 
 export function sanitizeName(name, fallback) {
   const clean = String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_NAME_LENGTH);
@@ -51,9 +70,15 @@ export function sanitizeName(name, fallback) {
  *   copied onto the game as `game.rules`, which is all the rules engine reads.
  *   `eventPool` overrides CITY_EVENTS.POOL (e.g. [] for an event-free game in tests).
  *   `eventProbability` / `maxActiveEvents` override the mode's event pacing (tests).
+ *   `cityRounds` / `cityActions` override CITY_ERA.ROUNDS / ACTIONS_PER_TURN (tests; 0 City
+ *   rounds ends the match on the final road, as before the CITY era existed).
  *   Economy values come from ECONOMY in config.js.
  */
-export function createGame({ seats, seed = randomSeed(), mode = DEFAULT_MODE, eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents } = {}) {
+export function createGame({
+  seats, seed = randomSeed(), mode = DEFAULT_MODE, eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents,
+  cityRounds = CITY_ERA.ROUNDS, cityActions = CITY_ERA.ACTIONS_PER_TURN,
+} = {}) {
+  const city = createCityState(cityRounds, cityActions);
   const rules = resolveRules(mode, { eventProbability, maxActiveEvents });
   if (gameType === 'standard' && seats?.length !== MAX_PLAYERS) {
     throw new RangeError('Standard Game requires exactly 4 players');
@@ -113,6 +138,8 @@ export function createGame({ seats, seed = randomSeed(), mode = DEFAULT_MODE, ev
     pendingCaptures: [],
     mode,
     rules,
+    era: ERAS.EXPANSION,
+    city,
   };
   beginTurn(game);
   return game;
@@ -144,6 +171,7 @@ export function playerStats(game, player) {
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
     property,
     netWorth: player.cash + property,
+    prestige: prestigeFor(game.board, player.seat), // scored at ECONOMY.SCORING.PRESTIGE per point
   };
 }
 
@@ -158,6 +186,7 @@ export function roadsRemaining(game) {
 /** Can the current player build this road right now? Returns an error code or null. */
 export function validateRoad(game, id) {
   if (game.phase !== PHASES.PLAYING) return MOVE_ERRORS.GAME_OVER;
+  if (game.era === ERAS.CITY) return MOVE_ERRORS.ROADS_CLOSED;
   if (isInDistress(currentPlayer(game))) return MOVE_ERRORS.IN_DISTRESS;
   if (![TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase)) {
     return MOVE_ERRORS.WRONG_PHASE;
@@ -186,12 +215,14 @@ export function beginTurn(game) {
   player.lastEconomicRound = game.round;
   game.turnPhase = TURN_PHASES.MANAGE_CITY;
   game.pendingCaptures = [];
+  if (game.era === ERAS.CITY) game.city.actionsLeft = game.city.actionsPerTurn;
   return game.turnStartIncome;
 }
 
 /** The deliberate boundary between managing property and committing to a road. */
 export function startPaving(game) {
   if (game.phase !== PHASES.PLAYING || game.turnPhase !== TURN_PHASES.MANAGE_CITY) return false;
+  if (game.era === ERAS.CITY) return false; // every road is paved
   if (isInDistress(currentPlayer(game))) return false;
   game.turnPhase = TURN_PHASES.PAVE_ROAD;
   return true;
@@ -201,7 +232,8 @@ export function startPaving(game) {
 export function resolveCapture(game, blockId = game.pendingCaptures[0]) {
   if (game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return false;
   game.pendingCaptures.shift();
-  if (!game.pendingCaptures.length) game.turnPhase = TURN_PHASES.BONUS_ROAD;
+  // No bonus road once the grid is complete: the final mover carries on with their City turn.
+  if (!game.pendingCaptures.length) game.turnPhase = game.era === ERAS.CITY ? TURN_PHASES.MANAGE_CITY : TURN_PHASES.BONUS_ROAD;
   return true;
 }
 
@@ -226,6 +258,80 @@ export function settleFinalEconomy(game) {
   return game.finalSettlement;
 }
 
+/** Settles the round, then freezes the results: the match is over. */
+function finishGame(game) {
+  settleFinalEconomy(game);
+  game.phase = PHASES.ENDED;
+  game.results = computeResults(game);
+  game.log.push({ type: 'game-end', round: game.round, era: game.era });
+}
+
+/**
+ * EXPANSION → CITY, when the final road is paved. The rest of this round is played as City
+ * turns (the final mover's included); the era's full rounds are the `city.rounds` after it.
+ * With 0 City rounds the match ends right here, as it did before eras existed.
+ * Returns true if the CITY era began (false: the game ended).
+ */
+export function enterCityEra(game) {
+  if (game.phase !== PHASES.PLAYING || game.era === ERAS.CITY) return false;
+  if (game.city.rounds <= 0) {
+    finishGame(game);
+    return false;
+  }
+  game.era = ERAS.CITY;
+  game.city.startRound = game.round + 1;
+  game.city.endRound = game.round + game.city.rounds;
+  game.city.actionsLeft = game.city.actionsPerTurn;
+  game.log.push({ type: 'era', era: ERAS.CITY, round: game.round });
+  return true;
+}
+
+/** True when a build/upgrade/sale/redevelopment right now would spend one of the turn's City Actions. */
+export function usesCityAction(game) {
+  return game.phase === PHASES.PLAYING && game.era === ERAS.CITY && game.turnPhase === TURN_PHASES.MANAGE_CITY;
+}
+
+/** True when the current mayor has no City Actions left this turn (always false in EXPANSION). */
+export function outOfCityActions(game) {
+  return usesCityAction(game) && game.city.actionsLeft <= 0;
+}
+
+/** Spends one City Action after a successful action (no-op when none is needed). */
+export function spendCityAction(game) {
+  if (usesCityAction(game)) game.city.actionsLeft = Math.max(0, game.city.actionsLeft - 1);
+}
+
+/**
+ * Era summary for the HUD and the CPU:
+ *   era, rounds (full City rounds), round (1-based City round; 0 during the rest of the round in
+ *   which the grid was finished, and in EXPANSION), roundsLeft (full City rounds not yet finished,
+ *   including the current one), actionsLeft / actionsPerTurn (this turn; null in EXPANSION).
+ */
+export function eraStatus(game) {
+  const { city } = game;
+  if (game.era !== ERAS.CITY) {
+    return { era: ERAS.EXPANSION, rounds: city.rounds, round: 0, roundsLeft: city.rounds, actionsLeft: null, actionsPerTurn: city.actionsPerTurn };
+  }
+  const round = Math.max(0, game.round - city.startRound + 1);
+  return {
+    era: ERAS.CITY,
+    rounds: city.rounds,
+    round,
+    roundsLeft: game.phase === PHASES.ENDED ? 0 : Math.min(city.rounds, city.endRound - game.round + 1),
+    actionsLeft: city.actionsLeft,
+    actionsPerTurn: city.actionsPerTurn,
+  };
+}
+
+/**
+ * How many more of their own turn starts (income paydays) a mayor gets in the CITY era after the
+ * current turn. Null in EXPANSION (roads decide it there; see cpu/roads.js).
+ */
+export function cityTurnsLeft(game) {
+  if (game.era !== ERAS.CITY || game.phase !== PHASES.PLAYING) return game.phase === PHASES.PLAYING ? null : 0;
+  return Math.max(0, game.city.endRound - game.round);
+}
+
 /**
  * Passes play to the next seat and begins their turn. Wrapping back to the
  * first seat starts a new round: expired city events are removed and one new
@@ -233,12 +339,18 @@ export function settleFinalEconomy(game) {
  * Returns { roundEnded, event: { expired, started } | null, turnIncome }.
  */
 export function endTurn(game) {
-  const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null };
+  const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null, gameEnded: false };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
     game.turnIndex = 0;
     summary.roundEnded = true;
     game.log.push({ type: 'round-end', round: game.round });
+    // The last seat of the last City round has played: the match is over.
+    if (game.era === ERAS.CITY && game.round >= game.city.endRound) {
+      finishGame(game);
+      summary.gameEnded = true;
+      return summary;
+    }
     game.round += 1;
     summary.event = onRoundStart(game, game.eventPool);
     if (summary.event.started) game.log.push({ type: 'event', round: game.round, event: summary.event.started.id });
@@ -250,21 +362,40 @@ export function endTurn(game) {
 }
 
 /**
+ * CITY era: the current mayor is done managing (City Actions left over are lost). Passes play
+ * on exactly as a turn-ending road would, and ends the match after the final City round.
+ * Returns { ok:false, error } or { ok:true, seat, roundEnded, event, turnIncome, turnUpkeep, turnRepair, gameEnded }.
+ */
+export function endCityTurn(game) {
+  if (game.phase !== PHASES.PLAYING) return { ok: false, error: MOVE_ERRORS.GAME_OVER };
+  if (game.era !== ERAS.CITY) return { ok: false, error: MOVE_ERRORS.NOT_CITY_ERA };
+  const player = currentPlayer(game);
+  if (isInDistress(player)) return { ok: false, error: MOVE_ERRORS.IN_DISTRESS };
+  if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return { ok: false, error: MOVE_ERRORS.WRONG_PHASE };
+  game.lastMove = null;
+  game.log.push({ type: 'city-turn', seat: player.seat, round: game.round, unused: game.city.actionsLeft });
+  return { ok: true, seat: player.seat, ...endTurn(game) };
+}
+
+/**
  * Builds a road for the current player.
  * - Any block this road encloses is claimed by the builder (0, 1 or 2 blocks).
  * - Claiming at least one block grants another road (same player continues).
  * - Otherwise the turn passes to the next seat.
- * - Once every road is paved (all blocks enclosed) the game ends.
+ * - Once every road is paved (all blocks enclosed) the CITY era begins: the builder resolves
+ *   any capture it made, then carries on with a City turn (no bonus road). With 0 City
+ *   rounds configured, the game ends instead.
  *
  * - Each claimed block pays ECONOMY.CAPTURE_REWARD to the builder.
  *
  * Returns { ok:false, error } for rejected moves, or
- * { ok:true, road, seat, captured:[blockIds], reward, extraTurn, roundEnded, turnIncome, gameEnded }.
+ * { ok:true, road, seat, captured:[blockIds], reward, extraTurn, roundEnded, turnIncome, gameEnded, cityEra }.
  */
 export function placeRoad(game, id) {
   // Reject malformed/taken moves without advancing a phase or resolving a
   // capture choice. This keeps failed input completely side-effect free.
   if (game.phase !== PHASES.PLAYING) return { ok: false, error: MOVE_ERRORS.GAME_OVER };
+  if (game.era === ERAS.CITY) return { ok: false, error: MOVE_ERRORS.ROADS_CLOSED };
   if (isInDistress(currentPlayer(game))) return { ok: false, error: MOVE_ERRORS.IN_DISTRESS };
   if (!isValidRoad(game.board, id)) return { ok: false, error: MOVE_ERRORS.INVALID };
   if (hasRoad(game.board, id)) return { ok: false, error: MOVE_ERRORS.TAKEN };
@@ -296,17 +427,22 @@ export function placeRoad(game, id) {
   const result = {
     ok: true, road: id, seat, captured, reward,
     extraTurn: false, roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null, gameEnded: false,
+    cityEra: false,
   };
 
   // Every road paved = every block enclosed. (Not "every block owned": abandoned
   // blocks after a bankruptcy may stay ownerless forever.)
   if (isCityComplete(game)) {
-    // Resolve the unfinished portion of the current economic round so the final
-    // mover cannot decide which players miss income/upkeep, then freeze results.
-    settleFinalEconomy(game);
-    game.phase = PHASES.ENDED;
-    game.results = computeResults(game);
-    result.gameEnded = true;
+    if (enterCityEra(game)) {
+      result.cityEra = true;
+      // The final capture still gets its Develop Now choice; then the City turn goes on.
+      game.pendingCaptures = [...captured];
+      game.turnPhase = captured.length ? TURN_PHASES.CAPTURE_DEVELOP : TURN_PHASES.MANAGE_CITY;
+    } else {
+      // 0 City rounds: settleFinalEconomy() resolved the unfinished portion of the round so the
+      // final mover cannot decide which players miss income/upkeep, and the results are frozen.
+      result.gameEnded = true;
+    }
   } else if (captured.length > 0) {
     result.extraTurn = true;
     game.pendingCaptures = [...captured];
@@ -327,7 +463,7 @@ export function standings(game) {
   return results.rows.map((row) => ({ ...row, player: getPlayer(game, row.seat), worth: row.cityValue }));
 }
 
-/** True when every city block is enclosed (all roads paved) — the standard end. */
+/** True when every city block is enclosed (all roads paved): the end of the EXPANSION era. */
 export function isCityComplete(game) {
   return roadsBuilt(game) === totalRoads(game.board);
 }

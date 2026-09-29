@@ -155,7 +155,7 @@ Whole-game win rates are in [CPU simulation](#cpu-simulation). Hard decides in a
 
 ### CPU city strategy
 
-`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, and "pave" (done managing). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave".
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
 
 It has no economy formulas of its own:
 - Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
@@ -212,7 +212,13 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 
 **Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with $2,000.
 
-**End:** when every block is enclosed, unfinished income, upkeep and repairs are settled first. Highest **City Value** uses all cash and land plus 75% of actual construction investment. See [Scoring](#scoring).
+**Two eras.** Everything above is the **EXPANSION** era. Paving the final road does not end the match: it starts the **CITY** era.
+- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free), then plays a City turn; the rest of that round is City turns too.
+- Then **4 full City rounds** (`CITY_ERA.ROUNDS` in `js/config.js`). Income, upkeep, repairs and city events carry on as normal.
+- Each City turn gives **2 City Actions** (`CITY_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or opening bidding on an abandoned block each cost one. Selling to clear debt and declaring bankruptcy are free, so a mayor can always recover. Choose **End Turn** when done; unused actions are lost.
+- The round badge shows the era: *Expansion*, then e.g. *City 2/4 · 1 action*.
+
+**End:** the match ends after the last seat of the last City round, so every mayor has had the same number of turns. Highest **City Value** wins: all cash + 70% of land + all actual construction investment + Prestige. See [Scoring](#scoring). (With `CITY_ERA.ROUNDS` set to 0 the match ends on the final road instead, after unfinished income, upkeep and repairs are settled.)
 
 ### Controls
 
@@ -291,11 +297,11 @@ The precache is named after a **content hash** of all its files (`gridlock-preca
 
 `core/scoring.js` is pure and deterministic.
 
-- **Fair final settlement:** before results are frozen, every mayor is advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
-- **City Value** uses configurable coefficients: 100% cash + 100% land + 75% of actual construction cost invested in retained levels. Development earns income and bonuses, but no longer converts spending automatically into equal score. Debt lowers value, and abandoned blocks count for nobody.
-- **Ranking:** City Value, then blocks owned, then developed blocks, then cash. Players equal on all four share the rank (co-winners), listed in seat order. Results are computed once when the last road resolves and frozen in `game.results`, so viewing the board afterwards can't change them.
-- **Results screen:** a card for every player showing City Value (with its breakdown), cash, blocks owned, developed blocks, income, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
-- **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
+- **Fair final settlement:** the match ends at a round boundary (after the last City round), so every mayor has had the same turns. If it ends on the final road instead (`CITY_ERA.ROUNDS` = 0), every mayor is first advanced to the same economic round boundary. Players whose turn already began are not paid twice; players still waiting receive that round's event-adjusted income and upkeep.
+- **City Value** uses configurable coefficients (`ECONOMY.SCORING`): 100% cash + 70% land + 100% of actual construction cost invested in retained levels + $150 per **Prestige** point. Discounted land and full-value buildings mean a developed city beats a sprawl of empty lots. Debt lowers value, and abandoned blocks count for nobody.
+- **Ranking:** City Value, then Prestige, then total development levels, then cash, then blocks owned. Players equal on all five share the rank (co-winners), listed in seat order. Results are computed once when the match ends and frozen in `game.results`, so viewing the board afterwards can't change them.
+- **Results screen:** a card for every player showing City Value (with its cash / land / buildings / Prestige breakdown), cash, Prestige, levels built, blocks owned, income, highest development, distinctions, and match summaries for capture chains, districts, blocks, events, and bankruptcies. The buttons are **Play Again**, **View Board** (reopen the results with the Results button) and **Main Menu**.
+- **Distinctions:** Most Blocks, Most Cash, Most Developed (ties go to more total levels), Most Prestigious, Greenest City (park levels), Top Earner and Tallest Skyline. Anyone can win them, including the winner. Ties share an award. An award isn't given if its best value is 0 or if every player is tied for it.
 
 ## Economy
 
@@ -308,7 +314,9 @@ All money values live in the `ECONOMY` block in `js/config.js`. That covers star
 | Turn income | Paid when a player's turn **starts**, from their **developed** blocks. Bonus roads are the same turn, so they don't pay again. |
 | Undeveloped blocks | $0 recurring income |
 | Property shown in HUD | Land value plus actual invested construction cost basis |
-| Final building score | 75% of actual invested construction cost basis |
+| Final land score | 70% of land value |
+| Final building score | 100% of actual invested construction cost basis |
+| Prestige | $150 of City Value per point (see [Strategic effects](#strategic-effects)) |
 | Net worth | Cash plus net property value |
 
 ### Development
@@ -341,7 +349,7 @@ The Build panel and inspector show what a move will really do, without clutterin
 - **Upgrade card:** cost, your income, upkeep and net per turn (now → after), City Value (now → after), this block's income (and its normal income if an event is changing it), price/income events, and bonuses it would activate on this or neighbouring blocks. Bonuses already active are listed above it.
 - **Inspector:** income (▲/▼ when a city event changes it; tooltip shows the normal amount), upkeep, net per turn, property value, how much the block **adds to City Value**, event price effects for upgrades, active bonuses and events.
 
-Forecasts have no formulas of their own: `js/core/forecast.js` runs the real `buildOnBlock` / `upgradeBlock` on a copy of the game and reads the result with the same functions the game uses (`playerStats`, `scorePlayer`, `effectiveBlockIncome`, `blockUpkeep`, `blockImpacts` / `costImpacts`, and the bonuses `refreshBonuses` writes). So a forecast is exactly what will happen; tests prove it against real transactions and the next turn's actual income and upkeep. Note that building usually *lowers* City Value at first (cash counts in full, construction at 75%), and pays back through income.
+Forecasts have no formulas of their own: `js/core/forecast.js` runs the real `buildOnBlock` / `upgradeBlock` on a copy of the game and reads the result with the same functions the game uses (`playerStats`, `scorePlayer`, `effectiveBlockIncome`, `blockUpkeep`, `blockImpacts` / `costImpacts`, and the bonuses `refreshBonuses` writes). So a forecast is exactly what will happen; tests prove it against real transactions and the next turn's actual income and upkeep. Construction counts in full, so a build changes City Value only by the Prestige it brings; it pays back through income (minus upkeep).
 
 ### Adjacency & district bonuses
 
@@ -351,13 +359,30 @@ All percentages are in `ECONOMY.BONUSES` in `js/config.js`. "Connected" means or
 | --- | --- | --- |
 | Residential district | 3+ connected Residential | +20% each |
 | Commercial district | 3+ connected Commercial | +25% each |
-| Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +10% per park |
+| Park adjacency | Each directly adjacent same-owner Park boosts a Residential block (max 2 parks) | +15% per park |
 | Mixed-use | A connected Residential/Commercial/Park cluster containing all three | +10% each member |
 | Civic protection | Civic blocks cover same-owner blocks within a Manhattan radius (L1: 1, L2: 1, L3: 2) | Shields covered blocks from emergencies and their repair bills |
 
 `core/bonuses.js` → `refreshBonuses(board)` recomputes everything from scratch after every capture and every build/upgrade. The results are stored on each block as `bonuses`, `bonusIncome` and `protectedBy`. There's no incremental state, so nothing goes stale. Bonuses are a percentage of the block's **base** (level) income and never compound on each other. Each bonus type applies at most once per block, and connected groups are found with an iterative flood fill that tracks visited blocks, so cycles can't double count. Turn income pays base plus bonuses.
 
 In the UI: the HUD income includes bonuses, with a small ★ and a tooltip giving the bonus amount. Board badges get a ★ when a block earns a bonus. The details panel and Build panel list each bonus and any civic protection. A toast announces newly gained bonus income.
+
+### Strategic effects
+
+Each category also has a strategic role, computed by `js/core/strategy.js` from the same neighbourhood data. All numbers are in `ECONOMY.STRATEGY` in `js/config.js`. Only developed, owned, active blocks produce effects; "nearby" is within `RADIUS` (1: the four blocks across a road).
+
+| Category | Effect (defaults) |
+| --- | --- |
+| Residential | **Control**: +1 per level to itself and nearby own blocks |
+| Commercial | **Pressure**: +1 per level on nearby rival blocks (takeovers) |
+| Park | **Prestige** +1 per level; +1 Prestige to each adjacent own block (max 2 parks count); +15% income for adjacent homes |
+| Civic | Prestige +1 per level; control +1 per level nearby; event protection as before |
+| Industrial | Top income; builds and upgrades next to your own Industrial block cost **10% less**; **−1 Prestige per level** when next to any Residential, unless an adjacent own Park buffers it |
+| Landmark | Prestige **+3 per level**; control **+2 per level** nearby |
+
+- **Prestige** is summed per player (never below 0) and scores $150 per point. The HUD card, the inspector and the Build panel show it, and every build option shows its Prestige change.
+- **Control** of an owned block = 1 + nearby own Residential/Civic/Landmark levels. **Pressure** by a player = their nearby Commercial levels. In Manage City, a player whose pressure on a rival's block is **greater** than its control can **take it over** (tap it): they pay the owner 110% of the block's value (land + construction spend) and get the block with its buildings. In the CITY era a takeover costs a City Action. CPU mayors (Normal and Hard) take over when the real transaction, run on a copy, pays back over the turns left.
+- `refreshBonuses` stores each block's `prestige`, `prestigeNotes` and `control` for display; scoring and the rules recompute them, so they never go stale.
 
 ### Rule presets
 

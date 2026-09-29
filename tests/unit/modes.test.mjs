@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GAME_MODES, DEFAULT_MODE, CITY_EVENTS } from '../../js/config.js';
+import { GAME_MODES, DEFAULT_MODE, CITY_EVENTS, CITY_ERA } from '../../js/config.js';
 import { MODE_IDS, resolveRules, modeName } from '../../js/core/modes.js';
 import { saveActiveGame, loadActiveGame, SAVE_KEY } from '../../js/core/persistence.js';
 import { playthrough, loadApi } from './_playthrough.mjs';
@@ -19,17 +19,20 @@ const memoryStorage = () => {
  * commit 7cbd186): the round each city event started and the final City Values.
  * The driver only ever builds Residential, so these still hold after the V1.2 balance
  * pass (which changed Park, Civic and Landmark income only): the preset system itself
- * must not change a single roll or dollar.
+ * must not change a single roll or dollar. They were recorded before the CITY era existed, so
+ * they replay with `cityRounds: 0` (the match ends on the final road). The City Values were
+ * re-scored for the V1.4 formula (70% land, 100% buildings, Prestige); rolls and rounds are the
+ * original recording.
  */
 const V11_GOLDEN = [
   { seed: 2024, n: 4, rounds: 13, events: ['6:housing-boom', '7:snowstorm', '8:beautification-grant', '11:heavy-rain', '12:power-outage'],
-    values: [[4, 33020], [1, 30510], [2, 23700], [3, 23700]] },
+    values: [[4, 31820], [1, 29060], [2, 22500], [3, 22500]] },
   { seed: 7, n: 3, rounds: 17, events: ['2:heavy-rain', '5:power-outage', '6:snowstorm', '7:beautification-grant', '8:heavy-rain', '10:snowstorm',
-    '11:power-outage', '12:power-outage', '14:economic-boom', '15:heavy-rain', '16:fire'], values: [[3, 33660], [2, 32840], [1, 31450]] },
+    '11:power-outage', '12:power-outage', '14:economic-boom', '15:heavy-rain', '16:fire'], values: [[3, 31860], [2, 31340], [1, 29700]] },
   { seed: 99, n: 2, rounds: 25, events: ['2:economic-boom', '3:beautification-grant', '4:economic-boom', '5:heavy-rain', '6:housing-boom',
     '7:heavy-rain', '8:beautification-grant', '9:snowstorm', '10:beautification-grant', '11:snowstorm', '12:beautification-grant',
     '13:beautification-grant', '15:snowstorm', '17:city-festival', '19:power-outage', '20:beautification-grant', '21:recession',
-    '22:economic-boom', '23:housing-boom'], values: [[2, 49742], [1, 43476]] },
+    '22:economic-boom', '23:housing-boom'], values: [[2, 47942], [1, 41576]] },
 ];
 
 test('presets are plain configuration with a name and a one-line description', () => {
@@ -57,11 +60,21 @@ test('the mode and its rules are stored on the game', () => {
 test('STANDARD replays the recorded V1.1 games exactly (4-, 3- and 2-player games)', () => {
   for (const golden of V11_GOLDEN) {
     for (const mode of [undefined, 'standard']) {
-      const run = playthrough(api, { ...table(golden.n), seed: golden.seed, mode });
+      const run = playthrough(api, { ...table(golden.n), seed: golden.seed, mode, cityRounds: 0 });
       assert.deepEqual({ rounds: run.rounds, events: run.events, values: run.values },
         { rounds: golden.rounds, events: golden.events, values: golden.values }, `seed ${golden.seed}, mode ${mode}`);
       assert.ok(run.maxActive <= CITY_EVENTS.MAX_ACTIVE);
     }
+  }
+});
+
+test('the CITY era extends the recorded games without changing their EXPANSION era', () => {
+  for (const golden of V11_GOLDEN) {
+    const run = playthrough(api, { ...table(golden.n), seed: golden.seed });
+    assert.equal(run.game.phase, 'ended');
+    assert.equal(run.rounds, golden.rounds + CITY_ERA.ROUNDS, `seed ${golden.seed}: ${CITY_ERA.ROUNDS} full City rounds`);
+    const expansion = run.events.filter((e) => Number(e.split(':')[0]) <= golden.rounds);
+    assert.deepEqual(expansion, golden.events, `seed ${golden.seed}: same rolls until the grid is complete`);
   }
 });
 

@@ -11,6 +11,7 @@ import { modeName } from '../core/modes.js';
 import { challengeUrl, formatSeed } from '../core/challenge.js';
 import { controllerLabel } from '../core/seats.js';
 import { toast } from './toast.js';
+import { ECONOMY } from '../config.js';
 
 const ordinal = (n) => ({ 1: '1st', 2: '2nd', 3: '3rd' }[n] ?? `${n}th`);
 
@@ -37,11 +38,13 @@ function playerCard(row, awardsBySeat, isWinner, index, cpu) {
       h('span', {}, 'City Value'),
       h('strong', { class: 'result-card__city-value' }, formatCash(row.cityValue))),
     h('p', { class: 'result-card__breakdown' },
-      `${formatCash(row.scoredCash)} cash + ${formatCash(row.scoredLand)} land + ${formatCash(row.scoredBuildings)} building score`),
+      `${formatCash(row.scoredCash)} cash + ${formatCash(row.scoredLand)} land + ${formatCash(row.scoredBuildings)} buildings`
+      + ` + ${formatCash(row.scoredPrestige)} Prestige`),
     h('dl', { class: 'result-card__stats' },
       stat('Cash', formatCash(row.cash), row.cash < 0 ? 'is-negative' : ''),
+      stat('Prestige', row.prestige),
+      stat('Levels built', row.totalLevels),
       stat('Blocks owned', row.blocks),
-      stat('Developed', row.developed),
       stat('Income', `+${formatCash(row.income)}/turn`),
     ),
     h('div', { class: 'result-card__best' },
@@ -83,9 +86,13 @@ export function renderResults(game) {
     : [h('li', { class: 'award award--none' }, 'No distinctions this time.')]));
 
   const tie = res.rows.length > 1 && res.rows[0].cityValue === res.rows[1].cityValue;
+  const { CASH, LAND, INVESTED_BUILDING, PRESTIGE } = ECONOMY.SCORING;
+  const pct = (k) => `${Math.round(k * 100)}%`;
+  const formula = `City Value = ${pct(CASH)} cash + ${pct(LAND)} land + ${pct(INVESTED_BUILDING)} building investment`
+    + ` + ${formatCash(PRESTIGE)} per Prestige`;
   $('.results__formula').textContent = tie
-    ? `City Value = weighted cash + land + building investment · ties broken by ${TIEBREAKERS.slice(1).map((t) => t.label).join(', then ')}`
-    : 'City Value = weighted cash + land + building investment';
+    ? `${formula} · ties broken by ${TIEBREAKERS.slice(1).map((t) => t.label).join(', then ')}`
+    : formula;
 
   const stats = res.matchStats;
   const statName = (seat) => seat ? nameOf(seat) : 'None';

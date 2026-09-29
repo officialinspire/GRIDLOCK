@@ -2,6 +2,8 @@
  * Compact Build/Upgrade panel for a block the current player owns.
  * Vacant (Level 0): choose a category or Leave Vacant.
  * Developed: upgrade one level (up to MAX_LEVEL) or keep as is.
+ * Also: abandoned blocks (redevelopment) and rival blocks your pressure beats (takeover).
+ * Every option shows its category's strategic effects (core/strategy.js) and Prestige change.
  * All numbers come from core/development.js (which reads ECONOMY.DEVELOPMENT).
  */
 import { $, h } from './dom.js';
@@ -16,7 +18,7 @@ import { formatCash, formatDelta, blockIncome, bonusIncome } from '../core/econo
 import { bonusList } from './bonusView.js';
 import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
-import { currentPlayer, getPlayer, TURN_PHASES } from '../core/game.js';
+import { currentPlayer, getPlayer, usesCityAction, TURN_PHASES } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
 import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
@@ -24,7 +26,9 @@ import { buzz } from './haptics.js';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned,
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES, FIN_ERRORS,
+  quoteTakeover, takeoverBlock,
 } from '../core/finance.js';
+import { CATEGORY_EFFECTS, canPressure } from '../core/strategy.js';
 import { ECONOMY } from '../config.js';
 
 let state = { game: null, blockId: null, onChange: () => {}, onLeave: () => {} };
@@ -38,7 +42,19 @@ const ERROR_TEXT = {
   [DEV_ERRORS.NOT_DEVELOPED]: 'Build something here first.',
   [DEV_ERRORS.NO_BLOCK]: 'That block does not exist.',
   [DEV_ERRORS.WRONG_PHASE]: 'Develop during Manage City, or immediately after capturing this block.',
+  // Same code from development.js and finance.js.
+  [DEV_ERRORS.NO_ACTIONS]: 'No City Actions left this turn. End your turn to continue.',
+  [FIN_ERRORS.CONTROL_HOLDS]: 'The owner\'s control holds: you need more nearby Commercial pressure.',
+  [FIN_ERRORS.IN_DISTRESS]: 'Clear your debt first.',
+  [FIN_ERRORS.NOT_RIVAL]: 'Only a rival\'s block can be taken over.',
 };
+
+/** CITY era: how many City Actions this turn has left (under the cash box). */
+function actionsNote(game) {
+  if (!usesCityAction(game)) return null;
+  const n = game.city.actionsLeft;
+  return h('span', { class: `build-panel__city-actions${n ? '' : ' is-spent'}` }, `${n} City Action${n === 1 ? '' : 's'} left`);
+}
 
 function pips(level) {
   return h('span', { class: 'level-pips', 'aria-label': `Level ${level} of ${MAX_LEVEL}` },
@@ -66,11 +82,14 @@ function header(game, block, player) {
           class: 'build-panel__cv',
           title: 'How much this block adds to your City Value (the final score)',
         }, `Adds ${formatCash(blockContribution(game, block.id))} to City Value`),
+        h('span', { class: 'build-panel__prestige', title: 'This block\'s Prestige (each point scores at the end)' }, `Prestige ${block.prestige ?? 0}`),
+        h('span', { class: 'build-panel__control', title: 'Takeover defence: rivals need more nearby Commercial pressure than this' }, `Control ${block.control ?? 0}`),
       ),
     ),
     h('div', { class: 'build-panel__cash' },
       h('span', {}, 'Your cash'),
       h('strong', { id: 'build-cash' }, formatCash(player.cash)),
+      actionsNote(game),
     ),
   );
 }
@@ -80,9 +99,11 @@ function priceTag(quote) {
   return [
     h('span', { class: `price__cost${changed ? (quote.cost < quote.baseCost ? ' is-cheaper' : ' is-pricier') : ''}` },
       changed && h('s', { class: 'price__was' }, formatCash(quote.baseCost)), formatCash(quote.cost)),
+    quote.industryDiscount > 0 && h('span', { class: 'price__industry' }, `Industry −${quote.industryDiscount}%`),
     h('span', { class: 'price__income' }, `+${formatCash(quote.income)}/turn`),
     quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
       && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
+    quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, 'No City Actions left'),
   ];
 }
 
@@ -96,13 +117,16 @@ function categoryOption(game, block, type, forecast) {
     dataset: { build: type },
     'aria-disabled': quote.ok ? null : 'true',
     title: forecast.ok ? forecastText(forecast) : null,
-    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : `. Need ${formatCash(quote.shortfall)} more`}${forecast.ok ? `. Net ${formatDelta(forecast.delta.net)} per turn${forecast.delta.cityValue == null ? '' : `, City Value ${formatDelta(forecast.delta.cityValue)}`}` : ''}`,
+    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : quote.error === DEV_ERRORS.NO_ACTIONS ? '. No City Actions left' : `. Need ${formatCash(quote.shortfall)} more`}${forecast.ok ? `. Net ${formatDelta(forecast.delta.net)} per turn${forecast.delta.cityValue == null ? '' : `, City Value ${formatDelta(forecast.delta.cityValue)}`}` : ''}`,
   },
     createSprite(art.sprite, { className: 'build-option__art' }),
     h('span', { class: 'build-option__label' },
       createSprite(cat.icon, { className: 'build-option__icon' }), cat.label),
     h('span', { class: 'build-option__name' }, art.name),
     h('span', { class: 'build-option__price' }, priceTag(quote)),
+    h('span', { class: 'build-option__effect' }, CATEGORY_EFFECTS[type]),
+    forecast.ok && forecast.delta.prestige !== 0 && h('span', { class: `build-option__prestige ${forecast.delta.prestige > 0 ? 'is-up' : 'is-down'}` },
+      `${forecast.delta.prestige > 0 ? '+' : ''}${forecast.delta.prestige} Prestige`),
     forecast.ok && forecastSummary(forecast),
   );
 }
@@ -124,7 +148,8 @@ function vacantView(game, block, player) {
 
 function developedView(game, block, player) {
   const cat = getCategory(block.type);
-  const nodes = [header(game, block, player), bonusList(block)];
+  const nodes = [header(game, block, player), bonusList(block),
+    h('p', { class: 'build-panel__effect' }, h('strong', {}, `${cat.label}: `), CATEGORY_EFFECTS[block.type])];
   if (block.level >= MAX_LEVEL) {
     nodes.push(h('p', { class: 'build-panel__maxed' },
       createSprite('icons:crown', { className: 'build-panel__maxed-icon' }),
@@ -140,10 +165,16 @@ function developedView(game, block, player) {
         h('strong', { class: 'upgrade-card__name' }, next.name),
         h('span', { class: 'upgrade-card__gain' },
           `Base income ${formatCash(block.income)} → ${formatCash(quote.income)}/turn (+${formatCash(quote.incomeGain)})`),
-        quote.baseCost != null && quote.baseCost !== quote.cost
+        quote.eventCost != null && quote.baseCost !== quote.eventCost
           && h('span', { class: 'price__event' }, `City event price (normally ${formatCash(quote.baseCost)})`),
+        quote.industryDiscount > 0
+          && h('span', { class: 'price__industry' }, `Industry next door: −${quote.industryDiscount}% (${formatCash(quote.eventCost)} → ${formatCash(quote.cost)})`),
+        forecast.ok && forecast.delta.prestige !== 0
+          && h('span', { class: `build-option__prestige ${forecast.delta.prestige > 0 ? 'is-up' : 'is-down'}` },
+            `${forecast.delta.prestige > 0 ? '+' : ''}${forecast.delta.prestige} Prestige`),
         quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
           && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
+        quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, 'No City Actions left this turn'),
         forecast.ok && forecastDetails(forecast),
       ),
       h('button', {
@@ -211,7 +242,7 @@ function abandonedView(game, block, player) {
         h('p', { class: 'build-panel__sub' },
           `${DISTRICTS[block.district].label} · ${describeDevelopment(block)} (inactive)`),
         former && h('p', { class: 'build-panel__stats' }, `Abandoned by ${former.name} after bankruptcy`)),
-      h('div', { class: 'build-panel__cash' }, h('span', {}, 'Your cash'), h('strong', {}, formatCash(player.cash))),
+      h('div', { class: 'build-panel__cash' }, h('span', {}, 'Your cash'), h('strong', {}, formatCash(player.cash)), actionsNote(game)),
     ),
     h('div', { class: 'acquire-grid' },
       option(ACQUIRE_MODES.RESTORE, `Restore ${art?.name ?? ''}`.trim(),
@@ -225,12 +256,52 @@ function abandonedView(game, block, player) {
   ];
 }
 
+/** A rival's block your Commercial pressure has broken: buy it (development included) from its owner. */
+function takeoverView(game, block, player) {
+  const owner = getPlayer(game, block.ownerSeat);
+  const art = levelArt(block.type, block.level);
+  const q = quoteTakeover(game, block.id);
+  return [
+    h('header', { class: 'build-panel__head' },
+      art ? createSprite(art.sprite, { className: 'build-panel__art' }) : createSprite(ART.owner.seal(block.ownerSeat), { className: 'build-panel__art build-panel__art--seal' }),
+      h('div', { class: 'build-panel__titles' },
+        h('h3', { id: 'build-title', class: 'build-panel__title' }, `Block ${block.label} · ${owner.name}'s`),
+        h('p', { class: 'build-panel__sub' }, `${DISTRICTS[block.district].label} · ${describeDevelopment(block)}`),
+        h('p', { class: 'build-panel__stats' },
+          h('span', {}, `Your pressure ${q.pressure}`), h('span', {}, `Control ${q.control}`),
+          h('span', { title: 'This block\'s Prestige, which moves with it' }, `Prestige ${block.prestige ?? 0}`))),
+      h('div', { class: 'build-panel__cash' }, h('span', {}, 'Your cash'), h('strong', {}, formatCash(player.cash)), actionsNote(game)),
+    ),
+    h('p', { class: 'build-panel__hint' },
+      `Your shops out-pressure ${owner.name} here. Take the block over, buildings and all, for `
+      + `${ECONOMY.STRATEGY.TAKEOVER.pricePercent}% of its value, paid to ${owner.name}.`),
+    q.error === FIN_ERRORS.INSUFFICIENT_FUNDS && h('p', { class: 'price__short' }, `Need ${formatCash(q.shortfall)} more`),
+    h('div', { class: 'build-panel__actions' },
+      h('button', { type: 'button', class: 'btn btn--gold', dataset: { takeover: block.id }, 'aria-disabled': q.ok ? null : 'true' },
+        createSprite('icons:coins', { className: 'btn__icon' }), h('span', {}, `Take over · ${formatCash(q.cost)}`)),
+      h('button', { type: 'button', class: 'btn', dataset: { action: 'close' } },
+        createSprite('icons:undo', { className: 'btn__icon' }), h('span', {}, 'Leave it'))),
+  ];
+}
+
+function handleTakeover(result) {
+  if (!result.ok) {
+    refuse(result.error, result.shortfall);
+    render();
+    return;
+  }
+  toast(`Took over the block from ${getPlayer(state.game, result.from).name} · −${formatCash(result.cost)}`, { tone: 'success' });
+  $('#build-dialog').close();
+  state.onChange({ ...result, bonusBefore: Infinity });
+}
+
 function render() {
   const { game, blockId } = state;
   const block = getBlockById(game.board, blockId);
   const player = currentPlayer(game);
   let view;
-  if (block.abandoned) view = abandonedView(game, block, player);
+  if (block.ownerSeat != null && block.ownerSeat !== player.seat) view = takeoverView(game, block, player);
+  else if (block.abandoned) view = abandonedView(game, block, player);
   else if (isDeveloped(block)) view = developedView(game, block, player);
   else view = vacantView(game, block, player);
   $('#build-body').replaceChildren(...view.filter(Boolean));
@@ -302,7 +373,7 @@ function handleAuction(mode) {
   const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
   if (!result.ok) {
     buzz('error');
-    toast('No eligible affordable bid met the reserve.', { tone: 'warn' });
+    toast(ERROR_TEXT[result.error] ?? 'No eligible affordable bid met the reserve.', { tone: 'warn' });
     return;
   }
   const winner = getPlayer(state.game, result.winnerSeat);
@@ -315,14 +386,19 @@ function handleAuction(mode) {
   if (reopen && !isCpu(currentPlayer(state.game))) openBuildPanel(state.game, result.block);
 }
 
-/** True if the current player may open the panel: their own block, or an abandoned one. */
+/**
+ * True if the current player may open the panel: their own block, an abandoned one, or (in
+ * Manage City) a rival's block their Commercial pressure beats, to take it over.
+ */
 export function canManage(game, blockId) {
   const block = game && getBlockById(game.board, blockId);
   if (!block || game.phase !== 'playing') return false;
   const legalPhase = game.turnPhase === TURN_PHASES.MANAGE_CITY
     || (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures[0] === block.id);
   if (!legalPhase) return false;
-  return block.ownerSeat === currentPlayer(game).seat || (block.abandoned && block.ownerSeat == null);
+  const seat = currentPlayer(game).seat;
+  if (game.turnPhase === TURN_PHASES.MANAGE_CITY && canPressure(game.board, seat, block)) return true;
+  return block.ownerSeat === seat || (block.abandoned && block.ownerSeat == null);
 }
 
 export function openBuildPanel(game, blockId) {
@@ -361,6 +437,7 @@ export function initBuildPanel({ onChange, onLeave = () => {} }) {
     if (acquire) return handleAcquire(acquireAbandoned(state.game, state.blockId, acquire.dataset.acquire));
     const auction = e.target.closest('[data-auction]');
     if (auction) return handleAuction(auction.dataset.auction);
+    if (e.target.closest('[data-takeover]')) return handleTakeover(takeoverBlock(state.game, state.blockId));
     if (e.target.closest('[data-action="close"]')) {
       dialog.close();
       state.onLeave({ blockId: state.blockId });

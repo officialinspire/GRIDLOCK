@@ -42,6 +42,20 @@
   font-variant-numeric: tabular-nums;
 }
 .round-badge__roads-icon { width: 18px; }
+/* Era chip: "Expansion", then "City 2/4 · 1 action" (hud.js). */
+.round-badge__era {
+  margin-left: 4px;
+  padding: 1px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 0.8em;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: var(--paper-edge);
+  font-variant-numeric: tabular-nums;
+}
+.round-badge__era[data-era='city'] { color: var(--ink); background: var(--gold); }
+.round-badge__era.is-spent { opacity: 0.75; }
 
 .turn-banner {
   --player: var(--steel);
@@ -1098,6 +1112,15 @@ html[data-coords='on'] .block__coord { display: block; }
   text-transform: none;
   color: var(--ink);
 }
+/* Strategic effects (core/strategy.js): category effect lines, Prestige changes, industry discount. */
+.build-option__effect { font-size: 0.72rem; line-height: 1.2; color: var(--ink-soft); }
+.build-option__prestige { font-size: 0.78rem; font-weight: 900; }
+.build-option__prestige.is-up { color: #2f7a2f; }
+.build-option__prestige.is-down { color: #b0322a; }
+.price__industry { font-size: 0.75rem; font-weight: 700; color: #6a5a2a; }
+.build-panel__effect { margin: 4px 0; font-size: 0.85rem; color: var(--ink-soft); }
+.build-panel__city-actions { margin-top: 2px; font-size: 0.7rem; color: var(--ink); }
+.build-panel__city-actions.is-spent { color: var(--ink-soft); text-decoration: line-through; }
 .build-panel__hint { font-size: 0.9rem; color: var(--ink-soft); }
 
 .build-panel__grid {
@@ -1499,6 +1522,7 @@ html[data-coords='on'] .block__coord { display: block; }
 @keyframes debt-pulse { 50% { transform: scale(1.08); } }
 
 .turn-prompt.is-distress { background: #f6d4cf; border-color: var(--red); color: var(--red-deep); }
+#action-end-turn.is-ready { outline: 3px solid var(--gold); outline-offset: 2px; }
 #action-finance { flex: 0 1 200px; animation: debt-pulse 1.2s ease-in-out infinite; }
 
 .board.is-locked .road:not(.is-built) { cursor: not-allowed; }

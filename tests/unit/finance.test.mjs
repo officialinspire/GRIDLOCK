@@ -10,8 +10,10 @@ import {
   TXN, blockUpkeep, upkeepFor, isInDistress, calculateIncome, propertyValue, charge,
 } from '../../js/core/economy.js';
 import {
-  createGame, placeRoad, currentPlayer, getPlayer, playerStats, standings, MOVE_ERRORS, PHASES,
+  createGame, placeRoad, currentPlayer, getPlayer, playerStats, standings, MOVE_ERRORS, PHASES, ERAS, TURN_PHASES,
+  endCityTurn, resolveCapture,
 } from '../../js/core/game.js';
+import { playOutCity } from './_city.mjs';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, liquidationValue, distressStatus,
   declareBankruptcy, quoteAcquire, acquireAbandoned, ownershipProblems, FIN_ERRORS, ACQUIRE_MODES,
@@ -314,13 +316,13 @@ test('acquisition guards: former owner, not abandoned, funds, mode, distress', (
   assert.equal(quoteAcquire(g, 'r2c2', 'rebuild').error, FIN_ERRORS.FORMER_OWNER);
 });
 
-test('roads never capture ruins, and the game still ends when every road is paved', () => {
+test('roads never capture ruins, and the game still ends once every road is paved', () => {
   const game = p2Insolvent();
   // Enclose P2's blocks first so they're "captured" state, then bankrupt.
   declareBankruptcy(game);
   const remaining = allRoadIds(game.board).filter((id) => !(id in game.board.roads));
   let guard = 0;
-  while (game.phase === PHASES.PLAYING) {
+  while (game.era === ERAS.EXPANSION) {
     const me = currentPlayer(game);
     if (me.cash < 0) { me.cash = 0; } // not under test here
     const r = placeRoad(game, remaining.shift());
@@ -328,6 +330,8 @@ test('roads never capture ruins, and the game still ends when every road is pave
     for (const id of r.captured) assert.equal(getBlockById(game.board, id).abandoned, false, 'ruins never captured');
     assert.ok(++guard <= 84);
   }
+  playOutCity(game);
+  assert.equal(game.phase, PHASES.ENDED);
   const ruins = game.board.blocks.filter((b) => b.abandoned);
   assert.equal(ruins.length, 4, 'nobody bought them');
   assert.ok(ruins.every((b) => b.ownerSeat == null));
@@ -349,6 +353,7 @@ test('harsh random games always terminate with consistent ownership and ledgers'
     let steps = 0;
     while (game.phase === PHASES.PLAYING) {
       assert.ok(++steps < 2000, `seed ${seed}: runaway loop`);
+      while (game.era === ERAS.CITY && game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP) resolveCapture(game);
       const me = currentPlayer(game);
       // Occasional shock bill (through the real mandatory-charge path) to exercise distress.
       if (me.cash >= 0 && rand() < 0.08) charge(game, me, Math.floor(rand() * 20000), TXN.UPKEEP);
@@ -371,8 +376,12 @@ test('harsh random games always terminate with consistent ownership and ledgers'
         if (b.ownerSeat === me.seat && b.level > 0) upgradeBlock(game, b.id);
         if (b.abandoned && rand() < 0.5) acquireAbandoned(game, b.id, rand() < 0.5 ? 'restore' : 'rebuild');
       }
-      const [id] = pool.splice(Math.floor(rand() * pool.length), 1);
-      assert.equal(placeRoad(game, id).ok, true);
+      if (game.era === ERAS.CITY) {
+        assert.equal(endCityTurn(game).ok, true);
+      } else {
+        const [id] = pool.splice(Math.floor(rand() * pool.length), 1);
+        assert.equal(placeRoad(game, id).ok, true);
+      }
       assert.deepEqual(ownershipProblems(game), []);
       for (const p of game.players) assert.ok(Number.isSafeInteger(p.cash));
     }

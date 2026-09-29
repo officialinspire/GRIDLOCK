@@ -26,6 +26,7 @@ export const TXN = Object.freeze({
   FRESH_START: 'fresh-start',
   ACQUIRE: 'acquire',
   EVENT_REPAIR: 'event-repair',
+  TAKEOVER: 'takeover', // buyer's payment and the former owner's proceeds (core/finance.js)
 });
 
 const cashFormat = new Intl.NumberFormat('en-US', {

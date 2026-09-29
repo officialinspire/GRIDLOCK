@@ -11,6 +11,8 @@
  *              restart with FRESH_START_CAPITAL (first FRESH_START_LIMIT times).
  *   abandoned  other players buy the land and either restore the ruin or clear
  *              it to rebuild. Former owners can't buy their own ruins back.
+ *   takeover   a rival whose Commercial pressure beats a block's control buys it at a
+ *              premium paid to the owner (ECONOMY.STRATEGY.TAKEOVER).
  *
  * Loop safety: bankruptcy leaves the player owning nothing, so they owe no
  * upkeep and can't fall back into distress until they buy again; they can't
@@ -21,9 +23,12 @@ import { getBlockById, blocksOwnedBy } from './board.js';
 import { refreshBonuses } from './bonuses.js';
 import { TABLE, applyDevelopment, isDeveloped } from './development.js';
 import {
-  credit, debit, canAfford, investedIn, isInDistress, TXN,
+  credit, debit, canAfford, investedIn, isInDistress, blockValue, TXN,
 } from './economy.js';
-import { currentPlayer, PHASES } from './game.js';
+import {
+  currentPlayer, PHASES, TURN_PHASES, outOfCityActions, spendCityAction,
+} from './game.js';
+import { pressureOn, blockControl } from './strategy.js';
 
 const FIN = ECONOMY.FINANCE;
 
@@ -39,6 +44,10 @@ export const FIN_ERRORS = Object.freeze({
   IN_DISTRESS: 'in-distress',
   INSUFFICIENT_FUNDS: 'insufficient-funds',
   BAD_MODE: 'bad-mode',
+  NO_ACTIONS: 'no-city-actions', // CITY era: this turn's City Actions are spent
+  NOT_RIVAL: 'not-rival-block', // takeovers: only a rival's active block
+  WRONG_PHASE: 'wrong-turn-phase', // takeovers: Manage City only
+  CONTROL_HOLDS: 'control-holds', // takeovers: the owner's control is not beaten
 });
 
 const pct = (amount, percent) => Math.round((amount * percent) / 100);
@@ -50,6 +59,8 @@ function ownerCheck(game, block) {
   if (!block) return FIN_ERRORS.NO_BLOCK;
   if (block.ownerSeat == null || block.ownerSeat !== currentPlayer(game).seat) return FIN_ERRORS.NOT_OWNER;
   if (!isDeveloped(block)) return FIN_ERRORS.NOT_DEVELOPED;
+  // CITY era: a voluntary sale is a City Action; selling to clear debt never is.
+  if (!isInDistress(currentPlayer(game)) && outOfCityActions(game)) return FIN_ERRORS.NO_ACTIONS;
   return null;
 }
 
@@ -74,6 +85,7 @@ export function quoteSale(game, blockId) {
 function commitSale(game, block, quote, kind) {
   const player = currentPlayer(game);
   const type = block.type;
+  if (!isInDistress(player)) spendCityAction(game);
   applyDevelopment(block, quote.toLevel === 0 ? 'vacant' : type, quote.toLevel, {
     constructionCosts: (block.constructionCosts ?? []).slice(0, quote.toLevel),
   });
@@ -191,6 +203,7 @@ export function quoteAcquire(game, blockId, mode) {
   const player = currentPlayer(game);
   if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) return { ...base, error: FIN_ERRORS.FORMER_OWNER };
   if (isInDistress(player)) return { ...base, error: FIN_ERRORS.IN_DISTRESS };
+  if (outOfCityActions(game)) return { ...base, error: FIN_ERRORS.NO_ACTIONS };
 
   const { land, restore, reserve: cost } = redevelopmentPrice(block, mode);
   const quote = { ...base, cost, land, restore };
@@ -209,6 +222,8 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
   if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
   if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
+  // CITY era: opening an auction is the current mayor's City Action, whoever wins it.
+  if (outOfCityActions(game)) return { ok: false, error: FIN_ERRORS.NO_ACTIONS };
   const { land, restore, reserve } = redevelopmentPrice(block, mode);
   const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
   const rejected = [];
@@ -231,6 +246,7 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   const seatOrder = FIN.REDEVELOPMENT.TIE_BREAKER === 'highest-seat' ? -1 : 1;
   valid.sort((a, b) => b.bid - a.bid || seatOrder * (a.player.seat - b.player.seat));
   const winner = valid[0];
+  spendCityAction(game);
   debit(game, winner.player, winner.bid, TXN.ACQUIRE, { block: block.id, mode, auction: true });
   block.ownerSeat = winner.player.seat;
   block.abandoned = false;
@@ -250,6 +266,7 @@ export function acquireAbandoned(game, blockId, mode) {
   const player = currentPlayer(game);
   const paid = debit(game, player, quote.cost, TXN.ACQUIRE, { block: block.id, mode });
   if (!paid.ok) return { ...quote, ok: false, error: FIN_ERRORS.INSUFFICIENT_FUNDS };
+  spendCityAction(game);
 
   block.ownerSeat = player.seat;
   block.abandoned = false;
@@ -259,6 +276,54 @@ export function acquireAbandoned(game, blockId, mode) {
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, acquired: mode };
   game.log.push({ type: 'acquire', seat: player.seat, block: block.id, mode, cost: quote.cost });
   return { ok: true, block: block.id, mode, cost: quote.cost, type: block.type, level: block.level };
+}
+
+/* ---------------- takeovers (core/strategy.js pressure vs control) ---------------- */
+
+/**
+ * What taking over a rival's block would cost: { ok, error?, cost, pressure, control, owner,
+ * shortfall }. Allowed in the taker's Manage City when their pressure on the block (nearby
+ * Commercial) is greater than its control (base + the owner's nearby Residential, Civic and
+ * Landmark). The price is TAKEOVER.pricePercent of the block's value, paid to the owner.
+ */
+export function quoteTakeover(game, blockId) {
+  const block = getBlockById(game.board, blockId);
+  const base = { ok: false, cost: 0, pressure: 0, control: 0, owner: null, shortfall: 0 };
+  if (game.phase !== PHASES.PLAYING) return { ...base, error: FIN_ERRORS.GAME_OVER };
+  if (!block) return { ...base, error: FIN_ERRORS.NO_BLOCK };
+  const player = currentPlayer(game);
+  if (block.ownerSeat == null || block.abandoned || block.ownerSeat === player.seat) return { ...base, error: FIN_ERRORS.NOT_RIVAL };
+  const quote = {
+    ...base,
+    cost: pct(blockValue(block), ECONOMY.STRATEGY.TAKEOVER.pricePercent),
+    pressure: pressureOn(game.board, player.seat, block),
+    control: blockControl(game.board, block).control,
+    owner: block.ownerSeat,
+  };
+  if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return { ...quote, error: FIN_ERRORS.WRONG_PHASE };
+  if (isInDistress(player)) return { ...quote, error: FIN_ERRORS.IN_DISTRESS };
+  if (quote.pressure <= quote.control) return { ...quote, error: FIN_ERRORS.CONTROL_HOLDS };
+  if (outOfCityActions(game)) return { ...quote, error: FIN_ERRORS.NO_ACTIONS };
+  if (!canAfford(player, quote.cost)) return { ...quote, error: FIN_ERRORS.INSUFFICIENT_FUNDS, shortfall: quote.cost - player.cash };
+  return { ...quote, ok: true };
+}
+
+/** Takes over a rival's block for the current player: pays the owner and keeps the development. */
+export function takeoverBlock(game, blockId) {
+  const quote = quoteTakeover(game, blockId);
+  if (!quote.ok) return quote;
+  const block = getBlockById(game.board, blockId);
+  const player = currentPlayer(game);
+  const owner = game.players.find((p) => p.seat === quote.owner);
+  const paid = debit(game, player, quote.cost, TXN.TAKEOVER, { block: block.id, from: owner.seat });
+  if (!paid.ok) return { ...quote, ok: false, error: FIN_ERRORS.INSUFFICIENT_FUNDS };
+  credit(game, owner, quote.cost, TXN.TAKEOVER, { block: block.id, to: player.seat });
+  spendCityAction(game);
+  block.ownerSeat = player.seat;
+  refreshBonuses(game.board);
+  game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, takeover: owner.seat };
+  game.log.push({ type: 'takeover', seat: player.seat, from: owner.seat, block: block.id, cost: quote.cost });
+  return { ok: true, block: block.id, from: owner.seat, cost: quote.cost, type: block.type, level: block.level };
 }
 
 /* ---------------- invariants (used by tests) ---------------- */
