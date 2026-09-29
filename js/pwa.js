@@ -48,7 +48,11 @@ export function initPwa({ beforeReload = () => {} } = {}) {
       const registration = await navigator.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' });
       const watch = (worker) => {
         if (!worker) return;
-        const ready = () => worker.state === 'installed' && navigator.serviceWorker.controller;
+        // A real update is installed and *waiting* behind the worker that controls this page.
+        // (WebKit can deliver the first install's 'installed' event after that same worker has
+        // already activated and taken control; it is then no longer waiting, so no banner.)
+        const ready = () => worker.state === 'installed' && navigator.serviceWorker.controller
+          && registration.waiting === worker;
         if (ready()) offerUpdate(worker);
         else worker.addEventListener('statechange', () => { if (ready()) offerUpdate(worker); });
       };
