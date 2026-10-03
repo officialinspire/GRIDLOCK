@@ -60,17 +60,26 @@ let lastHuman = null; // seat of the last person to have the device (for handoff
 
 export const getGame = () => game;
 
+/** Title screen: Continue and Discard show only while there is a saved game to offer. */
+function showSavedGameControls(available) {
+  $('#continue-game').hidden = !available;
+  $('#discard-save').hidden = !available;
+}
+
+/** Reads (migrates and validates) the stored save, shows the controls to match and returns it. */
 function refreshSavedGameControls() {
   const saved = loadActiveGame();
-  $('#continue-game').hidden = !saved;
-  $('#discard-save').hidden = !saved;
+  showSavedGameControls(Boolean(saved));
   return saved;
 }
 
 function autosave() {
   measure('autosave', () => {
-    if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
-    refreshSavedGameControls();
+    // saveActiveGame() validates the game before writing it, so a save that succeeded is one
+    // loadActiveGame() accepts: show the controls without reading it straight back. Anything
+    // else (game over, a refused or failed save) asks storage what is really there.
+    if (game?.phase === PHASES.PLAYING && saveActiveGame(game, lastSetup)) showSavedGameControls(true);
+    else refreshSavedGameControls();
   });
 }
 

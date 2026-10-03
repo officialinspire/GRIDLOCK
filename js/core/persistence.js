@@ -225,12 +225,16 @@ function setupFrom(game, setup) {
   };
 }
 
+/**
+ * Writes the active game. True only when a valid game was written to storage: such a save is
+ * one loadActiveGame() accepts, so the UI may offer Continue without reading it back.
+ */
 export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
   return measure('saveActiveGame', () => writeSave(game, setup, storage));
 }
 
 function writeSave(game, setup, storage) {
-  if (!validGame(game)) return false;
+  if (!storage || !validGame(game)) return false;
   try {
     const snapshot = {
       ...game,
@@ -243,7 +247,7 @@ function writeSave(game, setup, storage) {
       turnStartRepair: null,
     };
     delete snapshot.eventPool;
-    storage?.setItem(SAVE_KEY, JSON.stringify({
+    storage.setItem(SAVE_KEY, JSON.stringify({
       version: SAVE_VERSION,
       appVersion: APP_VERSION,
       savedAt: Date.now(),
