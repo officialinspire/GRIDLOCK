@@ -17,6 +17,9 @@ import { components, BONUS } from './bonuses.js';
 import { controlStrength } from './strategy.js';
 import { isCpu } from './seats.js';
 
+/** The top building level (ECONOMY.DEVELOPMENT.MAX_LEVEL), for the level badges. */
+const TOP_LEVEL = ECONOMY.DEVELOPMENT.MAX_LEVEL;
+
 export const CAREER_KEY = 'gridlock.career.v1';
 export const CAREER_BACKUP_KEY = 'gridlock.career.corrupt';
 export const CAREER_VERSION = 1;
@@ -44,7 +47,7 @@ export const ACHIEVEMENTS = Object.freeze([
   { id: 'mayor-of-the-year', name: 'Mayor of the Year', text: 'Win a match.', icon: 'icons:trophy', test: (p) => p.won },
   { id: 'chain-reaction', name: 'Chain Reaction', text: 'Capture 3 blocks in one chain.', icon: 'icons:road', test: (p) => p.longestChain >= 3 },
   { id: 'land-baron', name: 'Land Baron', text: 'Finish a match owning 10 or more blocks.', icon: 'icons:map', test: (p) => p.blocks >= 10 },
-  { id: 'skyline', name: 'Skyline', text: 'Raise a building to Level 3.', icon: 'icons:building', test: (p) => p.maxLevel >= 3 },
+  { id: 'skyline', name: 'Skyline', text: `Raise a building to Level ${TOP_LEVEL}.`, icon: 'icons:building', test: (p) => p.maxLevel >= TOP_LEVEL },
   { id: 'master-builder', name: 'Master Builder', text: 'Build or upgrade 8 times in one match.', icon: 'icons:star', test: (p) => p.developments >= 8 },
   { id: 'big-city', name: 'Big City', text: 'Finish with a City Value of $40,000 or more.', icon: 'icons:coins', test: (p) => p.cityValue >= 40000 },
   { id: 'comeback', name: 'Comeback Kid', text: 'Win a match after declaring bankruptcy.', icon: 'icons:restart', test: (p) => p.won && p.bankruptcies > 0 },
@@ -57,7 +60,7 @@ export const ACHIEVEMENTS = Object.freeze([
   { id: 'fortress', name: 'Fortress City', text: `End the City era with ${GOALS.FORTRESS_BLOCKS}+ blocks at control ${GOALS.FORTRESS_CONTROL}+, none lost.`, icon: 'title:shield', test: (p, m) => m.cityEra && p.takeoversLost === 0 && p.blocks >= GOALS.FORTRESS_BLOCKS && p.minControl >= GOALS.FORTRESS_CONTROL },
   { id: 'mixed-use', name: 'Mixed Use', text: 'Finish with a mixed-use cluster.', icon: 'icons:home', test: (p) => p.mixedUse },
   { id: 'full-palette', name: 'Full Palette', text: 'Finish with all six building types.', icon: 'icons:star', test: (p) => p.categoryTypes >= CATEGORY_ORDER.length },
-  { id: 'heavy-industry', name: 'Heavy Industry', text: `Finish with ${GOALS.FACTORIES} Level 3 Industrial blocks.`, icon: 'icons:gear', test: (p) => p.industrialL3 >= GOALS.FACTORIES },
+  { id: 'heavy-industry', name: 'Heavy Industry', text: `Finish with ${GOALS.FACTORIES} Level ${TOP_LEVEL} Industrial blocks.`, icon: 'icons:gear', test: (p) => p.industrialL3 >= GOALS.FACTORIES },
   { id: 'safe-streets', name: 'Safe Streets', text: `Finish with ${GOALS.SHELTERED}+ blocks under civic protection.`, icon: 'icons:building', test: (p) => p.sheltered >= GOALS.SHELTERED },
   { id: 'green-belt', name: 'Green Belt', text: `Finish with ${GOALS.PARK_NETWORK} connected parks.`, icon: 'icons:tree', test: (p) => p.parkNetwork >= GOALS.PARK_NETWORK },
   { id: 'district-boss', name: 'District Boss', text: 'Own every block of a district.', icon: 'icons:map', test: (p) => p.fullDistrict },
@@ -219,7 +222,7 @@ function boardFacts(game, row) {
     takeoversLost: game.log.filter((e) => e.type === 'takeover' && e.from === seat).length,
     mixedUse: developed.some((b) => (b.bonuses ?? []).some((x) => x.id === BONUS.MIXED_USE)),
     categoryTypes: new Set(developed.map((b) => b.type)).size,
-    industrialL3: developed.filter((b) => b.type === 'industrial' && b.level === 3).length,
+    industrialL3: developed.filter((b) => b.type === 'industrial' && b.level === TOP_LEVEL).length,
     sheltered: owned.filter((b) => (b.protectedBy ?? []).length > 0).length,
     parkNetwork: Math.max(0, ...parks.map((group) => group.length)),
     fullDistrict: [...districts.values()].some((blocks) => blocks.every((b) => b.ownerSeat === seat && !b.abandoned)),

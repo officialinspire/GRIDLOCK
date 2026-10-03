@@ -14,7 +14,7 @@ import { effectiveBlockIncome, blockImpacts, costImpacts } from './events.js';
 import { blockUpkeep, blockIncome } from './economy.js';
 import { scorePlayer } from './scoring.js';
 import { blockPrestige, controlStrength } from './strategy.js';
-import { quoteTakeover } from './takeover.js';
+import { quoteTakeover, shieldStatus } from './takeover.js';
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
@@ -40,7 +40,8 @@ export function blockDetails(game, blockId) {
     prestige: prestige.points, // this block's Prestige for its owner (core/strategy.js)
     prestigeNotes: prestige.notes,
     control: controlStrength(game.board, block).control, // takeover defence (0 when unowned)
-    shieldedUntil: block.shieldedUntil ?? null, // recently taken over: safe while round ≤ this
+    shieldedUntil: block.shieldedUntil ?? null, // last round of a takeover shield (see shield)
+    shield: shieldStatus(game, block), // null, or { untilRound, seat }: protected now (seat: until their turn ends)
     // For a rival's block: the current player's takeover quote (pressure, cost, reason if refused).
     takeover: me && block.ownerSeat != null && !block.abandoned && block.ownerSeat !== me.seat ? quoteTakeover(game, blockId) : null,
     contribution: blockContribution(game, blockId),

@@ -322,6 +322,7 @@ test('saves from before eras load as EXPANSION; inconsistent era state is reject
   const game = createGame({ seats: seats(4), seed: 3 });
   saveActiveGame(game, { seats: seats(4) }, storage);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
+  raw.version = 1; // a V1.3 save: written before eras existed
   delete raw.game.era;
   delete raw.game.city;
   storage.setItem(SAVE_KEY, JSON.stringify(raw));

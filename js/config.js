@@ -1,5 +1,8 @@
 /** Shared constants for Grid Lock City. Pure data, no DOM. */
 
+/** App release (kept equal to package.json "version"; shown on the title screen, stored in saves). */
+export const APP_VERSION = '1.4.1';
+
 export const BOARD_ROWS = 6;
 export const BOARD_COLS = 6;
 
@@ -199,6 +202,10 @@ export const ECONOMY = Object.freeze({
    * value (land + list-price development); the defender receives the market value and the rest
    * is lost to redevelopment costs. Ownership moves with the development intact, and the block
    * is shielded from further takeovers until SHIELD_ROUNDS full rounds have passed.
+   *
+   * A block bought out of abandonment (a redevelopment purchase or auction, core/finance.js) is
+   * shielded until its new owner has completed ACQUIRE_SHIELD_TURNS turns of their own after the
+   * purchase. Bought on the new owner's own turn, one turn is exactly one full round.
    */
   TAKEOVER: Object.freeze({
     CONTROL: Object.freeze({
@@ -211,6 +218,7 @@ export const ECONOMY = Object.freeze({
     PREMIUM_PERCENT: 125,
     PER_TURN: 1,
     SHIELD_ROUNDS: 1,
+    ACQUIRE_SHIELD_TURNS: 1,
   }),
 });
 
@@ -309,6 +317,8 @@ export const MAX_NAME_LENGTH = 16;
  *   ACTIONS_PER_TURN  City Actions each mayor gets per City turn. A build, upgrade, voluntary sale
  *                     or downgrade, or redevelopment purchase/auction costs one. Selling to clear
  *                     debt, bankruptcy and developing a block just captured by the final road are free.
+ *                     Voluntary sales, downgrades and redevelopment happen only in Manage City
+ *                     (either era); debt recovery is allowed whenever the mayor is in debt.
  */
 export const CITY_ERA = Object.freeze({
   ROUNDS: 4,

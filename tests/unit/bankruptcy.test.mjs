@@ -199,7 +199,10 @@ test('bankruptcy → redevelopment → takeover → final scoring, all in one ma
   assert.deepEqual([store.ownerSeat, store.abandoned, store.type, store.level], [3, false, 'commercial', 1]);
   assert.ok(endCityTurn(game).ok); // → seat 1, next round
 
-  // 3. Takeover: seat 1's towers out-press seat 3's new store.
+  // 3. Takeover: seat 1's towers out-press seat 3's new store, but only once seat 3 has had
+  //    its next turn (the redevelopment shield).
+  assert.equal(quoteTakeover(game, 'r2c2').error, TAKEOVER_ERRORS.SHIELDED);
+  for (let i = 0; i < 3; i++) assert.ok(endCityTurn(game).ok); // seats 1, 2 and 3 → seat 1
   const q = quoteTakeover(game, 'r2c2');
   assert.equal(q.ok, true, q.reason);
   const taken = takeoverBlock(game, 'r2c2');

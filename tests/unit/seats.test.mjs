@@ -138,6 +138,7 @@ test('saves from before controllers load as all-human; corrupt controllers are r
   const game = createGame({ seats: [human(1), cpu(2)], seed: 3 });
   saveActiveGame(game, null, storage);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
+  raw.version = 1; // written before seat controllers existed
   for (const p of raw.game.players) { delete p.controller; delete p.difficulty; delete p.personality; }
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   assert.deepEqual(loadActiveGame(storage).game.players.map((p) => [p.controller, p.difficulty]), [['human', null], ['human', null]]);

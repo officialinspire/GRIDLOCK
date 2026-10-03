@@ -4,6 +4,8 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
+**V1.4.1:** a core-rules hardening pass: finance actions check their turn phase and City Action cost in the rules engine, redeveloped blocks are protected from takeovers until their new owner's next turn, and saves move to schema 2 (see the release notes below).
+
 **V1.4:** the City era after the roads are paved, development-driven scoring with Prestige, strategic building effects, hostile takeovers, bankruptcy recovery, twelve new achievements and denser city blocks (see the release notes below).
 
 **V1.3:** a start screen and the INSPIRE Software intro, a downtown Fredericksburg main menu, two music themes with crossfades, and new sound effects for every building type and city event (see the release notes below).
@@ -11,6 +13,15 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 **V1.2:** installable offline play, a richer sound and haptics layer, a first-game tutorial, rule presets, career statistics and achievements, strategic forecasts, replayable cities with challenge links, and a simulation-backed balance pass (see the release notes below).
 
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.4.1 release notes
+
+- **Finance actions follow the turn phases in the rules engine,** not just in the UI. Voluntary sales, downgrades and redevelopment (buying a ruin or opening an auction) are Manage City actions in both eras: they're refused during Pave Road, Capture / Develop (including the final road's Develop Now step in the City era, which used to let them through for free) and the bonus road, with no side effects (`FIN_ERRORS.WRONG_PHASE`). In the City era each one costs a City Action.
+- **Debt recovery stays free:** selling or downgrading while in debt and declaring bankruptcy never cost a City Action and are never phase-gated, so a mayor in debt can always dig out. Opening an auction, like any purchase, waits until the opener's debt is cleared.
+- **Redevelopment protection:** a block bought out of abandonment (directly or by auction, whoever wins) can't be taken over until its new owner has completed their next turn (`ECONOMY.TAKEOVER.ACQUIRE_SHIELD_TURNS`). Bought on your own turn, that's exactly one full round; nobody can snipe a block straight out of an auction. The inspector shows whose turn the protection waits for. Takeover protection after a hostile takeover is unchanged.
+- **Saves:** schema version 2 (saves record the app version too). V1.1–V1.4.0 saves migrate step by step and continue unchanged; existing takeover protection keeps its whole-round length. Unknown or newer versions are still ignored.
+- **Config-driven validation:** save checks take building levels, incomes and costs from `ECONOMY.DEVELOPMENT` (`MAX_LEVEL`, the level table) instead of hardcoded numbers, and the Level 3 achievements name the configured top level.
+- Version 1.4.1 (`APP_VERSION` in `js/config.js`, `package.json`, the title screen).
 
 ### V1.4 release notes
 
@@ -302,7 +313,7 @@ Sound effects and ambience are synthesised in the browser with Web Audio (no sou
 
 ### Saving a local game
 
-Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely.
+Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely. Saves carry a schema version (`SAVE_VERSION`, now 2) and older versions are migrated one step at a time (`migrateSave` in `js/core/persistence.js`).
 
 ## Install & play offline
 
@@ -425,6 +436,7 @@ In the **CITY era** a mayor can take over a rival's block. The rules are in `js/
 - A takeover needs pressure **greater** than control. It is allowed only in the attacker's City-era Manage City, never while they are in debt, costs **one City Action**, and at most **one** happens per player turn.
 - **Price:** the attacker pays **125%** of the block's market value (land + list-price development). The defender receives the market value; the 25% premium is lost to redevelopment and transaction costs.
 - Ownership moves with the development intact. The block is then **protected** until the next full round is done (`shieldedUntil`), so it can't bounce straight back.
+- A block bought out of abandonment (a redevelopment purchase or auction) is **protected** until its new owner has completed their next turn (`ACQUIRE_SHIELD_TURNS`; stored as `shieldedUntil` plus `shieldSeat`, the owner whose turn ends it). Bought on the owner's own turn, that's one full round; won at auction by a mayor seated later this round, it lasts until their turn this round ends.
 - Each takeover is logged (`{ type: 'takeover', round, seat, from, block, label, cost, marketValue, premium, pressure, control }`) and appears in the ledger as `takeover` for both mayors.
 - **UI:** in the City era, tapping a rival's block opens the takeover view: price and where the money goes, your pressure against its control (with where each comes from), and the reason when it isn't possible. The inspector shows control, protection and your pressure.
 - **CPU:** Normal and Hard mayors run the takeover on a copy and take it only when it returns at least 25% of its price over the turns left (income net of upkeep × turns + City Value change) and leaves the reserve plus two turns of upkeep in hand (`CPU.TAKEOVER`); Easy never tries. In simulated all-CPU games, the takeovers that arose were weak blocks that didn't pay, so bots passed on them.
@@ -486,7 +498,7 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 - **Upkeep:** charged after income: 6% of owned land value plus 7% of invested construction cost. Idle expansion and aggressive building now carry meaningful risk without making ordinary developed blocks unprofitable.
 - **Emergency repairs:** targeted emergencies can queue a modest configured expense at the affected owner's next turn. Civic protection prevents both the income loss and repair charge.
 - **Financial distress:** cash < $0. This is derived from cash, not stored as a flag. While in distress, a player can't pave or buy. The distress panel opens automatically, after any event card is dismissed, and can be reopened with the **Resolve Debt** button.
-- **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
+- **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. Recovering (cash ≥ $0) unblocks play immediately. Selling to clear debt is free and always allowed; a voluntary sale (from the Build panel) is a Manage City action and costs a City Action in the City era.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
   - Roads stay as they are, the debt is written off, and the player stays in the game with **recovery capital**: $2,000 the first time, then half the previous amount each time, never below $500 (`FINANCE.RECOVERY`).
@@ -494,7 +506,7 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
   - **Score penalty** (`FINANCE.BANKRUPTCY_PENALTY`): the nth bankruptcy costs n × $1,000 of final City Value (so 1, 2, 3 bankruptcies cost $1,000, $3,000, $6,000 in all) and 2 Prestige each. The results card shows it in the City Value breakdown.
   - Any queued event repair bills and takeover protection on the abandoned blocks are dropped. Ruins keep their buildings on the board (dark, marked *Abandoned*), can't be taken over, and go to redevelopment.
   - **Messaging:** the bankruptcy card lists the debt written off, blocks abandoned, recovery capital, the total penalty so far and what another bankruptcy would pay. The HUD card shows **↺n Recovering** for the rest of that round and the next (tooltip: penalty so far, next recovery capital), the turn prompt says *Recovering from bankruptcy*, and the log entry records era, count, capital, penalty and next capital.
-- **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
+- **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid. Buying or opening bidding happens in the current mayor's Manage City (a City Action in the City era), never while they're in debt, and the winner's block is protected from takeovers until their next turn is done.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.

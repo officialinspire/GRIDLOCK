@@ -12,7 +12,14 @@
  *              time, never $0). Each bankruptcy adds a growing final-score
  *              penalty (FINANCE.BANKRUPTCY_PENALTY). The match always goes on.
  *   abandoned  other players buy the land and either restore the ruin or clear
- *              it to rebuild. Former owners can't buy their own ruins back.
+ *              it to rebuild. Former owners can't buy their own ruins back. The
+ *              new owner's block is shielded from takeovers until they have
+ *              completed their next turn (TAKEOVER.ACQUIRE_SHIELD_TURNS).
+ *
+ * Turn phases: voluntary sales/downgrades and redevelopment (purchases and
+ * auctions) happen only in the current mayor's Manage City and, in the CITY era,
+ * cost one City Action. Debt recovery (selling while in distress) and
+ * bankruptcy are mandatory, so they are free and never phase-gated.
  *
  * Hostile takeovers of owned blocks are a separate system: core/takeover.js.
  *
@@ -29,8 +36,9 @@ import {
   credit, debit, canAfford, investedIn, isInDistress, recoveryCapital, bankruptcyPenalty, TXN,
 } from './economy.js';
 import {
-  currentPlayer, PHASES, outOfCityActions, spendCityAction,
+  currentPlayer, PHASES, TURN_PHASES, outOfCityActions, spendCityAction,
 } from './game.js';
+import { shieldOwnersTurns } from './takeover.js';
 
 const FIN = ECONOMY.FINANCE;
 
@@ -47,7 +55,18 @@ export const FIN_ERRORS = Object.freeze({
   INSUFFICIENT_FUNDS: 'insufficient-funds',
   BAD_MODE: 'bad-mode',
   NO_ACTIONS: 'no-city-actions', // CITY era: this turn's City Actions are spent
+  WRONG_PHASE: 'wrong-turn-phase', // voluntary finance actions need Manage City
 });
+
+/**
+ * A voluntary finance action (sale, downgrade, redevelopment) for the current mayor: only in
+ * Manage City, and in the CITY era only with a City Action left. Returns an error code or null.
+ */
+function voluntaryCheck(game) {
+  if (game.turnPhase !== TURN_PHASES.MANAGE_CITY) return FIN_ERRORS.WRONG_PHASE;
+  if (outOfCityActions(game)) return FIN_ERRORS.NO_ACTIONS;
+  return null;
+}
 
 const pct = (amount, percent) => Math.round((amount * percent) / 100);
 
@@ -58,9 +77,10 @@ function ownerCheck(game, block) {
   if (!block) return FIN_ERRORS.NO_BLOCK;
   if (block.ownerSeat == null || block.ownerSeat !== currentPlayer(game).seat) return FIN_ERRORS.NOT_OWNER;
   if (!isDeveloped(block)) return FIN_ERRORS.NOT_DEVELOPED;
-  // CITY era: a voluntary sale is a City Action; selling to clear debt never is.
-  if (!isInDistress(currentPlayer(game)) && outOfCityActions(game)) return FIN_ERRORS.NO_ACTIONS;
-  return null;
+  // Selling to clear debt is mandatory: free, in any phase. A voluntary sale is a Manage City
+  // action and, in the CITY era, costs a City Action.
+  if (isInDistress(currentPlayer(game))) return null;
+  return voluntaryCheck(game);
 }
 
 /** Downgrade one level (Level 1 → Vacant). Refund = % of that level's cost. */
@@ -155,6 +175,7 @@ export function declareBankruptcy(game) {
     block.abandoned = true;
     block.abandonedBy = player.seat;
     block.shieldedUntil = null; // a ruin is auctioned, never taken over
+    block.shieldSeat = null;
     abandoned.push(block.id);
   }
   refreshBonuses(game.board);
@@ -220,7 +241,8 @@ export function quoteAcquire(game, blockId, mode) {
   const player = currentPlayer(game);
   if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) return { ...base, error: FIN_ERRORS.FORMER_OWNER };
   if (isInDistress(player)) return { ...base, error: FIN_ERRORS.IN_DISTRESS };
-  if (outOfCityActions(game)) return { ...base, error: FIN_ERRORS.NO_ACTIONS };
+  const notNow = voluntaryCheck(game);
+  if (notNow) return { ...base, error: notNow };
 
   const { land, restore, reserve: cost } = redevelopmentPrice(block, mode);
   const quote = { ...base, cost, land, restore };
@@ -239,8 +261,11 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
   if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
   if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
-  // CITY era: opening an auction is the current mayor's City Action, whoever wins it.
-  if (outOfCityActions(game)) return { ok: false, error: FIN_ERRORS.NO_ACTIONS };
+  // Opening an auction is the current mayor's Manage City action (a City Action in the CITY
+  // era), whoever wins it, and like any purchase it waits until their debt is cleared.
+  if (isInDistress(currentPlayer(game))) return { ok: false, error: FIN_ERRORS.IN_DISTRESS };
+  const notNow = voluntaryCheck(game);
+  if (notNow) return { ok: false, error: notNow };
   const { land, restore, reserve } = redevelopmentPrice(block, mode);
   const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
   const rejected = [];
@@ -269,10 +294,14 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   block.abandoned = false;
   block.abandonedBy = null;
   if (mode === ACQUIRE_MODES.REBUILD) applyDevelopment(block, 'vacant', 0);
+  shieldOwnersTurns(game, block, winner.player.seat);
   refreshBonuses(game.board);
   game.lastDevelopment = { block: block.id, seat: winner.player.seat, type: block.type, level: block.level, acquired: mode };
   game.log.push({ type: 'redevelopment-auction', seat: winner.player.seat, block: block.id, mode, bid: winner.bid });
-  return { ok: true, block: block.id, mode, winnerSeat: winner.player.seat, cost: winner.bid, reserve, land, restore, rejected };
+  return {
+    ok: true, block: block.id, mode, winnerSeat: winner.player.seat, cost: winner.bid, reserve, land, restore, rejected,
+    shieldedUntil: block.shieldedUntil,
+  };
 }
 
 /** Buys an abandoned block for the current player and restores or clears it. */
@@ -289,10 +318,11 @@ export function acquireAbandoned(game, blockId, mode) {
   block.abandoned = false;
   block.abandonedBy = null;
   if (mode === ACQUIRE_MODES.REBUILD) applyDevelopment(block, 'vacant', 0);
+  shieldOwnersTurns(game, block, player.seat);
   refreshBonuses(game.board);
   game.lastDevelopment = { block: block.id, seat: player.seat, type: block.type, level: block.level, acquired: mode };
   game.log.push({ type: 'acquire', seat: player.seat, block: block.id, mode, cost: quote.cost });
-  return { ok: true, block: block.id, mode, cost: quote.cost, type: block.type, level: block.level };
+  return { ok: true, block: block.id, mode, cost: quote.cost, type: block.type, level: block.level, shieldedUntil: block.shieldedUntil };
 }
 
 /* ---------------- invariants (used by tests) ---------------- */

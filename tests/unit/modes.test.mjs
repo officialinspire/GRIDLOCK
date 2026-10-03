@@ -151,6 +151,7 @@ test('older saves (before presets) restore as standard; corrupt mode data is rej
   const game = createGame({ ...table(4), seed: 3 });
   saveActiveGame(game, table(4), storage);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
+  raw.version = 1; // written before presets existed
   delete raw.game.mode;
   delete raw.game.rules;
   storage.setItem(SAVE_KEY, JSON.stringify(raw));

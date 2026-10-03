@@ -116,8 +116,10 @@ function renderInspector(blockId, panel = $('#inspector')) {
         : '0', `Each Prestige point adds ${formatCash(ECONOMY.SCORING.PRESTIGE)} to City Value. Parks, Civic and Landmarks earn it; industry next to homes costs it`),
       owner && row('Control', String(d.control),
         'Takeover defence: ownership + building level + nearby Residential, Civic and Landmark levels + adjacent own development'),
-      d.shieldedUntil != null && game.round <= d.shieldedUntil && row('Protected', `until round ${d.shieldedUntil} ends`,
-        'Recently taken over: it can\'t be taken again yet'),
+      d.shield && row('Protected', d.shield.seat != null
+        ? `until ${getPlayer(game, d.shield.seat)?.name ?? 'its owner'}'s turn in round ${d.shield.untilRound} ends`
+        : `until round ${d.shield.untilRound} ends`,
+      'Recently changed hands: it can\'t be taken over yet'),
       d.takeover && row('Your pressure', d.takeover.ok
         ? `${d.takeover.pressure} › ${d.takeover.control}: take over for ${formatCash(d.takeover.cost)}`
         : `${d.takeover.pressure} vs ${d.takeover.control}`,
