@@ -222,7 +222,7 @@
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
           <p>Paving the final road starts the <strong>City era</strong>: no more roads, <strong>4 more rounds</strong> of income, upkeep and events, and <strong>2 City Actions</strong> per turn to build, upgrade, sell or redevelop. Then choose <strong>End Turn</strong>. Clearing debt never costs an action. The mayor who paves the final road has already used this turn's Development Action, so they just develop that capture (free) and end the turn.</p>
-          <p><strong>City view</strong> (the map button at the top, or Settings) outlines your takeover targets, your blocks at risk, recently protected blocks and abandoned lots. Player cards show your <strong>Net / turn</strong>: income minus upkeep.</p>
+          <p><strong>City view</strong> (the map button at the top) outlines your takeover targets, your blocks at risk, recently protected blocks and abandoned lots. Player cards show your <strong>Net / turn</strong>: income minus upkeep.</p>
           <p>After the last City round, highest <strong>City Value</strong> wins: all cash + 70% of land + 100% of actual construction investment + $150 per <strong>Prestige</strong> point.</p>
           <p>Ties go to more Prestige, then more development levels, then more cash, then more blocks. Awards like Most Prestigious and Greenest City go to standouts too.</p>
         </article>
@@ -302,31 +302,27 @@
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
             <input type="checkbox" class="toggle" name="quickHandoff">
           </label>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>CPU mayor speed</span>
-            <select class="select" name="cpuSpeed">
-              <option value="relaxed">Relaxed</option>
-              <option value="normal">Normal</option>
-              <option value="fast">Fast</option>
-            </select>
-          </label>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:play"></span>CPU turn playback</span>
-            <select class="select" name="cpuPlayback" aria-describedby="cpu-playback-hint">
-              <option value="full">Full: every step</option>
-              <option value="brief">Brief: major events only</option>
-              <option value="instant">Instant: routine steps at once</option>
-            </select>
-          </label>
-          <p class="setting-row__hint" id="cpu-playback-hint">Brief and Instant still pause on captures, takeovers, bankruptcies and auctions.</p>
+          <!-- CPU mayors: thinking pause and turn playback share one row. -->
+          <div class="setting-row setting-row--pair">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>CPU mayors</span>
+            <span class="setting-row__controls">
+              <select class="select" name="cpuSpeed" aria-label="CPU mayor speed" title="How long CPU mayors think before each move">
+                <option value="relaxed">Relaxed</option>
+                <option value="normal">Normal</option>
+                <option value="fast">Fast</option>
+              </select>
+              <select class="select" name="cpuPlayback" aria-label="CPU turn playback"
+                title="Full: every step paced and announced. Brief: only captures, takeovers, bankruptcies and auctions. Instant: routine steps at once.">
+                <option value="full">Full playback</option>
+                <option value="brief">Brief playback</option>
+                <option value="instant">Instant playback</option>
+              </select>
+            </span>
+          </div>
         </fieldset>
 
         <fieldset>
           <legend>Display</legend>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:map"></span>City view (influence overlay)</span>
-            <input type="checkbox" class="toggle" name="cityView">
-          </label>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:star"></span>Reduce motion</span>
             <input type="checkbox" class="toggle" name="reducedMotion">

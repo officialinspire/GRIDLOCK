@@ -1591,8 +1591,11 @@ const recordVibration = () => {
 
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
     await newGame('Classic', 2);
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       for (let i = 0; i < 400; i++) {
+        // The City era card: skipped as a player would; its close (and the final capture's choice) follows.
+        const intro = document.querySelector('#city-intro-dialog[open] #city-intro-go');
+        if (intro) { intro.click(); await new Promise((r) => setTimeout(r, 30)); continue; }
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
         if (vacant) { vacant.click(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
@@ -2085,14 +2088,19 @@ const recordVibration = () => {
       assert.equal(await city.isVisible('#influence-legend'), false);
       assert.equal(await city.locator('#board [data-influence]').count(), 0);
 
-      // 4. Settings: City view and CPU playback.
+      // 4. Settings: CPU speed and playback share the CPU mayors row; City view is remembered.
       await city.click('.game-topbar [data-nav="settings"]');
       assert.deepEqual(await city.locator('[name="cpuPlayback"] option').evaluateAll((els) => els.map((o) => o.value)), ['full', 'brief', 'instant']);
-      assert.equal(await city.isChecked('[name="cityView"]'), false);
-      await city.locator('label:has([name="cityView"])').click();
+      assert.equal(await city.getAttribute('[name="cpuPlayback"]', 'aria-label'), 'CPU turn playback');
+      await city.selectOption('[name="cpuPlayback"]', 'brief');
       await cityCheck('settings');
       await city.click('[data-screen="settings"] [data-nav="back"]');
-      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true', 'the setting and the button agree');
+      await city.click('#city-view-btn');
+      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true');
+      assert.deepEqual(await city.evaluate(() => {
+        const saved = JSON.parse(localStorage.getItem('gridlock.settings.v1'));
+        return [saved.cityView, saved.cpuPlayback];
+      }), [true, 'brief'], 'both saved');
       assert.ok(await city.isVisible('#influence-legend'));
       await noHorizontalScroll(city, `${vp.name} city view`);
       assert.deepEqual(cityProblems, [], 'accessibility problems');

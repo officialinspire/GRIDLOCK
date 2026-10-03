@@ -290,7 +290,7 @@ function handleDevelopment(change) {
 function showCaptureChoice() {
   const dialog = $('#capture-choice-dialog');
   // CPU mayors make this choice themselves (cpuPlan); people get the dialog.
-  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
+  if (!game || game.phase !== PHASES.PLAYING || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
     if (dialog.open) dialog.close();
     render();
     return;

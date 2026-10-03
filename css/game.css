@@ -1872,6 +1872,6 @@ html[data-coords='on'] .block__coord { display: block; }
 .influence-legend__item[data-influence='shield'] .influence-legend__swatch { border: 3px double #2c5aa0; }
 .influence-legend__item[data-influence='abandoned'] .influence-legend__swatch { border: 2px dotted #6b4a2b; }
 #city-view-btn[aria-pressed='true'] { box-shadow: inset 0 0 0 3px var(--gold, #e9a91e); }
-.setting-row__hint { margin: -4px 0 6px; font-size: 0.75rem; color: var(--ink-soft); }
+.setting-row__controls { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .board-frame { position: relative; } /* anchors the City view legend */
 .stat--net.is-negative dd { color: var(--red-deep); }
