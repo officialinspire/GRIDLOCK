@@ -252,7 +252,8 @@ for (const vp of VIEWPORTS) {
     await noHorizontalScroll(page, 'game');
     await shot('5-game');
 
-    assert.match(await page.textContent('#turn-prompt'), /MANAGE CITY/);
+    assert.match(await page.textContent('#turn-prompt'), /MANAGE CITY · 1 Development Action left/);
+    assert.match(await page.textContent('#hud-era'), /^Expansion · 1 action$/);
     await pave(page, road('h-0-0'));
     assert.match(await banner(), /<b>Bo<\/b>'s turn/);
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('road--red')));
@@ -518,11 +519,14 @@ for (const vp of VIEWPORTS) {
     assert.ok(await page.isHidden('#action-pave'));
     assert.ok(await page.isVisible('#action-end-turn'));
     assert.ok(await page.isHidden('.round-badge__roads'));
-    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 2 actions$/);
-    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left/);
+    // The final mover already had this turn's Development Action: no City Actions until next round.
+    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 0 actions$/);
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 0 City Actions left \(this turn's Development Action came before the final road\), then End Turn/);
+    await page.click('#action-end-turn');
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left: build, upgrade, sell or redevelop/);
     for (let turns = 0; turns < 40; turns++) {
       if (await page.evaluate(() => window.__GRIDLOCK__.getGame().phase === 'ended')) break;
-      if (turns === 4) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/);
+      if (turns === 3) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/); // seat 1 already ended its turn
       await page.click('#action-end-turn');
     }
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().phase === 'ended');

@@ -149,18 +149,24 @@ function renderPrompt() {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
     return;
   }
+  const { actionsLeft, actionName: action } = eraStatus(game);
+  const left = `${actionsLeft} ${actionsLeft === 1 ? action : `${action}s`} left`;
   if (game.era === ERAS.CITY) {
-    const { actionsLeft } = eraStatus(game);
-    const left = `${actionsLeft} City Action${actionsLeft === 1 ? '' : 's'} left`;
+    // The final mover's turn: its Development Action came before the final road.
+    const eraAt = game.log.findLastIndex((e) => e.type === 'era');
+    const finalMover = eraAt >= 0 && !game.log.slice(eraAt).some((e) => e.type === 'city-turn');
+    const transition = finalMover ? ' (this turn\'s Development Action came before the final road)' : '';
     prompt.textContent = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP
-      ? `${p.name}: CAPTURE / DEVELOP · Resolve the final claimed block, then your City turn.`
-      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : ''}, then End Turn.${recovering}`;
+      ? `${p.name}: CAPTURE / DEVELOP · Develop the final claimed block now for free, or leave it vacant.`
+      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : transition}, then End Turn.${recovering}`;
     return;
   }
   const copy = {
-    [TURN_PHASES.MANAGE_CITY]: 'MANAGE CITY · Develop or upgrade, then choose Pave Road.',
+    [TURN_PHASES.MANAGE_CITY]: actionsLeft
+      ? `MANAGE CITY · ${left}: build, upgrade, sell or redevelop, then Pave Road.`
+      : `MANAGE CITY · ${left}: now Pave Road.`,
     [TURN_PHASES.PAVE_ROAD]: 'PAVE ROAD · Choose one open road.',
-    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Resolve each newly claimed block.',
+    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Develop Now is free (a capture reward), or leave it vacant.',
     [TURN_PHASES.BONUS_ROAD]: 'BONUS ROAD · Pave another road.',
   }[game.turnPhase];
   prompt.textContent = `${p.name}: ${copy}${recovering}`;
@@ -192,6 +198,7 @@ function renderActions() {
   const pave = $('#action-pave');
   pave.hidden = !managing || city;
   pave.disabled = distress;
+  pave.classList.toggle('is-ready', managing && !city && !distress && game.city.actionsLeft === 0);
   const endTurn = $('#action-end-turn');
   endTurn.hidden = !managing || !city;
   endTurn.disabled = distress;
@@ -447,7 +454,8 @@ function announceCityEra() {
   flashFrame();
   play('event', { kind: 'boon' });
   toast(`Every road is paved! The City era begins: ${rounds} more round${rounds === 1 ? '' : 's'}, `
-    + `${actionsPerTurn} City Action${actionsPerTurn === 1 ? '' : 's'} per turn.`, { tone: 'success', duration: 4200 });
+    + `${actionsPerTurn} City Action${actionsPerTurn === 1 ? '' : 's'} per turn. `
+    + 'This turn already had its Development Action, so it just ends.', { tone: 'success', duration: 4200 });
 }
 
 /** CITY era: the current mayor ends their turn (End Turn, or a CPU mayor's decision). */
@@ -582,7 +590,7 @@ function cpuPlan(g) {
       };
     case 'pave':
       return {
-        text: 'Done building: heading out to pave',
+        text: d.reason === 'no-actions' ? 'Development Action used: heading out to pave' : 'Done building: heading out to pave',
         run: () => {
           if (startPaving(g)) {
             autosave();

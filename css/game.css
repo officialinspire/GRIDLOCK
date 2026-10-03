@@ -1551,7 +1551,7 @@ html[data-coords='on'] .block__coord { display: block; }
 @keyframes debt-pulse { 50% { transform: scale(1.08); } }
 
 .turn-prompt.is-distress { background: #f6d4cf; border-color: var(--red); color: var(--red-deep); }
-#action-end-turn.is-ready { outline: 3px solid var(--gold); outline-offset: 2px; }
+#action-end-turn.is-ready, #action-pave.is-ready { outline: 3px solid var(--gold); outline-offset: 2px; }
 #action-finance { flex: 0 1 200px; animation: debt-pulse 1.2s ease-in-out infinite; }
 
 .board.is-locked .road:not(.is-built) { cursor: not-allowed; }

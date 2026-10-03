@@ -18,7 +18,7 @@ import { formatCash, formatDelta, blockIncome, bonusIncome } from '../core/econo
 import { bonusList } from './bonusView.js';
 import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
-import { currentPlayer, getPlayer, usesCityAction, TURN_PHASES, ERAS } from '../core/game.js';
+import { currentPlayer, getPlayer, usesCityAction, actionName, TURN_PHASES, ERAS } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
 import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
@@ -42,16 +42,23 @@ const ERROR_TEXT = {
   [DEV_ERRORS.NOT_DEVELOPED]: 'Build something here first.',
   [DEV_ERRORS.NO_BLOCK]: 'That block does not exist.',
   [DEV_ERRORS.WRONG_PHASE]: 'Develop during Manage City, or immediately after capturing this block.',
-  // Same code from development.js and finance.js.
-  [DEV_ERRORS.NO_ACTIONS]: 'No City Actions left this turn. End your turn to continue.',
   [FIN_ERRORS.IN_DISTRESS]: 'Clear your debt first.',
 };
 
-/** CITY era: how many City Actions this turn has left (under the cash box). */
+/** "No Development Actions left" / "No City Actions left", for the current era. */
+const noActions = () => `No ${actionName(state.game, 2)} left`;
+
+/**
+ * The turn's management budget under the cash box: Development Actions (EXPANSION) or City
+ * Actions (CITY) left in Manage City; Develop Now on a just-captured block is free.
+ */
 function actionsNote(game) {
+  if (game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP && game.pendingCaptures[0] === state.blockId) {
+    return h('span', { class: 'build-panel__city-actions' }, 'Develop Now: free (capture reward)');
+  }
   if (!usesCityAction(game)) return null;
   const n = game.city.actionsLeft;
-  return h('span', { class: `build-panel__city-actions${n ? '' : ' is-spent'}` }, `${n} City Action${n === 1 ? '' : 's'} left`);
+  return h('span', { class: `build-panel__city-actions${n ? '' : ' is-spent'}` }, `${n} ${actionName(game, n)} left`);
 }
 
 function pips(level) {
@@ -101,7 +108,7 @@ function priceTag(quote) {
     h('span', { class: 'price__income' }, `+${formatCash(quote.income)}/turn`),
     quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
       && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
-    quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, 'No City Actions left'),
+    quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, noActions()),
   ];
 }
 
@@ -115,7 +122,7 @@ function categoryOption(game, block, type, forecast) {
     dataset: { build: type },
     'aria-disabled': quote.ok ? null : 'true',
     title: forecast.ok ? forecastText(forecast) : null,
-    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : quote.error === DEV_ERRORS.NO_ACTIONS ? '. No City Actions left' : `. Need ${formatCash(quote.shortfall)} more`}${forecast.ok ? `. Net ${formatDelta(forecast.delta.net)} per turn${forecast.delta.cityValue == null ? '' : `, City Value ${formatDelta(forecast.delta.cityValue)}`}` : ''}`,
+    'aria-label': `Build ${cat.label} (${art.name}) for ${formatCash(quote.cost)}, earns ${formatCash(quote.income)} per turn${quote.ok ? '' : quote.error === DEV_ERRORS.NO_ACTIONS ? `. ${noActions()}` : `. Need ${formatCash(quote.shortfall)} more`}${forecast.ok ? `. Net ${formatDelta(forecast.delta.net)} per turn${forecast.delta.cityValue == null ? '' : `, City Value ${formatDelta(forecast.delta.cityValue)}`}` : ''}`,
   },
     createSprite(art.sprite, { className: 'build-option__art' }),
     h('span', { class: 'build-option__label' },
@@ -172,7 +179,7 @@ function developedView(game, block, player) {
             `${forecast.delta.prestige > 0 ? '+' : ''}${forecast.delta.prestige} Prestige`),
         quote.error === DEV_ERRORS.INSUFFICIENT_FUNDS
           && h('span', { class: 'price__short' }, `Need ${formatCash(quote.shortfall)} more`),
-        quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, 'No City Actions left this turn'),
+        quote.error === DEV_ERRORS.NO_ACTIONS && h('span', { class: 'price__short' }, `${noActions()} this turn`),
         forecast.ok && forecastDetails(forecast),
       ),
       h('button', {
@@ -327,9 +334,12 @@ function render() {
 
 function refuse(error, shortfall) {
   buzz('error');
+  // NO_ACTIONS is the same code from development.js, finance.js and takeover.js.
   const text = error === DEV_ERRORS.INSUFFICIENT_FUNDS
     ? `Not enough cash: need ${formatCash(shortfall)} more.`
-    : ERROR_TEXT[error] ?? 'You can’t do that.';
+    : error === DEV_ERRORS.NO_ACTIONS
+      ? `${noActions()} this turn. ${state.game.era === ERAS.CITY ? 'End your turn' : 'Pave a road'} to continue.`
+      : ERROR_TEXT[error] ?? 'You can’t do that.';
   toast(text, { tone: 'warn', duration: 1800 });
 }
 

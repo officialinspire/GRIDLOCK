@@ -1,5 +1,5 @@
 /** Versioned, defensive persistence for an active local match. UI-only state is never saved. */
-import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, APP_VERSION } from '../config.js';
+import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, APP_VERSION, EXPANSION_ERA } from '../config.js';
 import { EVENT_POOL } from './events.js';
 import { PHASES, TURN_PHASES, ERAS, createCityState } from './game.js';
 import { DISTRICTS, blockId, isValidRoad, totalRoads } from './board.js';
@@ -15,8 +15,10 @@ export const SAVE_KEY = 'gridlock.active-game';
  *   0  pre-release prototype (`state` instead of `game`, no repair queue)
  *   1  V1.1–V1.4.0 (later V1.x fields backfilled on load)
  *   2  V1.4.1: blocks carry `shieldSeat` (turn-precise takeover shields)
+ *   3  EXPANSION turn economy: `city.expansionActions`, and `city.actionsLeft` counts the
+ *      management actions left in either era
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 const integer = (value) => Number.isSafeInteger(value);
 const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
@@ -79,6 +81,19 @@ const MIGRATIONS = Object.freeze({
     }
     return { ...raw, version: 2 };
   },
+  2: (raw) => {
+    const { game } = raw;
+    // Before the EXPANSION turn economy, Manage City in EXPANSION was unlimited. A save made in
+    // it gets this build's budget for the rest of the turn; anywhere past Manage City (paving,
+    // a capture, a bonus road) the turn's management is over. CITY saves are unchanged.
+    if (plainObject(game?.city)) {
+      game.city.expansionActions ??= EXPANSION_ERA.ACTIONS_PER_TURN;
+      if (game.era === ERAS.EXPANSION) {
+        game.city.actionsLeft = game.turnPhase === TURN_PHASES.MANAGE_CITY ? game.city.expansionActions : 0;
+      }
+    }
+    return { ...raw, version: 3 };
+  },
 });
 
 /** Brings a stored save up to SAVE_VERSION, or returns null (unknown/newer version, wrong shape). */
@@ -120,15 +135,20 @@ function validBlock(block) {
 }
 
 /**
- * Era state: EXPANSION until every road is paved, then CITY with a consistent round window and
- * no more City Actions than a turn grants.
+ * Era state: EXPANSION until every road is paved, then CITY with a consistent round window; in
+ * either era, no more management actions left than the era's turn grants.
  */
 function validEra(game) {
   const { city } = game;
   if (!plainObject(city) || !integer(city.rounds) || city.rounds < 0
-    || !integer(city.actionsPerTurn) || city.actionsPerTurn < 1) return false;
+    || !integer(city.actionsPerTurn) || city.actionsPerTurn < 1
+    || !integer(city.expansionActions) || city.expansionActions < 1) return false;
   const complete = Object.keys(game.board.roads).length === totalRoads(game.board);
-  if (game.era === ERAS.EXPANSION) return !complete;
+  if (game.era === ERAS.EXPANSION) {
+    // Development Actions: only Manage City has any left (paving forfeits the rest).
+    return !complete && integer(city.actionsLeft) && city.actionsLeft >= 0 && city.actionsLeft <= city.expansionActions
+      && (game.turnPhase === TURN_PHASES.MANAGE_CITY || city.actionsLeft === 0);
+  }
   if (game.era !== ERAS.CITY || !complete || city.rounds < 1) return false;
   return integer(city.startRound) && integer(city.endRound) && integer(city.actionsLeft)
     && integer(city.takeovers) && city.takeovers >= 0

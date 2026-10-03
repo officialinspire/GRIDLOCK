@@ -13,7 +13,7 @@ import { formatCash, formatCashShort, formatDelta } from '../core/economy.js';
 const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-height: 700px)';
 const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
 import {
-  currentPlayer, getPlayer, playerStats, roadsBuilt, standings, eraStatus, PHASES, ERAS,
+  currentPlayer, getPlayer, playerStats, roadsBuilt, standings, eraStatus, PHASES, ERAS, TURN_PHASES,
 } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
 import { controllerLabel, isCpu, DIFFICULTY_LABELS } from '../core/seats.js';
@@ -201,12 +201,16 @@ function renderEra(game) {
   chip.dataset.era = status.era;
   // Every road is paved in the CITY era: the counter gives way to the era chip.
   document.querySelector('.round-badge__roads').hidden = city;
-  chip.classList.toggle('is-spent', city && status.actionsLeft === 0);
+  // Manage City shows the turn's management budget: Development Actions now, City Actions later.
+  const managing = game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY;
+  chip.classList.toggle('is-spent', (city || managing) && status.actionsLeft === 0);
   if (!city) {
-    chip.textContent = 'Expansion';
-    chip.title = status.rounds
-      ? `Expansion era: pave every road to start the City era (${plural(status.rounds, 'full round')}, ${plural(status.actionsPerTurn, 'City Action')} per turn)`
-      : 'Expansion era: the match ends when every road is paved';
+    chip.textContent = managing ? `Expansion · ${plural(status.actionsLeft, 'action')}` : 'Expansion';
+    chip.title = `${status.rounds
+      ? `Expansion era: pave every road to start the City era (${plural(status.rounds, 'full round')}, ${plural(status.actionsPerTurn, 'City Action')} per turn).`
+      : 'Expansion era: the match ends when every road is paved.'} Each turn: ${plural(status.expansionActions, 'Development Action')} `
+      + `(build, upgrade, sell or redevelop), then pave a road. Developing a block you just captured is free.${managing
+        ? ` ${plural(status.actionsLeft, 'Development Action')} left this turn.` : ''}`;
     return;
   }
   if (game.phase === PHASES.ENDED) {

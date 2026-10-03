@@ -326,6 +326,17 @@ export const CITY_ERA = Object.freeze({
 });
 
 /**
+ * EXPANSION turn economy (core/game.js). A normal EXPANSION turn is ACTIONS_PER_TURN Development
+ * Actions in Manage City, then the required road. A build, upgrade, voluntary sale or downgrade,
+ * or redevelopment purchase/auction costs one. Paving ends Manage City, so an unspent action is
+ * lost. Develop Now on a block just captured is a free capture reward, bonus roads are unchanged,
+ * and selling to clear debt and bankruptcy stay free.
+ */
+export const EXPANSION_ERA = Object.freeze({
+  ACTIONS_PER_TURN: 1,
+});
+
+/**
  * City events (core/events.js). One event is drawn when a full round of play
  * ends. Most effects are temporary modifiers computed from the active-event
  * list; targeted repair expenses are queued and charged once at owner turn start.

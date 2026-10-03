@@ -198,7 +198,8 @@ test('overlapping civic radii list every protector once', () => {
 /* ---------------- integration with play ---------------- */
 
 test('building the 3rd home through real play recalculates everyone\'s bonus and income', () => {
-  const game = createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })) });
+  // Four developments in one Manage City: a table with a bigger Development Action budget.
+  const game = createGame({ seats: [1, 2, 3, 4].map((seat) => ({ seat })), expansionActions: 4 });
   for (const [r, c] of [[0, 0], [0, 1], [0, 2]]) getBlock(game.board, r, c).ownerSeat = 1;
   assert.equal(buildOnBlock(game, 'r0c0', 'residential').ok, true);
   assert.equal(buildOnBlock(game, 'r0c1', 'residential').ok, true);

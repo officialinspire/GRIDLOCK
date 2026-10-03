@@ -124,6 +124,7 @@ test('industry: builds and upgrades next to your own factory cost less', () => {
   assert.equal(getPlayer(game, 1).cash, cash - q.cost);
   assert.equal(at(game, 2, 3).investedCostBasis, q.cost, 'cost basis is what was paid');
   assert.equal(r.cost, q.cost);
+  game.city.actionsLeft = 1; // a later Manage City
   assert.equal(upgradeBlock(game, 'r1c2').cost, Math.round(TABLE.residential[2].cost * 0.9));
 });
 

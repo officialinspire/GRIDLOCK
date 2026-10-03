@@ -57,7 +57,8 @@
 import { CPU, CITY_EVENTS, ECONOMY } from '../../config.js';
 import { isCpu } from '../seats.js';
 import {
-  currentPlayer, getPlayer, playerStats, resolveCapture, startPaving, endCityTurn, outOfCityActions, TURN_PHASES, PHASES, ERAS,
+  currentPlayer, getPlayer, playerStats, resolveCapture, startPaving, endCityTurn, outOfCityActions, actionsPerTurnFor,
+  TURN_PHASES, PHASES, ERAS,
 } from '../game.js';
 import { blocksOwnedBy, getBlockById, neighbors } from '../board.js';
 import { buildOnBlock, upgradeBlock, isDeveloped, MAX_LEVEL } from '../development.js';
@@ -83,7 +84,7 @@ export const CITY_REASONS = Object.freeze({
   NOT_WORTH_IT: 'not-worth-it', // affordable, but it wouldn't pay back before the city is done
   NO_CASH: 'no-cash', // nothing affordable
   RANDOM: 'random', // easy: an unplanned but sensible purchase
-  NO_ACTIONS: 'no-actions', // CITY era: this turn's City Actions are spent
+  NO_ACTIONS: 'no-actions', // this turn's Development Action (EXPANSION) or City Actions are spent
   TAKEOVER: 'takeover', // CITY era: a rival block worth taking over, with a clear margin
   PASS: 'pass', // easy: chose not to spend this time
 });
@@ -215,7 +216,7 @@ function developmentOptions(game, blockIds) {
     const types = block.level === 0 ? CATEGORY_ORDER : block.level < MAX_LEVEL ? [undefined] : [];
     for (const type of types) {
       const f = forecastDevelopment(slim(game), blockId, type);
-      if (f.ok) options.push({ blockId, type, f });
+      if (f.ok && f.actionAvailable) options.push({ blockId, type, f }); // only what it can do this step
     }
   }
   return options;
@@ -389,6 +390,7 @@ function redevelopmentSurplus(game, seat, blockId, mode, turns, level = 'normal'
     sim.turnIndex = sim.players.findIndex((p) => p.seat === seat);
     sim.turnPhase = TURN_PHASES.MANAGE_CITY;
     sim.pendingCaptures = [];
+    sim.city.actionsLeft = actionsPerTurnFor(sim); // a fresh Manage City (the auction spent this one)
     let best = 0;
     for (const type of CATEGORY_ORDER) {
       const f = forecastDevelopment(sim, blockId, type);

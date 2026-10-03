@@ -16,6 +16,12 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 
 ### V1.4.1 release notes
 
+- **Turn economy with real opportunity cost:** an EXPANSION turn is now **1 Development Action + the required road** (`EXPANSION_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or auctioning a ruin each spend it; paving ends Manage City and an unused action is lost. **Develop Now** on a just-captured block stays a free capture reward, bonus-road chains are unchanged, selling to clear debt and bankruptcy stay free, and the City era keeps 2 City Actions per turn.
+  - **Fair transition:** the mayor who paves the final road already had that turn's Development Action, so they get no City Actions on top: they develop the final capture (free) and end the turn. Full City turns start for everyone after them.
+  - **HUD and prompts:** the round badge shows *Expansion · 1 action* during Manage City, the turn prompt says how many Development / City Actions are left (and when it's time to pave), Pave Road is highlighted once the action is spent, and the Build panel shows the budget or *Develop Now: free (capture reward)*.
+  - **Forecasts** report `usesAction` and `actionAvailable` and still forecast a build when the turn's action is spent (shown for next turn). CPU mayors spend their one action on the best option, then pave; across simulated all-CPU games there were no illegal moves or stalls.
+  - **Saves:** schema 3 (`city.expansionActions`; `city.actionsLeft` now counts both eras). Schema 2 saves made in an EXPANSION Manage City get this turn's action; later in a turn, none. City-era saves are unchanged.
+
 - **Finance actions follow the turn phases in the rules engine,** not just in the UI. Voluntary sales, downgrades and redevelopment (buying a ruin or opening an auction) are Manage City actions in both eras: they're refused during Pave Road, Capture / Develop (including the final road's Develop Now step in the City era, which used to let them through for free) and the bonus road, with no side effects (`FIN_ERRORS.WRONG_PHASE`). In the City era each one costs a City Action.
 - **Debt recovery stays free:** selling or downgrading while in debt and declaring bankruptcy never cost a City Action and are never phase-gated, so a mayor in debt can always dig out. Opening an auction, like any purchase, waits until the opener's debt is cleared.
 - **Redevelopment protection:** a block bought out of abandonment (directly or by auction, whoever wins) can't be taken over until its new owner has completed their next turn (`ECONOMY.TAKEOVER.ACQUIRE_SHIELD_TURNS`). Bought on your own turn, that's exactly one full round; nobody can snipe a block straight out of an auction. The inspector shows whose turn the protection waits for. Takeover protection after a hostile takeover is unchanged.
@@ -180,7 +186,7 @@ Whole-game win rates are in [CPU simulation](#cpu-simulation). Hard decides in a
 
 ### CPU city strategy
 
-`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). In EXPANSION it gets one Development Action per Manage City, so it takes its single best option and then answers "pave". `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
 
 It has no economy formulas of its own:
 - Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
@@ -226,9 +232,9 @@ Every CPU mayor also has a **personality**. Personalities change priorities, nev
 - **Difficulty still matters more:** with the same personality on both sides, Hard took 76–77% of the combined City Value against Easy in head-to-head games, for every personality. Two Hard bots with different personalities split about 50–59%, mostly seat luck. A unit test checks the first for all four personalities.
 
 **Your turn**
-1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
+1. **MANAGE CITY:** collect **income**, pay **upkeep**, then spend your **1 Development Action** (`EXPANSION_ERA.ACTIONS_PER_TURN`): one build, upgrade, voluntary sale or downgrade, or redevelopment purchase/auction. This phase does not end until you deliberately choose **Pave Road**; an unspent action is lost when you do.
 2. **PAVE ROAD:** tap one gap between neighbouring intersections. A road that closes nothing passes play to the next mayor's MANAGE CITY phase.
-3. **CAPTURE / DEVELOP:** completing a block claims it (+$500). For each captured block—including both halves of a double capture—choose **Develop Now** or **Leave Vacant**.
+3. **CAPTURE / DEVELOP:** completing a block claims it (+$500). For each captured block—including both halves of a double capture—choose **Develop Now** (free: it costs no Development Action) or **Leave Vacant**.
 4. **BONUS ROAD:** after all capture choices are resolved, pave another road. Another capture repeats CAPTURE / DEVELOP and preserves normal Dots & Boxes chaining; a quiet bonus road ends the turn.
 
 Blocks left vacant can be developed during any later legal MANAGE CITY phase.
@@ -238,10 +244,10 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 **Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with recovery capital ($2,000, less each further time, never below $500) and a final-score penalty that grows with each bankruptcy. You're never out of the game.
 
 **Two eras.** Everything above is the **EXPANSION** era. Paving the final road does not end the match: it starts the **CITY** era.
-- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free), then plays a City turn; the rest of that round is City turns too.
+- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free); they already had this turn's Development Action, so they then just end the turn (no City Actions on top). The rest of that round is full City turns.
 - Then **4 full City rounds** (`CITY_ERA.ROUNDS` in `js/config.js`). Income, upkeep, repairs and city events carry on as normal.
 - Each City turn gives **2 City Actions** (`CITY_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or opening bidding on an abandoned block each cost one. Selling to clear debt and declaring bankruptcy are free, so a mayor can always recover. Choose **End Turn** when done; unused actions are lost.
-- The round badge shows the era: *Expansion*, then e.g. *City 2/4 · 1 action*.
+- The round badge shows the era and the turn's actions: *Expansion · 1 action* in Manage City, then e.g. *City 2/4 · 1 action*.
 
 **End:** the match ends after the last seat of the last City round, so every mayor has had the same number of turns. Highest **City Value** wins: all cash + 70% of land + all actual construction investment + Prestige. See [Scoring](#scoring). (With `CITY_ERA.ROUNDS` set to 0 the match ends on the final road instead, after unfinished income, upkeep and repairs are settled.)
 

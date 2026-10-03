@@ -93,6 +93,7 @@ test('downgrading refunds 50% of the removed level; selling refunds 50% of every
   assert.deepEqual([b.type, b.level, b.income], ['commercial', 2, TABLE.commercial[2].income]);
   assert.equal(cash(game, 1), 13500);
 
+  game.city.actionsLeft = 1; // a fresh Manage City: refunds are under test here, not the action budget
   const sq = quoteSale(game, 'r0c0');
   assert.deepEqual([sq.removed, sq.refund], [3750, 1875]);
   assert.equal(sellDevelopment(game, 'r0c0').ok, true);
@@ -103,6 +104,7 @@ test('downgrading refunds 50% of the removed level; selling refunds 50% of every
   assert.equal(quoteSale(game, 'r0c0').error, FIN_ERRORS.NOT_DEVELOPED);
   // Level 1 downgrade → vacant.
   dev(game, 0, 1, 1, 'park');
+  game.city.actionsLeft = 1;
   assert.equal(downgradeBlock(game, 'r0c1').level, 0);
   assert.equal(getBlock(game.board, 0, 1).type, 'vacant');
 });
@@ -299,6 +301,8 @@ test('rebuild clears the ruin to Vacant for the land price; then build anything'
   assert.equal(acquireAbandoned(game, 'r2c3', ACQUIRE_MODES.REBUILD).ok, true);
   const b = getBlock(game.board, 2, 3);
   assert.deepEqual([b.ownerSeat, b.type, b.level, b.value], [3, 'vacant', 0, b.price]);
+  assert.equal(buildOnBlock(game, 'r2c3', 'commercial').error, DEV_ERRORS.NO_ACTIONS, 'the purchase was this turn\'s action');
+  game.city.actionsLeft = 1; // its next Manage City
   assert.equal(buildOnBlock(game, 'r2c3', 'commercial').ok, true);
 });
 

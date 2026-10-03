@@ -92,7 +92,7 @@ test('EXPANSION: voluntary sales and downgrades work only in Manage City and lea
   }
   assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
   assert.equal(downgradeBlock(game, 'r0c0').ok, true);
-  assert.equal(sellDevelopment(game, 'r0c0').ok, true);
+  assert.equal(sellDevelopment(game, 'r0c0').error, FIN_ERRORS.NO_ACTIONS, 'one Development Action per turn');
 });
 
 test('EXPANSION: redevelopment purchases and auctions work only in Manage City', () => {
@@ -154,12 +154,16 @@ test('CITY: each voluntary sale, downgrade, purchase and auction costs one City 
   assert.deepEqual([won.ok, won.winnerSeat, game.city.actionsLeft], [true, 3, 1]);
 });
 
-test('EXPANSION: finance actions never touch City Actions', () => {
-  const game = withRuin(place(table(), [[0, 0, 1, 'residential', 2]]));
-  const before = { ...game.city };
-  assert.equal(downgradeBlock(game, 'r0c0').ok, true);
-  assert.equal(acquireAbandoned(game, 'r2c2', ACQUIRE_MODES.RESTORE).ok, true);
-  assert.deepEqual(game.city, before);
+test('EXPANSION: a voluntary sale or a redevelopment purchase spends the turn\'s Development Action', () => {
+  const sale = withRuin(place(table(), [[0, 0, 1, 'residential', 2]]));
+  assert.equal(sale.city.actionsLeft, 1);
+  assert.equal(downgradeBlock(sale, 'r0c0').ok, true);
+  assert.equal(sale.city.actionsLeft, 0);
+  assert.equal(acquireAbandoned(sale, 'r2c2', ACQUIRE_MODES.RESTORE).error, FIN_ERRORS.NO_ACTIONS);
+  const buy = withRuin(place(table(), [[0, 0, 1, 'residential', 2]]));
+  assert.equal(acquireAbandoned(buy, 'r2c2', ACQUIRE_MODES.RESTORE).ok, true);
+  assert.deepEqual([buy.city.actionsLeft, downgradeBlock(buy, 'r0c0').error], [0, FIN_ERRORS.NO_ACTIONS]);
+  assert.equal(buy.city.actionsPerTurn, 2, 'the City budget itself is untouched');
 });
 
 /* ---------------- debt recovery stays free ---------------- */
@@ -305,17 +309,17 @@ test('bankruptcy clears a shield; the inspector reports who the shield waits for
   assert.deepEqual([ruin.abandoned, ruin.shieldedUntil, ruin.shieldSeat], [true, null, null]);
 });
 
-/* ---------------- saves: schema 2 and migration ---------------- */
+/* ---------------- saves: schema 2+ and migration ---------------- */
 
-test('saves are schema 2, record the app version, and keep turn-precise shields', () => {
-  assert.equal(SAVE_VERSION, 2);
+test('saves are the current schema, record the app version, and keep turn-precise shields', () => {
+  assert.equal(SAVE_VERSION, 3);
   const game = withRuin(table({ city: true }));
   const { reserve } = quoteRedevelopment(game, 'r2c2', ACQUIRE_MODES.RESTORE);
   resolveRedevelopmentAuction(game, 'r2c2', ACQUIRE_MODES.RESTORE, [{ seat: 3, bid: reserve }]);
   const storage = memoryStorage();
   assert.equal(saveActiveGame(game, null, storage), true);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
-  assert.deepEqual([raw.version, raw.appVersion], [2, APP_VERSION]);
+  assert.deepEqual([raw.version, raw.appVersion], [SAVE_VERSION, APP_VERSION]);
   const back = loadActiveGame(storage).game;
   const store = getBlockById(back.board, 'r2c2');
   assert.deepEqual([store.shieldedUntil, store.shieldSeat], [game.round, 3]);
@@ -326,7 +330,7 @@ test('saves are schema 2, record the app version, and keep turn-precise shields'
   assert.equal(isShielded(back, store), false, 'the shield still ends after the owner\'s turn');
 });
 
-test('V1.4.0 (schema 1) saves migrate to schema 2 with their state and takeover shields unchanged', () => {
+test('V1.4.0 (schema 1) saves migrate to the current schema with their state and takeover shields unchanged', () => {
   const game = place(table({ n: 2, city: true }), [[2, 2, 2, 'residential', 1], [2, 3, 1, 'commercial', 2], [1, 2, 1, 'commercial', 1]]);
   assert.equal(takeoverBlock(game, 'r2c2').ok, true);
   const storage = memoryStorage();
@@ -352,16 +356,16 @@ test('V1.4.0 (schema 1) saves migrate to schema 2 with their state and takeover 
   assert.equal(isShielded(loaded.game, house), true);
 });
 
-test('migrateSave walks 0 → 1 → 2 and refuses unknown or malformed versions', () => {
+test('migrateSave walks 0 → 1 → 2 → 3 and refuses unknown or malformed versions', () => {
   const game = createGame({ seats: seats(4), seed: 2 });
   const state = JSON.parse(JSON.stringify({ ...game, eventPool: undefined }));
   delete state.events.repairs;
   for (const b of state.board.blocks) delete b.shieldSeat;
   const migrated = migrateSave({ version: 0, state, setup: null });
-  assert.equal(migrated.version, 2);
+  assert.equal(migrated.version, SAVE_VERSION);
   assert.deepEqual(migrated.game.events.repairs, []);
   assert.ok(migrated.game.board.blocks.every((b) => b.shieldSeat === null));
-  for (const raw of [null, 'x', [], {}, { version: 3, game: {} }, { version: '1', game: {} }, { version: 0 }, { version: 1 }, { version: -1, game: {} }]) {
+  for (const raw of [null, 'x', [], {}, { version: SAVE_VERSION + 1, game: {} }, { version: '1', game: {} }, { version: 0 }, { version: 1 }, { version: -1, game: {} }]) {
     assert.equal(migrateSave(raw), null, JSON.stringify(raw));
   }
 });

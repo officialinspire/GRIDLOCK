@@ -128,7 +128,7 @@ function bestInvestment(game, blockIds) {
     const options = block.level === 0 ? CATEGORY_ORDER : block.level < MAX_LEVEL ? [undefined] : [];
     for (const type of options) {
       const f = forecast(game, id, type);
-      if (!f.ok || !f.affordable) continue;
+      if (!f.ok || !f.affordable || !f.actionAvailable) continue; // no Development/City Action left
       // Keep enough cash to cover upkeep and a Fire repair after this purchase.
       if (f.after.cash < f.after.upkeep * 2 + 400) continue;
       const score = f.delta.net * horizon + f.delta.cityValue;
@@ -153,7 +153,7 @@ function invest(game, persona, rand, blockIds) {
         if (block.level === 0) for (const type of CATEGORY_ORDER) options.push({ id, type });
         else if (block.level < MAX_LEVEL) options.push({ id });
       }
-      const affordable = options.map((o) => ({ ...o, f: forecast(game, o.id, o.type) })).filter((o) => o.f.ok && o.f.affordable)
+      const affordable = options.map((o) => ({ ...o, f: forecast(game, o.id, o.type) })).filter((o) => o.f.ok && o.f.affordable && o.f.actionAvailable)
         .sort((a, b) => b.f.delta.income - a.f.delta.income);
       if (!affordable.length) return;
       const top = affordable[0];

@@ -16,10 +16,10 @@ export const TUTORIAL_KEY = 'gridlock.tutorial.v1';
  * the others follow the game state ('scoring' also appears on the results screen if still unseen).
  */
 export const TUTORIAL_STEPS = Object.freeze([
-  { id: 'manage', title: 'Manage City', text: 'Each turn starts here. Tap one of your blocks to build or upgrade, then choose Pave Road.' },
+  { id: 'manage', title: 'Manage City', text: 'Each turn starts here with one Development Action: tap one of your blocks to build, upgrade or sell, then choose Pave Road. Choose well, it\'s one per turn!' },
   { id: 'pave', title: 'Pave Road', text: 'Pave one open road between two dots. On a touch screen, tap it once to preview and again to pave.' },
   { id: 'complete', title: 'Complete a block', text: 'This block has three roads. Pave the fourth side to claim it, earn the capture reward, and get a bonus road.' },
-  { id: 'develop', title: 'Develop Now or Leave Vacant', text: 'Build on your new block right away, or leave it vacant for now and develop it later from Manage City.', moment: true },
+  { id: 'develop', title: 'Develop Now or Leave Vacant', text: 'Build on your new block right away for free (no Development Action needed), or leave it vacant and develop it later from Manage City.', moment: true },
   { id: 'bonus', title: 'Bonus road', text: 'Capturing gives you another road this turn. Close more blocks to keep the chain going.' },
   { id: 'income', title: 'Income & upkeep', text: 'At the start of your turn, developed blocks pay income and every block you own costs upkeep. Watch your cash!', moment: true },
   { id: 'events', title: 'City events', text: 'Each new round can bring a city event that changes income or costs for a while. Its card shows which blocks are affected.', moment: true },
