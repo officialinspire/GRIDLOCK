@@ -778,6 +778,9 @@ for (const vp of VIEWPORTS) {
       }
       refreshBonuses(g.board);
       g.players[2].cash = 1000;
+      // Save the staged city, as an autosave would, so the reload below restores it.
+      const { saveActiveGame } = await import('/js/core/persistence.js');
+      if (!saveActiveGame(g, null)) throw new Error('staged game did not save');
     });
 
     // 1. Reload mid-auction: the auction is dropped, nothing changed, the action is still there.
