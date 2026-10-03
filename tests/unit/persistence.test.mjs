@@ -132,16 +132,17 @@ test('saves from before eras, Prestige, takeovers and recovery migrate safely an
   assert.equal(save(game, { seats: game.players.map(({ seat }) => ({ seat })) }, storage), true);
   const raw = JSON.parse(storage.getItem(KEY));
   // Strip everything added since V1.3: eras/City Actions, derived Prestige/control, shields, recovery.
+  raw.version = 1;
   delete raw.game.era;
   delete raw.game.city;
-  for (const b of raw.game.board.blocks) for (const k of ['prestige', 'prestigeNotes', 'control', 'shieldedUntil']) delete b[k];
+  for (const b of raw.game.board.blocks) for (const k of ['prestige', 'prestigeNotes', 'control', 'shieldedUntil', 'shieldSeat']) delete b[k];
   for (const p of raw.game.players) delete p.lastBankruptcyRound;
   storage.setItem(KEY, JSON.stringify(raw));
   const back = load(storage);
   assert.ok(back, 'loads');
   assert.equal(back.game.era, ERAS.EXPANSION);
   assert.equal(back.game.city.takeovers, 0);
-  assert.ok(back.game.board.blocks.every((b) => b.shieldedUntil === null && Number.isInteger(b.prestige) && Number.isInteger(b.control)));
+  assert.ok(back.game.board.blocks.every((b) => b.shieldedUntil === null && b.shieldSeat === null && Number.isInteger(b.prestige) && Number.isInteger(b.control)));
   assert.ok(back.game.players.every((p) => p.lastBankruptcyRound === null));
   const seat = currentPlayer(back.game).seat;
   assert.equal(placeRoad(back.game, 'h-0-4').ok, true, 'plays on');

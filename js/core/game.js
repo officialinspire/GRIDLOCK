@@ -4,9 +4,15 @@
  * another road. That is the EXPANSION era. Paving the final road starts the
  * CITY era (CITY_ERA in config.js): no more roads, a few City Actions per turn,
  * and the match ends after CITY_ERA.ROUNDS further full rounds.
+ *
+ * Management actions: every Manage City has a budget, tracked in game.city.actionsLeft —
+ * EXPANSION_ERA.ACTIONS_PER_TURN Development Actions before the road in EXPANSION,
+ * CITY_ERA.ACTIONS_PER_TURN City Actions in CITY. Builds, upgrades, voluntary sales/downgrades,
+ * redevelopment and takeovers spend one. Develop Now on a just-captured block, selling to clear
+ * debt and bankruptcy are free. Paving ends Manage City and forfeits what's left.
  */
 import {
-  MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE, CITY_ERA,
+  MIN_PLAYERS, MAX_PLAYERS, PLAYER_PRESETS, MAX_NAME_LENGTH, ECONOMY, DEFAULT_MODE, CITY_ERA, EXPANSION_ERA,
 } from '../config.js';
 import { controllerOf, defaultNames, assignPersonalities } from './seats.js';
 import { resolveRules } from './modes.js';
@@ -48,10 +54,24 @@ export const MOVE_ERRORS = Object.freeze({
  * City-era bookkeeping stored on the game (and its autosave). `rounds` and `actionsPerTurn` are
  * copied from CITY_ERA when the game is created; the rest is filled in when the era starts.
  */
-export function createCityState(rounds = CITY_ERA.ROUNDS, actionsPerTurn = CITY_ERA.ACTIONS_PER_TURN) {
+export function createCityState(
+  rounds = CITY_ERA.ROUNDS, actionsPerTurn = CITY_ERA.ACTIONS_PER_TURN, expansionActions = EXPANSION_ERA.ACTIONS_PER_TURN,
+) {
   if (!Number.isSafeInteger(rounds) || rounds < 0) throw new RangeError(`Invalid City rounds ${rounds}`);
   if (!Number.isSafeInteger(actionsPerTurn) || actionsPerTurn < 1) throw new RangeError(`Invalid City actions ${actionsPerTurn}`);
-  return { rounds, actionsPerTurn, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 };
+  if (!Number.isSafeInteger(expansionActions) || expansionActions < 1) throw new RangeError(`Invalid Development actions ${expansionActions}`);
+  // actionsLeft: management actions left this turn, in either era (set by beginTurn).
+  return { rounds, actionsPerTurn, expansionActions, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 };
+}
+
+/** Management actions a Manage City gets in the game's current era. */
+export function actionsPerTurnFor(game) {
+  return game.era === ERAS.CITY ? game.city.actionsPerTurn : game.city.expansionActions;
+}
+
+/** What the era calls a management action: "Development Action" (EXPANSION) or "City Action". */
+export function actionName(game, count = 1) {
+  return `${game.era === ERAS.CITY ? 'City' : 'Development'} Action${count === 1 ? '' : 's'}`;
 }
 
 export function sanitizeName(name, fallback) {
@@ -72,13 +92,14 @@ export function sanitizeName(name, fallback) {
  *   `eventProbability` / `maxActiveEvents` override the mode's event pacing (tests).
  *   `cityRounds` / `cityActions` override CITY_ERA.ROUNDS / ACTIONS_PER_TURN (tests; 0 City
  *   rounds ends the match on the final road, as before the CITY era existed).
+ *   `expansionActions` overrides EXPANSION_ERA.ACTIONS_PER_TURN (tests).
  *   Economy values come from ECONOMY in config.js.
  */
 export function createGame({
   seats, seed = randomSeed(), mode = DEFAULT_MODE, eventPool = EVENT_POOL, gameType = 'custom', eventProbability, maxActiveEvents,
-  cityRounds = CITY_ERA.ROUNDS, cityActions = CITY_ERA.ACTIONS_PER_TURN,
+  cityRounds = CITY_ERA.ROUNDS, cityActions = CITY_ERA.ACTIONS_PER_TURN, expansionActions = EXPANSION_ERA.ACTIONS_PER_TURN,
 } = {}) {
-  const city = createCityState(cityRounds, cityActions);
+  const city = createCityState(cityRounds, cityActions, expansionActions);
   const rules = resolveRules(mode, { eventProbability, maxActiveEvents });
   if (gameType === 'standard' && seats?.length !== MAX_PLAYERS) {
     throw new RangeError('Standard Game requires exactly 4 players');
@@ -167,6 +188,7 @@ export function playerStats(game, player) {
     normalIncome: normal,
     eventDelta: income - normal,
     upkeep: upkeepFor(game.board, player.seat),
+    net: income - upkeepFor(game.board, player.seat), // what next turn start adds: income − upkeep (before repairs)
     distress: isInDistress(player),
     bankruptcies: player.bankruptcies,
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
@@ -220,7 +242,7 @@ export function beginTurn(game) {
   player.lastEconomicRound = game.round;
   game.turnPhase = TURN_PHASES.MANAGE_CITY;
   game.pendingCaptures = [];
-  if (game.era === ERAS.CITY) game.city.actionsLeft = game.city.actionsPerTurn;
+  game.city.actionsLeft = actionsPerTurnFor(game); // this turn's management budget
   game.city.takeovers = 0; // hostile takeovers this turn (core/takeover.js)
   return game.turnStartIncome;
 }
@@ -231,6 +253,7 @@ export function startPaving(game) {
   if (game.era === ERAS.CITY) return false; // every road is paved
   if (isInDistress(currentPlayer(game))) return false;
   game.turnPhase = TURN_PHASES.PAVE_ROAD;
+  game.city.actionsLeft = 0; // paving ends Manage City: an unspent Development Action is lost
   return true;
 }
 
@@ -292,12 +315,15 @@ export function enterCityEra(game) {
   return true;
 }
 
-/** True when a build/upgrade/sale/redevelopment right now would spend one of the turn's City Actions. */
+/**
+ * True when a build/upgrade/sale/redevelopment right now would spend one of the turn's management
+ * actions: any Manage City, in either era. (Develop Now during Capture / Develop is free.)
+ */
 export function usesCityAction(game) {
-  return game.phase === PHASES.PLAYING && game.era === ERAS.CITY && game.turnPhase === TURN_PHASES.MANAGE_CITY;
+  return game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY;
 }
 
-/** True when the current mayor has no City Actions left this turn (always false in EXPANSION). */
+/** True when the current mayor is in Manage City with no management actions left this turn. */
 export function outOfCityActions(game) {
   return usesCityAction(game) && game.city.actionsLeft <= 0;
 }
@@ -311,12 +337,18 @@ export function spendCityAction(game) {
  * Era summary for the HUD and the CPU:
  *   era, rounds (full City rounds), round (1-based City round; 0 during the rest of the round in
  *   which the grid was finished, and in EXPANSION), roundsLeft (full City rounds not yet finished,
- *   including the current one), actionsLeft / actionsPerTurn (this turn; null in EXPANSION).
+ *   including the current one), actionsLeft (management actions left this turn, either era),
+ *   turnActions (this era's per-turn budget), actionName ("Development Action" / "City Action"),
+ *   actionsPerTurn (City Actions per City turn) and expansionActions (per EXPANSION turn).
  */
 export function eraStatus(game) {
   const { city } = game;
+  const actions = {
+    actionsLeft: city.actionsLeft, turnActions: actionsPerTurnFor(game), actionName: actionName(game),
+    actionsPerTurn: city.actionsPerTurn, expansionActions: city.expansionActions,
+  };
   if (game.era !== ERAS.CITY) {
-    return { era: ERAS.EXPANSION, rounds: city.rounds, round: 0, roundsLeft: city.rounds, actionsLeft: null, actionsPerTurn: city.actionsPerTurn };
+    return { era: ERAS.EXPANSION, rounds: city.rounds, round: 0, roundsLeft: city.rounds, ...actions };
   }
   const round = Math.max(0, game.round - city.startRound + 1);
   return {
@@ -324,8 +356,7 @@ export function eraStatus(game) {
     rounds: city.rounds,
     round,
     roundsLeft: game.phase === PHASES.ENDED ? 0 : Math.min(city.rounds, city.endRound - game.round + 1),
-    actionsLeft: city.actionsLeft,
-    actionsPerTurn: city.actionsPerTurn,
+    ...actions,
   };
 }
 
@@ -444,6 +475,10 @@ export function placeRoad(game, id) {
       // The final capture still gets its Develop Now choice; then the City turn goes on.
       game.pendingCaptures = [...captured];
       game.turnPhase = captured.length ? TURN_PHASES.CAPTURE_DEVELOP : TURN_PHASES.MANAGE_CITY;
+      // The final mover already had this turn's Development Action (spent or forfeited by
+      // paving), so the rest of their turn has no management budget: Develop Now on the final
+      // capture stays free, then End Turn. Their full City turns start next round.
+      game.city.actionsLeft = 0;
     } else {
       // 0 City rounds: settleFinalEconomy() resolved the unfinished portion of the round so the
       // final mover cannot decide which players miss income/upkeep, and the results are frozen.

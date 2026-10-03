@@ -155,6 +155,7 @@ function managing(blocks, cash) {
   own(game, blocks);
   game.turnPhase = TURN_PHASES.MANAGE_CITY;
   game.pendingCaptures = [];
+  game.city.actionsLeft = game.city.expansionActions; // a fresh Manage City's Development Action
   currentPlayer(game).cash = cash;
   return game;
 }

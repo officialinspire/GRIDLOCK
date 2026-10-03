@@ -40,6 +40,7 @@ function managing(blocks, { cash } = {}) {
   getBlockById(game.board, 'r0c0').ownerSeat = null;
   game.turnPhase = TURN_PHASES.MANAGE_CITY;
   game.pendingCaptures = [];
+  game.city.actionsLeft = game.city.expansionActions; // a fresh Manage City's Development Action
   own(game, blocks);
   if (cash != null) currentPlayer(game).cash = cash;
   return game;

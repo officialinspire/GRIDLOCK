@@ -14,7 +14,8 @@ import { effectiveBlockIncome, blockImpacts, costImpacts } from './events.js';
 import { blockUpkeep, blockIncome } from './economy.js';
 import { scorePlayer } from './scoring.js';
 import { blockPrestige, controlStrength } from './strategy.js';
-import { quoteTakeover } from './takeover.js';
+import { usesCityAction } from './game.js';
+import { quoteTakeover, shieldStatus } from './takeover.js';
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
@@ -40,7 +41,8 @@ export function blockDetails(game, blockId) {
     prestige: prestige.points, // this block's Prestige for its owner (core/strategy.js)
     prestigeNotes: prestige.notes,
     control: controlStrength(game.board, block).control, // takeover defence (0 when unowned)
-    shieldedUntil: block.shieldedUntil ?? null, // recently taken over: safe while round ≤ this
+    shieldedUntil: block.shieldedUntil ?? null, // last round of a takeover shield (see shield)
+    shield: shieldStatus(game, block), // null, or { untilRound, seat }: protected now (seat: until their turn ends)
     // For a rival's block: the current player's takeover quote (pressure, cost, reason if refused).
     takeover: me && block.ownerSeat != null && !block.abandoned && block.ownerSeat !== me.seat ? quoteTakeover(game, blockId) : null,
     contribution: blockContribution(game, blockId),
@@ -76,20 +78,33 @@ const bonusKey = (b) => `${b.block}:${b.id}`;
 
 /**
  * Forecast building `type` on a vacant block, or upgrading it when `type` is omitted.
- * Returns { ok:false, error } if the move isn't possible for a reason other than cash;
- * otherwise { ok:true, affordable, shortfall, cost, baseCost, level, type, before, after,
- * delta: { income, upkeep, net, cityValue, prestige }, industryDiscount, activated, eventPrice,
- * eventIncome }.
+ * Returns { ok:false, error } if the move isn't possible for a reason other than cash or the
+ * turn's management actions; otherwise { ok:true, affordable, shortfall, actionAvailable,
+ * usesAction, cost, baseCost, level, type, before, after, delta: { income, upkeep, net,
+ * cityValue, prestige }, industryDiscount, activated, eventPrice, eventIncome }.
+ *   usesAction       the build spends one of the turn's management actions (false for Develop
+ *                    Now on a just-captured block, a free capture reward)
+ *   actionAvailable  false when this Manage City has no management actions left (the forecast
+ *                    shows what it would do next turn)
  * When the player can't afford it, income/upkeep/bonuses are still forecast (they don't
  * depend on cash) and cash/City Value after are null.
  */
 export function forecastDevelopment(game, blockId, type) {
   const upgrade = type == null;
-  const quote = upgrade ? quoteUpgrade(game, blockId) : quoteBuild(game, blockId, type);
+  const requote = () => (upgrade ? quoteUpgrade(game, blockId) : quoteBuild(game, blockId, type));
+  let quote = requote();
+  const usesAction = usesCityAction(game);
+  // Out of actions: price it as if this Manage City still had one (it's shown, not done).
+  const actionAvailable = quote.error !== DEV_ERRORS.NO_ACTIONS;
+  if (!actionAvailable) {
+    game.city.actionsLeft += 1;
+    try { quote = requote(); } finally { game.city.actionsLeft -= 1; }
+  }
   if (!quote.ok && quote.error !== DEV_ERRORS.INSUFFICIENT_FUNDS) return { ok: false, error: quote.error, quote };
 
   const seat = currentPlayer(game).seat;
   const sim = structuredClone(game);
+  if (!actionAvailable) sim.city.actionsLeft += 1;
   if (!quote.ok) getPlayer(sim, seat).cash += quote.shortfall; // forecast the build itself, not the budget
   const result = upgrade ? upgradeBlock(sim, blockId) : buildOnBlock(sim, blockId, type);
   if (!result.ok) return { ok: false, error: result.error, quote };
@@ -105,6 +120,8 @@ export function forecastDevelopment(game, blockId, type) {
     ok: true,
     affordable: quote.ok,
     shortfall: quote.shortfall,
+    actionAvailable,
+    usesAction,
     cost: result.cost,
     baseCost: quote.baseCost,
     level: result.level,

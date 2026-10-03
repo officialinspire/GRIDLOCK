@@ -13,7 +13,7 @@ import { formatCash, formatCashShort, formatDelta } from '../core/economy.js';
 const TIGHT_HUD = '(orientation: portrait) and (max-width: 700px) and (max-height: 700px)';
 const money = (n) => (globalThis.matchMedia?.(TIGHT_HUD).matches ? formatCashShort(n) : formatCash(n));
 import {
-  currentPlayer, getPlayer, playerStats, roadsBuilt, standings, eraStatus, PHASES, ERAS,
+  currentPlayer, getPlayer, playerStats, roadsBuilt, standings, eraStatus, PHASES, ERAS, TURN_PHASES,
 } from '../core/game.js';
 import { totalRoads } from '../core/board.js';
 import { controllerLabel, isCpu, DIFFICULTY_LABELS } from '../core/seats.js';
@@ -42,15 +42,21 @@ function stat(key, label, value, icon, hint = label) {
   );
 }
 
-/** Income (base + bonuses). A small ★ marks bonus income; details live in the tooltip / block info. */
-function incomeStat(stats) {
-  const notes = ['Income paid at the start of each turn'];
-  if (stats.upkeep > 0) notes.push(`upkeep −${formatCash(stats.upkeep)} is charged after it`);
-  if (stats.bonus > 0) notes.push(`includes ${formatCash(stats.bonus)} adjacency bonus`);
+/**
+ * Net / turn: what the next turn start adds (income − upkeep), the number that matters most.
+ * Gross income, upkeep, bonus and event effects are in the tooltip and the screen-reader text;
+ * a ★ marks bonus income and ▲/▼ a city event changing it.
+ */
+function netStat(stats) {
+  const notes = [`Net per turn ${formatDelta(stats.net)}: income +${formatCash(stats.income)} − upkeep ${formatCash(stats.upkeep)}, at the start of each turn`];
+  if (stats.bonus > 0) notes.push(`income includes ${formatCash(stats.bonus)} adjacency bonus`);
   if (stats.eventDelta) notes.push(`${formatDelta(stats.eventDelta)} from city events (normally ${formatCash(stats.normalIncome)})`);
-  const el = stat('income', 'Income', `+${money(stats.income)}`, 'icons:clock', notes.join('; '));
-  el.dataset.normal = stats.normalIncome;
+  const sign = stats.net < 0 ? '−' : '+';
+  const el = stat('net', 'Net / turn', `${sign}${money(Math.abs(stats.net))}`, 'icons:clock', notes.join('; '));
+  el.classList.toggle('is-negative', stats.net < 0);
+  Object.assign(el.dataset, { income: stats.income, upkeep: stats.upkeep, normal: stats.normalIncome });
   const dd = el.querySelector('dd');
+  dd.append(h('span', { class: 'visually-hidden' }, ` (income +${formatCash(stats.income)}, upkeep −${formatCash(stats.upkeep)})`));
   if (stats.bonus > 0) {
     el.classList.add('has-bonus');
     dd.append(h('span', { class: 'stat__bonus', 'aria-label': `includes ${formatCash(stats.bonus)} bonus` }, '★'));
@@ -171,7 +177,7 @@ function playerCard(game, seat) {
     h('dl', { class: 'player-card__stats' },
       stat('cash', 'Cash', money(shownCash.get(seat) ?? stats.cash), 'icons:coins', formatCash(stats.cash)),
       stat('blocks', 'Blocks', stats.blocks, 'icons:star', 'Blocks owned'),
-      incomeStat(stats),
+      netStat(stats),
       stat('property', 'Property', formatCash(stats.property), 'icons:building', 'City value of property (land + actual construction cost basis)'),
       stat('prestige', 'Prestige', stats.prestige, 'icons:trophy',
         `Prestige: ${formatCash(stats.prestige * ECONOMY.SCORING.PRESTIGE)} of City Value (${formatCash(ECONOMY.SCORING.PRESTIGE)} per point). Parks, Civic and Landmarks earn it; industry next to homes costs it`),
@@ -201,12 +207,16 @@ function renderEra(game) {
   chip.dataset.era = status.era;
   // Every road is paved in the CITY era: the counter gives way to the era chip.
   document.querySelector('.round-badge__roads').hidden = city;
-  chip.classList.toggle('is-spent', city && status.actionsLeft === 0);
+  // Manage City shows the turn's management budget: Development Actions now, City Actions later.
+  const managing = game.phase === PHASES.PLAYING && game.turnPhase === TURN_PHASES.MANAGE_CITY;
+  chip.classList.toggle('is-spent', (city || managing) && status.actionsLeft === 0);
   if (!city) {
-    chip.textContent = 'Expansion';
-    chip.title = status.rounds
-      ? `Expansion era: pave every road to start the City era (${plural(status.rounds, 'full round')}, ${plural(status.actionsPerTurn, 'City Action')} per turn)`
-      : 'Expansion era: the match ends when every road is paved';
+    chip.textContent = managing ? `Expansion · ${plural(status.actionsLeft, 'action')}` : 'Expansion';
+    chip.title = `${status.rounds
+      ? `Expansion era: pave every road to start the City era (${plural(status.rounds, 'full round')}, ${plural(status.actionsPerTurn, 'City Action')} per turn).`
+      : 'Expansion era: the match ends when every road is paved.'} Each turn: ${plural(status.expansionActions, 'Development Action')} `
+      + `(build, upgrade, sell or redevelop), then pave a road. Developing a block you just captured is free.${managing
+        ? ` ${plural(status.actionsLeft, 'Development Action')} left this turn.` : ''}`;
     return;
   }
   if (game.phase === PHASES.ENDED) {

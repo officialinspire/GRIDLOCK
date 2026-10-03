@@ -1,51 +1,128 @@
 /** Versioned, defensive persistence for an active local match. UI-only state is never saved. */
-import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, ECONOMY } from '../config.js';
+import { BOARD_ROWS, BOARD_COLS, MIN_PLAYERS, MAX_PLAYERS, APP_VERSION, EXPANSION_ERA } from '../config.js';
 import { EVENT_POOL } from './events.js';
 import { PHASES, TURN_PHASES, ERAS, createCityState } from './game.js';
 import { DISTRICTS, blockId, isValidRoad, totalRoads } from './board.js';
-import { CATEGORY_ORDER } from './buildings.js';
+import { VACANT, CATEGORY_ORDER } from './buildings.js';
+import { MAX_LEVEL, levelStats } from './development.js';
 import { refreshBonuses } from './bonuses.js';
 import { getMode, resolveRules } from './modes.js';
 import { controllerOf } from './seats.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
-export const SAVE_VERSION = 1;
+/**
+ * Save schema history:
+ *   0  pre-release prototype (`state` instead of `game`, no repair queue)
+ *   1  V1.1–V1.4.0 (later V1.x fields backfilled on load)
+ *   2  V1.4.1: blocks carry `shieldSeat` (turn-precise takeover shields)
+ *   3  EXPANSION turn economy: `city.expansionActions`, and `city.actionsLeft` counts the
+ *      management actions left in either era
+ */
+export const SAVE_VERSION = 3;
 
 const integer = (value) => Number.isSafeInteger(value);
 const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
-function migrate(raw) {
-  if (raw?.version === SAVE_VERSION) return raw;
-  // Pre-release save prototype used `state` and had no repair queue.
-  if (raw?.version === 0 && plainObject(raw.state)) {
+/**
+ * Version 1 saves were written by builds from V1.1 to V1.4.0; fields added during V1.x are
+ * backfilled with the values that keep each save's rules exactly as they were.
+ */
+function backfillV1(game) {
+  if (!plainObject(game)) return;
+  // Saves from before rule presets existed were standard games.
+  if (game.mode === undefined) {
+    game.mode = 'standard';
+    game.rules = resolveRules('standard', {
+      eventProbability: game.eventProbability ?? undefined,
+      maxActiveEvents: game.maxActiveEvents ?? undefined,
+    });
+    delete game.eventProbability;
+    delete game.maxActiveEvents;
+  }
+  // Saves from before seat controllers existed were all-human tables.
+  if (Array.isArray(game.players)) {
+    for (const player of game.players) {
+      if (plainObject(player) && player.controller === undefined) Object.assign(player, { controller: 'human', difficulty: null });
+    }
+  }
+  // Saves from before the CITY era existed are always mid-EXPANSION (the match used to end
+  // on the final road), so they continue with this build's City rules.
+  if (game.era === undefined) {
+    game.era = ERAS.EXPANSION;
+    game.city = createCityState();
+  }
+  // Saves from before takeovers: nobody has taken one this turn.
+  if (plainObject(game.city) && game.city.takeovers === undefined) game.city.takeovers = 0;
+  // Saves from before takeover shields and recovery tracking: nothing shielded, no recent bankruptcy.
+  if (Array.isArray(game.board?.blocks)) {
+    for (const block of game.board.blocks) if (plainObject(block) && block.shieldedUntil === undefined) block.shieldedUntil = null;
+  }
+  if (Array.isArray(game.players)) {
+    for (const player of game.players) if (plainObject(player) && player.lastBankruptcyRound === undefined) player.lastBankruptcyRound = null;
+  }
+}
+
+/** One step per schema version: MIGRATIONS[v](save) returns the same save at version v + 1. */
+const MIGRATIONS = Object.freeze({
+  0: (raw) => {
+    if (!plainObject(raw.state)) return null;
     const game = raw.state;
     game.events ??= { active: [], history: [], repairs: [], nextUid: 1 };
     game.events.repairs ??= [];
     game.players?.forEach((player) => { player.lastEconomicRound ??= game.round ?? 1; });
-    return { version: SAVE_VERSION, savedAt: raw.savedAt ?? 0, setup: raw.setup ?? null, game };
+    return { version: 1, savedAt: raw.savedAt ?? 0, setup: raw.setup ?? null, game };
+  },
+  1: (raw) => {
+    const { game } = raw;
+    backfillV1(game);
+    // Shields from V1.4.0 takeovers lasted whole rounds; they keep doing so (no shield seat).
+    if (Array.isArray(game?.board?.blocks)) {
+      for (const block of game.board.blocks) if (plainObject(block) && block.shieldSeat === undefined) block.shieldSeat = null;
+    }
+    return { ...raw, version: 2 };
+  },
+  2: (raw) => {
+    const { game } = raw;
+    // Before the EXPANSION turn economy, Manage City in EXPANSION was unlimited. A save made in
+    // it gets this build's budget for the rest of the turn; anywhere past Manage City (paving,
+    // a capture, a bonus road) the turn's management is over. CITY saves are unchanged.
+    if (plainObject(game?.city)) {
+      game.city.expansionActions ??= EXPANSION_ERA.ACTIONS_PER_TURN;
+      if (game.era === ERAS.EXPANSION) {
+        game.city.actionsLeft = game.turnPhase === TURN_PHASES.MANAGE_CITY ? game.city.expansionActions : 0;
+      }
+    }
+    return { ...raw, version: 3 };
+  },
+});
+
+/** Brings a stored save up to SAVE_VERSION, or returns null (unknown/newer version, wrong shape). */
+export function migrateSave(raw) {
+  let save = raw;
+  while (plainObject(save) && save.version !== SAVE_VERSION) {
+    const step = integer(save.version) && Object.hasOwn(MIGRATIONS, save.version) ? MIGRATIONS[save.version] : null;
+    if (!step) return null;
+    save = step(save);
   }
-  return null;
+  return plainObject(save) && plainObject(save.game) ? save : null;
 }
 
+const BLOCK_TYPES = new Set([VACANT, ...CATEGORY_ORDER]);
+
+/** A block's shape, district, and accounting all agree with the rules in config.js. */
 function validBlock(block) {
-  const categories = new Set(['vacant', ...CATEGORY_ORDER]);
-  const category = ECONOMY.DEVELOPMENT.CATEGORIES[block.type];
-  const level = ECONOMY.DEVELOPMENT.LEVELS[block.level];
-  const expectedIncome = block.level === 0 ? ECONOMY.UNDEVELOPED_INCOME : category?.income * level?.income;
-  const expectedMarket = block.price + (block.level === 0 ? 0
-    : Array.from({ length: block.level }, (_, index) => category?.cost * ECONOMY.DEVELOPMENT.LEVELS[index + 1]?.cost)
-      .reduce((sum, cost) => sum + cost, 0));
-  const expectedDistrict = Math.min(block.row, block.col, BOARD_ROWS - 1 - block.row, BOARD_COLS - 1 - block.col) === 0
-    ? 'suburbs'
-    : Math.min(block.row, block.col, BOARD_ROWS - 1 - block.row, BOARD_COLS - 1 - block.col) === 1 ? 'midtown' : 'downtown';
-  return plainObject(block) && block.id === blockId(block.row, block.col)
-    && integer(block.row) && block.row >= 0 && block.row < BOARD_ROWS
-    && integer(block.col) && block.col >= 0 && block.col < BOARD_COLS
+  if (!plainObject(block) || !integer(block.row) || !integer(block.col)
+    || block.row < 0 || block.row >= BOARD_ROWS || block.col < 0 || block.col >= BOARD_COLS) return false;
+  if (!integer(block.level) || block.level < 0 || block.level > MAX_LEVEL || !BLOCK_TYPES.has(block.type)
+    || (block.level === 0) !== (block.type === VACANT)) return false;
+  const stats = levelStats(block.type, block.level); // list-price income/investment from ECONOMY.DEVELOPMENT
+  const ring = Math.min(block.row, block.col, BOARD_ROWS - 1 - block.row, BOARD_COLS - 1 - block.col);
+  const expectedDistrict = ring === 0 ? 'suburbs' : ring === 1 ? 'midtown' : 'downtown';
+  return Boolean(stats) && block.id === blockId(block.row, block.col)
     && block.district === expectedDistrict && block.price === DISTRICTS[expectedDistrict].price
-    && integer(block.ownerSeat ?? 0) && integer(block.level) && block.level >= 0 && block.level <= 3
-    && categories.has(block.type) && ((block.level === 0) === (block.type === 'vacant'))
-    && integer(block.value) && block.marketValue === expectedMarket && integer(block.investedCostBasis)
-    && block.income === expectedIncome && integer(block.bonusIncome) && block.bonusIncome >= 0
+    && integer(block.ownerSeat ?? 0)
+    && integer(block.value) && block.marketValue === block.price + stats.invested && integer(block.investedCostBasis)
+    && block.income === stats.income && integer(block.bonusIncome) && block.bonusIncome >= 0
     && Array.isArray(block.bonuses) && Array.isArray(block.protectedBy)
     && Array.isArray(block.constructionCosts)
     && block.constructionCosts.length === block.level
@@ -53,19 +130,25 @@ function validBlock(block) {
     && block.constructionCosts.reduce((sum, cost) => sum + cost, 0) === block.investedCostBasis
     && block.value === block.price + block.investedCostBasis
     && typeof block.abandoned === 'boolean' && integer(block.abandonedBy ?? 0)
-    && (block.shieldedUntil == null || integer(block.shieldedUntil));
+    && (block.shieldedUntil == null || integer(block.shieldedUntil))
+    && (block.shieldSeat == null || (integer(block.shieldSeat) && integer(block.shieldedUntil)));
 }
 
 /**
- * Era state: EXPANSION until every road is paved, then CITY with a consistent round window and
- * no more City Actions than a turn grants.
+ * Era state: EXPANSION until every road is paved, then CITY with a consistent round window; in
+ * either era, no more management actions left than the era's turn grants.
  */
 function validEra(game) {
   const { city } = game;
   if (!plainObject(city) || !integer(city.rounds) || city.rounds < 0
-    || !integer(city.actionsPerTurn) || city.actionsPerTurn < 1) return false;
+    || !integer(city.actionsPerTurn) || city.actionsPerTurn < 1
+    || !integer(city.expansionActions) || city.expansionActions < 1) return false;
   const complete = Object.keys(game.board.roads).length === totalRoads(game.board);
-  if (game.era === ERAS.EXPANSION) return !complete;
+  if (game.era === ERAS.EXPANSION) {
+    // Development Actions: only Manage City has any left (paving forfeits the rest).
+    return !complete && integer(city.actionsLeft) && city.actionsLeft >= 0 && city.actionsLeft <= city.expansionActions
+      && (game.turnPhase === TURN_PHASES.MANAGE_CITY || city.actionsLeft === 0);
+  }
   if (game.era !== ERAS.CITY || !complete || city.rounds < 1) return false;
   return integer(city.startRound) && integer(city.endRound) && integer(city.actionsLeft)
     && integer(city.takeovers) && city.takeovers >= 0
@@ -109,6 +192,7 @@ function validGame(game) {
   if (blockIds.size !== game.board.blocks.length) return false;
   if (game.board.blocks.some((block) => block.ownerSeat != null && !seats.has(block.ownerSeat))) return false;
   if (game.board.blocks.some((block) => block.abandonedBy != null && !seats.has(block.abandonedBy))) return false;
+  if (game.board.blocks.some((block) => block.shieldSeat != null && !seats.has(block.shieldSeat))) return false;
   if (game.board.blocks.some((block) => block.abandoned
     ? block.ownerSeat != null || block.abandonedBy == null
     : block.abandonedBy != null)) return false;
@@ -156,6 +240,7 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
     delete snapshot.eventPool;
     storage?.setItem(SAVE_KEY, JSON.stringify({
       version: SAVE_VERSION,
+      appVersion: APP_VERSION,
       savedAt: Date.now(),
       setup: setupFrom(game, setup),
       game: snapshot,
@@ -168,38 +253,7 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
 
 export function loadActiveGame(storage = globalThis.localStorage) {
   try {
-    const migrated = migrate(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
-    // Saves from before rule presets existed were standard games.
-    if (plainObject(migrated?.game) && migrated.game.mode === undefined) {
-      migrated.game.mode = 'standard';
-      migrated.game.rules = resolveRules('standard', {
-        eventProbability: migrated.game.eventProbability ?? undefined,
-        maxActiveEvents: migrated.game.maxActiveEvents ?? undefined,
-      });
-      delete migrated.game.eventProbability;
-      delete migrated.game.maxActiveEvents;
-    }
-    // Saves from before seat controllers existed were all-human tables.
-    if (Array.isArray(migrated?.game?.players)) {
-      for (const player of migrated.game.players) {
-        if (plainObject(player) && player.controller === undefined) Object.assign(player, { controller: 'human', difficulty: null });
-      }
-    }
-    // Saves from before the CITY era existed are always mid-EXPANSION (the match used to end
-    // on the final road), so they continue with this build's City rules.
-    if (plainObject(migrated?.game) && migrated.game.era === undefined) {
-      migrated.game.era = ERAS.EXPANSION;
-      migrated.game.city = createCityState();
-    }
-    // Saves from before takeovers: nobody has taken one this turn.
-    if (plainObject(migrated?.game?.city) && migrated.game.city.takeovers === undefined) migrated.game.city.takeovers = 0;
-    // Saves from before takeover shields and recovery tracking: nothing shielded, no recent bankruptcy.
-    if (Array.isArray(migrated?.game?.board?.blocks)) {
-      for (const block of migrated.game.board.blocks) if (plainObject(block) && block.shieldedUntil === undefined) block.shieldedUntil = null;
-    }
-    if (Array.isArray(migrated?.game?.players)) {
-      for (const player of migrated.game.players) if (plainObject(player) && player.lastBankruptcyRound === undefined) player.lastBankruptcyRound = null;
-    }
+    const migrated = migrateSave(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
     if (!migrated || !validGame(migrated.game)) return null;
     // Derived adjacency/protection data is rebuilt instead of trusting storage.
     refreshBonuses(migrated.game.board);

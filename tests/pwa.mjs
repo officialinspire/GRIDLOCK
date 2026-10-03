@@ -56,7 +56,7 @@ const context = await browser.newContext({ viewport: { width: 1280, height: 800 
 await context.addInitScript(() => {
   if (!sessionStorage.getItem('gl-test-init')) {
     sessionStorage.setItem('gl-test-init', '1');
-    (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+    (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
   }
 });
 const page = await context.newPage();

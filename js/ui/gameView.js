@@ -5,14 +5,14 @@ import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
   createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES, ERAS,
-  startPaving, resolveCapture, endCityTurn, eraStatus,
+  startPaving, resolveCapture, endCityTurn, eraStatus, outOfCityActions, roadsRemaining,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides, roadBlocks } from '../core/board.js';
 import { describeDevelopment, getCategory } from '../core/buildings.js';
 import { blockValue, bonusIncome, formatCash, formatDelta } from '../core/economy.js';
 import { bonusList } from './bonusView.js';
 import { showEventCard, renderEventStrip, eventLines, initEventView } from './eventView.js';
-import { effectiveBlockIncome, getEventDef } from '../core/events.js';
+import { getEventDef } from '../core/events.js';
 import { initFinanceView, openDistressPanel } from './financeView.js';
 import { isInDistress } from '../core/economy.js';
 import { isDeveloped } from '../core/development.js';
@@ -37,12 +37,14 @@ import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 import { isCpu, controllerLabel } from '../core/seats.js';
 import { chooseRoad } from '../core/cpu/roads.js';
-import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
+import { chooseCityAction } from '../core/cpu/city.js';
 import { buildOnBlock, upgradeBlock } from '../core/development.js';
 import {
-  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers,
+  downgradeBlock, sellDevelopment, declareBankruptcy, ACQUIRE_MODES,
 } from '../core/finance.js';
-import { takeoverBlock } from '../core/takeover.js';
+import { initAuctionView, startAuction, cancelAuction } from './auctionView.js';
+import { initCityIntro, showCityIntro, cancelCityIntro } from './cityIntro.js';
+import { takeoverBlock, influenceMap } from '../core/takeover.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
@@ -54,7 +56,6 @@ let game = null;
 let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
 let lastHuman = null; // seat of the last person to have the device (for handoffs)
-let cpuAuction = null; // { blockId, mode } while people bid in an auction a CPU mayor opened
 
 export const getGame = () => game;
 
@@ -116,8 +117,10 @@ function renderInspector(blockId, panel = $('#inspector')) {
         : '0', `Each Prestige point adds ${formatCash(ECONOMY.SCORING.PRESTIGE)} to City Value. Parks, Civic and Landmarks earn it; industry next to homes costs it`),
       owner && row('Control', String(d.control),
         'Takeover defence: ownership + building level + nearby Residential, Civic and Landmark levels + adjacent own development'),
-      d.shieldedUntil != null && game.round <= d.shieldedUntil && row('Protected', `until round ${d.shieldedUntil} ends`,
-        'Recently taken over: it can\'t be taken again yet'),
+      d.shield && row('Protected', d.shield.seat != null
+        ? `until ${getPlayer(game, d.shield.seat)?.name ?? 'its owner'}'s turn in round ${d.shield.untilRound} ends`
+        : `until round ${d.shield.untilRound} ends`,
+      'Recently changed hands: it can\'t be taken over yet'),
       d.takeover && row('Your pressure', d.takeover.ok
         ? `${d.takeover.pressure} › ${d.takeover.control}: take over for ${formatCash(d.takeover.cost)}`
         : `${d.takeover.pressure} vs ${d.takeover.control}`,
@@ -147,18 +150,24 @@ function renderPrompt() {
     prompt.textContent = `${p.name} is ${formatCash(-p.cash)} in debt! Sell or downgrade to continue.`;
     return;
   }
+  const { actionsLeft, actionName: action } = eraStatus(game);
+  const left = `${actionsLeft} ${actionsLeft === 1 ? action : `${action}s`} left`;
   if (game.era === ERAS.CITY) {
-    const { actionsLeft } = eraStatus(game);
-    const left = `${actionsLeft} City Action${actionsLeft === 1 ? '' : 's'} left`;
+    // The final mover's turn: its Development Action came before the final road.
+    const eraAt = game.log.findLastIndex((e) => e.type === 'era');
+    const finalMover = eraAt >= 0 && !game.log.slice(eraAt).some((e) => e.type === 'city-turn');
+    const transition = finalMover ? ' (this turn\'s Development Action came before the final road)' : '';
     prompt.textContent = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP
-      ? `${p.name}: CAPTURE / DEVELOP · Resolve the final claimed block, then your City turn.`
-      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : ''}, then End Turn.${recovering}`;
+      ? `${p.name}: CAPTURE / DEVELOP · Develop the final claimed block now for free, or leave it vacant.`
+      : `${p.name}: CITY TURN · ${left}${actionsLeft ? ': build, upgrade, sell or redevelop' : transition}, then End Turn.${recovering}`;
     return;
   }
   const copy = {
-    [TURN_PHASES.MANAGE_CITY]: 'MANAGE CITY · Develop or upgrade, then choose Pave Road.',
+    [TURN_PHASES.MANAGE_CITY]: actionsLeft
+      ? `MANAGE CITY · ${left}: build, upgrade, sell or redevelop, then Pave Road.`
+      : `MANAGE CITY · ${left}: now Pave Road.`,
     [TURN_PHASES.PAVE_ROAD]: 'PAVE ROAD · Choose one open road.',
-    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Resolve each newly claimed block.',
+    [TURN_PHASES.CAPTURE_DEVELOP]: 'CAPTURE / DEVELOP · Develop Now is free (a capture reward), or leave it vacant.',
     [TURN_PHASES.BONUS_ROAD]: 'BONUS ROAD · Pave another road.',
   }[game.turnPhase];
   prompt.textContent = `${p.name}: ${copy}${recovering}`;
@@ -190,6 +199,7 @@ function renderActions() {
   const pave = $('#action-pave');
   pave.hidden = !managing || city;
   pave.disabled = distress;
+  pave.classList.toggle('is-ready', managing && !city && !distress && game.city.actionsLeft === 0);
   const endTurn = $('#action-end-turn');
   endTurn.hidden = !managing || !city;
   endTurn.disabled = distress;
@@ -206,15 +216,62 @@ function render() {
   // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
   const botTurn = isCpuTurn(game);
   $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
+  applyCityView();
   updateTutorial();
   kickCpu();
   if (botTurn) tutorialMoment('cpu');
 }
 
+/* ---------------- CITY VIEW (influence overlay) ---------------- */
+
+const INFLUENCE = [
+  // [list in influenceMap, data-influence value, legend label, screen-reader note]
+  ['targets', 'target', 'Takeover target', 'takeover target: your pressure beats its control'],
+  ['atRisk', 'risk', 'At risk', 'at risk: a rival\'s pressure beats its control'],
+  ['shielded', 'shield', 'Protected', 'protected: recently changed hands'],
+  ['abandoned', 'abandoned', 'Abandoned', 'abandoned: open for redevelopment'],
+];
+
+/** Whose view the overlay shows: the mayor on turn if a person, else the last person to play. */
+function viewerSeat() {
+  const me = currentPlayer(game);
+  return !isCpu(me) ? me.seat : (lastHuman ?? me.seat);
+}
+
+/**
+ * The optional CITY VIEW: marks takeover targets, the viewer's at-risk blocks, protected
+ * (shielded) blocks and abandoned lots (core/takeover.js influenceMap), dims everything else,
+ * and shows a small legend with counts over the board. Off by default (Settings, or the top-bar
+ * map button).
+ */
+function applyCityView() {
+  const on = Boolean(game) && getSettings().cityView && game.phase === PHASES.PLAYING;
+  $('#city-view-btn').setAttribute('aria-pressed', String(getSettings().cityView));
+  $('#board-frame').classList.toggle('is-city-view', on);
+  const legend = $('#influence-legend');
+  legend.hidden = !on;
+  if (!on) return;
+  const map = influenceMap(game, viewerSeat());
+  for (const [list, kind, , note] of INFLUENCE) {
+    for (const id of map[list]) {
+      const cell = document.querySelector(`#board [data-block="${id}"]`);
+      if (!cell) continue;
+      cell.dataset.influence = kind;
+      cell.setAttribute('aria-description', `City view: ${note}`);
+    }
+  }
+  legend.replaceChildren(...INFLUENCE.map(([list, kind, label]) => h('li', { class: 'influence-legend__item', dataset: { influence: kind } },
+    h('span', { class: 'influence-legend__swatch', 'aria-hidden': 'true' }), `${label} ${map[list].length}`)));
+}
+
+function toggleCityView() {
+  updateSettings({ cityView: !getSettings().cityView });
+  if (game) render();
+}
+
 /** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
 function handleDevelopment(change) {
   const { bonusBefore } = change;
-  if (change.winnerSeat != null) cpuAuction = null; // people settled the CPU's auction in the panel
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
@@ -233,7 +290,7 @@ function handleDevelopment(change) {
 function showCaptureChoice() {
   const dialog = $('#capture-choice-dialog');
   // CPU mayors make this choice themselves (cpuPlan); people get the dialog.
-  if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
+  if (!game || game.phase !== PHASES.PLAYING || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || isCpuTurn()) {
     if (dialog.open) dialog.close();
     render();
     return;
@@ -270,8 +327,6 @@ function showHandoff(player, onReady) {
 }
 
 function leaveCapturedBlock(blockId) {
-  // People leaving an auction a CPU mayor opened are passing: the CPU bids decide it.
-  if (cpuAuction?.blockId === blockId) return settleCpuAuction();
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
   resolveCapture(game, blockId);
   autosave();
@@ -326,35 +381,42 @@ function renderChain() {
   }
 }
 
-/** Brief, non-blocking breakdown of the income that was just paid. */
-function showEconomyFeedback(turnIncome, turnUpkeep, turnRepair) {
-  if (!turnIncome) return;
-  const seat = turnIncome.seat;
-  const gross = turnIncome.amount;
+/**
+ * One short turn summary instead of separate toasts and coin chips: the new mayor's net for the
+ * turn (income − upkeep − repairs, with the gross figures beside it) and, on a new round, a
+ * calm-round or event-over note. Major news (a new event, debt) keeps its own card or panel.
+ */
+function showTurnSummary({ turnIncome, turnUpkeep, turnRepair, note = null }) {
+  const paid = turnIncome?.amount ?? 0;
   const upkeep = turnUpkeep?.amount ?? 0;
   const repair = turnRepair?.amount ?? 0;
-  const net = gross - upkeep - repair;
-  const blocks = game.board.blocks.filter((b) => b.ownerSeat === seat && effectiveBlockIncome(game, b) > 0);
-  for (const block of blocks) {
-    const cell = document.querySelector(`[data-block="${block.id}"]`);
-    if (!cell) continue;
-    const chip = h('span', { class: `block-income block-income--seat-${seat}`, 'aria-hidden': 'true' },
-      `+${formatCash(effectiveBlockIncome(game, block))}`);
-    cell.append(chip);
-    setTimeout(() => chip.remove(), 1250);
-  }
+  const money = turnIncome && (paid > 0 || upkeep > 0 || repair > 0);
+  if (!money && !note) return;
   const summary = $('#economy-summary');
-  summary.replaceChildren(
-    h('strong', {}, `+${formatCash(gross)}`),
-    h('span', {}, ` Gross Income − ${formatCash(upkeep)} Upkeep${repair ? ` − ${formatCash(repair)} Repairs` : ''} = `),
-    h('strong', {}, `${net < 0 ? '−' : '+'}${formatCash(Math.abs(net))} Net`),
-  );
-  summary.dataset.seat = seat;
+  const nodes = [];
+  if (money) {
+    const net = paid - upkeep - repair;
+    const payee = getPlayer(game, turnIncome.seat);
+    nodes.push(
+      h('span', { class: 'economy-summary__who' }, `${payee.name} · `),
+      h('strong', { class: `economy-summary__net${net < 0 ? ' is-negative' : ''}` }, `Net ${net < 0 ? '−' : '+'}${formatCash(Math.abs(net))}`),
+      h('span', { class: 'economy-summary__gross' },
+        ` · Income +${formatCash(paid)} − Upkeep ${formatCash(upkeep)}${repair ? ` − Repairs ${formatCash(repair)}` : ''}`),
+    );
+    summary.dataset.seat = turnIncome.seat;
+    summary.classList.toggle('is-warn', Boolean(turnUpkeep?.distress || turnRepair?.distress));
+  } else {
+    delete summary.dataset.seat;
+    summary.classList.remove('is-warn');
+  }
+  if (note) nodes.push(h('span', { class: 'economy-summary__note' }, note));
+  summary.replaceChildren(...nodes);
   summary.hidden = false;
   summary.classList.remove('is-showing');
   void summary.offsetWidth;
   summary.classList.add('is-showing');
-  setTimeout(() => { summary.hidden = true; }, 1800);
+  clearTimeout(showTurnSummary.timer);
+  showTurnSummary.timer = setTimeout(() => { summary.hidden = true; }, 2600);
 }
 
 
@@ -416,9 +478,10 @@ function handleRoad(id, { cpu = false } = {}) {
     bus.emit('game:move', result);
     return;
   }
-  if (result.cityEra) announceCityEra();
   autosave();
-  if (n > 0) showCaptureChoice();
+  // The City era card first; the final capture's Develop Now choice when it closes.
+  if (result.cityEra) announceCityEra(mover, () => { if (n > 0) showCaptureChoice(); });
+  else if (n > 0) showCaptureChoice();
   passTurn(result, mover);
 }
 
@@ -439,13 +502,11 @@ function finishMatch(delay) {
   }, delay);
 }
 
-/** Every road is paved: celebrate, and explain what the CITY era changes. */
-function announceCityEra() {
-  const { rounds, actionsPerTurn } = eraStatus(game);
+/** Every road is paved: the skippable City era card (rounds and actions), then `then`. */
+function announceCityEra(mover, then = () => {}) {
   flashFrame();
   play('event', { kind: 'boon' });
-  toast(`Every road is paved! The City era begins: ${rounds} more round${rounds === 1 ? '' : 's'}, `
-    + `${actionsPerTurn} City Action${actionsPerTurn === 1 ? '' : 's'} per turn.`, { tone: 'success', duration: 4200 });
+  showCityIntro(eraStatus(game), { finalMover: mover.name, onClose: () => { if (game) then(); } });
 }
 
 /** CITY era: the current mayor ends their turn (End Turn, or a CPU mayor's decision). */
@@ -488,25 +549,15 @@ function passTurn(result, mover) {
       buzz('event');
       showEventCard(game, result.event.started, result.event.expired);
       tutorialMoment('events');
-    } else if (result.event?.expired.length) {
-      toast(`City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`);
-    } else if (result.event?.calm) {
-      toast('Calm round · no new city event', { tone: 'success' });
     }
+    const note = result.event?.started ? null
+      : result.event?.expired.length ? `City event over: ${result.event.expired.map((e) => getEventDef(e.id)?.name ?? e.id).join(', ')}`
+        : result.event?.calm ? 'Calm round · no new city event' : null;
     const paid = result.turnIncome?.amount ?? 0;
-    const owed = result.turnUpkeep?.amount ?? 0;
-    const repairs = result.turnRepair?.amount ?? 0;
-    if (result.turnIncome && (paid > 0 || owed > 0 || repairs > 0)) {
-      if (paid > 0 && !result.event?.started) play('coins');
-      showEconomyFeedback(result.turnIncome, result.turnUpkeep, result.turnRepair);
-      const payee = getPlayer(game, result.turnIncome.seat);
-      if (!isCpu(payee)) tutorialMoment('income');
-      const parts = [paid > 0 && `+${formatCash(paid)} income`, owed > 0 && `−${formatCash(owed)} upkeep`,
-        repairs > 0 && `−${formatCash(repairs)} repairs`].filter(Boolean);
-      toast(`${payee.name}: ${parts.join(', ')}`, {
-        tone: result.turnUpkeep?.distress || result.turnRepair?.distress ? 'warn' : 'success',
-      });
-    }
+    if (paid > 0 && !result.event?.started) play('coins');
+    showTurnSummary({ turnIncome: result.turnIncome, turnUpkeep: result.turnUpkeep, turnRepair: result.turnRepair, note });
+    const payee = result.turnIncome && getPlayer(game, result.turnIncome.seat);
+    if (payee && !isCpu(payee) && (paid > 0 || (result.turnUpkeep?.amount ?? 0) > 0)) tutorialMoment('income');
     checkDistress();
     bus.emit('game:move', result);
   };
@@ -524,15 +575,38 @@ function passTurn(result, mover) {
 
 const bonusTotal = (seat) => game.board.blocks.filter((b) => b.ownerSeat === seat).reduce((s, b) => s + bonusIncome(b), 0);
 
-/** Settles an auction a CPU mayor opened: CPU sealed bids plus whatever people entered (none if they left). */
-function settleCpuAuction(humanBids = []) {
-  if (!cpuAuction || !game) return;
-  const { blockId, mode } = cpuAuction;
-  cpuAuction = null;
-  const result = resolveRedevelopmentAuction(game, blockId, mode, [...cpuBids(game, blockId, mode), ...humanBids]);
+/**
+ * Runs a sealed redevelopment auction opened by the current mayor (person or CPU): each person
+ * at the table bids alone behind a privacy screen (js/ui/auctionView.js), CPU bids stay hidden,
+ * then the result is revealed. Nothing changes until it resolves, and an all-pass auction
+ * changes nothing, so the turn always carries on. Afterwards the device goes back to the mayor
+ * on turn (a handoff if someone else bid last), and a person who just cleared a lot on their
+ * own turn goes straight to the build choices if they still have an action.
+ */
+function runAuction(blockId, mode) {
+  const opener = currentPlayer(game);
+  startAuction(game, {
+    blockId, mode, holderSeat: isCpu(opener) ? lastHuman : opener.seat,
+    onDone: (result, { holder }) => {
+      if (!game) return;
+      if (holder != null) lastHuman = holder;
+      const me = currentPlayer(game);
+      const buildNow = () => {
+        render();
+        if (result.ok && result.mode === ACQUIRE_MODES.REBUILD && result.winnerSeat === me.seat && !isCpu(me)
+          && !outOfCityActions(game)) openBuildPanel(game, result.block);
+      };
+      if (!isCpu(me) && needsHandoff(me)) showHandoff(me, buildNow);
+      else buildNow();
+    },
+  });
+}
+
+/** Right after an auction resolves: save, redraw and sound off (the dialog shows the details). */
+function auctionSettled(result) {
   if (result.ok) {
-    toast(`${getPlayer(game, result.winnerSeat).name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
     play('coins');
+    clearSelection();
   }
   autosave();
   render();
@@ -562,12 +636,17 @@ function roadIntent(g, d) {
  * buildOnBlock/upgradeBlock via handleDevelopment, resolveCapture, downgrade/sale, bankruptcy,
  * the redevelopment auction). The driver runs it only if the game is still exactly as planned.
  */
+/** CPU playback is Full (every step paced and announced); Brief and Instant keep routine steps quiet. */
+const fullPlayback = () => getSettings().cpuPlayback === 'full';
+
 function cpuPlan(g) {
   const me = currentPlayer(g);
   if (g.turnPhase === TURN_PHASES.PAVE_ROAD || g.turnPhase === TURN_PHASES.BONUS_ROAD) {
     const d = chooseRoad(g);
     if (!d.road) return { text: null, run: () => render() };
-    return { ...roadIntent(g, d), run: () => handleRoad(d.road, { cpu: true }) };
+    // Captures (and the final road, which starts the City era) are major; a quiet road is routine.
+    const major = claimsOf(g, d.road).length > 0 || roadsRemaining(g) === 1;
+    return { ...roadIntent(g, d), major, run: () => handleRoad(d.road, { cpu: true }) };
   }
   const d = chooseCityAction(g);
   const label = (id) => getBlockById(g.board, id).label;
@@ -580,7 +659,7 @@ function cpuPlan(g) {
       };
     case 'pave':
       return {
-        text: 'Done building: heading out to pave',
+        text: d.reason === 'no-actions' ? 'Development Action used: heading out to pave' : 'Done building: heading out to pave',
         run: () => {
           if (startPaving(g)) {
             autosave();
@@ -601,7 +680,7 @@ function cpuPlan(g) {
           const bonusBefore = bonusTotal(me.seat);
           const result = d.action === 'build' ? buildOnBlock(g, d.blockId, d.type) : upgradeBlock(g, d.blockId);
           if (!result.ok) return render();
-          toast(`${me.name} ${d.action === 'build' ? 'builds' : 'upgrades to'} ${describeDevelopment(getBlockById(g.board, result.block))} on ${label(result.block)} · −${formatCash(result.cost)}`, { tone: 'success' });
+          if (fullPlayback()) toast(`${me.name} ${d.action === 'build' ? 'builds' : 'upgrades to'} ${describeDevelopment(getBlockById(g.board, result.block))} on ${label(result.block)} · −${formatCash(result.cost)}`, { tone: 'success' });
           return handleDevelopment({ ...result, bonusBefore, cpu: true });
         },
       };
@@ -611,7 +690,7 @@ function cpuPlan(g) {
         text: `Leaving ${label(d.blockId)} vacant for now`,
         target: blockTarget(d.blockId),
         run: () => {
-          toast(`${me.name} leaves ${label(d.blockId)} vacant`);
+          if (fullPlayback()) toast(`${me.name} leaves ${label(d.blockId)} vacant`);
           leaveCapturedBlock(d.blockId);
         },
       };
@@ -620,6 +699,7 @@ function cpuPlan(g) {
       return {
         text: `In debt: ${d.action === 'sell' ? 'selling' : 'downgrading'} ${label(d.blockId)}`,
         target: blockTarget(d.blockId),
+        major: true,
         run: () => {
           const result = (d.action === 'sell' ? sellDevelopment : downgradeBlock)(g, d.blockId);
           if (result.ok) toast(`${me.name} ${d.action === 'sell' ? 'sells' : 'downgrades'} ${label(d.blockId)} to pay debts · +${formatCash(result.refund)}`, { tone: 'warn' });
@@ -630,6 +710,7 @@ function cpuPlan(g) {
     case 'bankruptcy':
       return {
         text: 'Out of options: declaring bankruptcy',
+        major: true,
         run: () => {
           const result = declareBankruptcy(g);
           if (result.ok) {
@@ -644,6 +725,7 @@ function cpuPlan(g) {
       return {
         text: `Hostile takeover of ${label(d.blockId)}: its development out-pressures the owner`,
         target: blockTarget(d.blockId),
+        major: true,
         run: () => {
           const from = getBlockById(g.board, d.blockId).ownerSeat;
           const result = takeoverBlock(g, d.blockId);
@@ -660,14 +742,12 @@ function cpuPlan(g) {
       return {
         text: `Opening bidding on abandoned ${label(d.blockId)}`,
         target: blockTarget(d.blockId),
+        major: true,
         run: () => {
-          cpuAuction = { blockId: d.blockId, mode: d.mode };
           const block = getBlockById(g.board, d.blockId);
-          const people = eligibleRedevelopers(g, block).filter((p) => !isCpu(p));
           toast(`${me.name} opens bidding on abandoned Block ${block.label}`);
-          // People at the table may bid (sealed, in the auction panel); otherwise it settles at once.
-          if (people.length && openBuildPanel(g, d.blockId)) return;
-          settleCpuAuction();
+          // People at the table bid one at a time, sealed; the bots' bids stay hidden.
+          runAuction(d.blockId, d.mode);
         },
       };
     default:
@@ -699,13 +779,14 @@ function cpuCanAct() {
 function startGame(setup) {
   // Reset every piece of per-game UI state before the new game object exists.
   closeBuildPanel();
+  cancelCityIntro();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
   lastSetup = setup;
   clearActiveGame();
   tutorialNewGame();
@@ -724,7 +805,8 @@ function startGame(setup) {
 
 function leaveForTitle() {
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
+  cancelCityIntro();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
@@ -747,12 +829,13 @@ function abandonGame() {
 function continueGame(saved = loadActiveGame()) {
   if (!saved) return refreshSavedGameControls();
   closeBuildPanel();
+  cancelCityIntro();
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
   clearToasts();
   disarm();
   clearSelection();
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
   game = saved.game;
   lastSetup = saved.setup;
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
@@ -831,8 +914,20 @@ export function initGameView() {
   info.addEventListener('click', (e) => {
     if (e.target === info || e.target.closest('[data-info-close]')) info.close();
   });
-  initBuildPanel({ onChange: handleDevelopment, onLeave: ({ blockId }) => leaveCapturedBlock(blockId) });
-  initFinanceView({ onChange: () => { autosave(); render(); } });
+  initBuildPanel({
+    onChange: handleDevelopment,
+    onLeave: ({ blockId }) => leaveCapturedBlock(blockId),
+    onAuction: ({ blockId, mode }) => runAuction(blockId, mode),
+  });
+  initFinanceView({
+    onChange: () => {
+      autosave();
+      render();
+      // A person just went bankrupt: explain recovery (once).
+      const me = game && currentPlayer(game);
+      if (me && !isCpu(me) && game.lastBankruptcy?.seat === me.seat) tutorialMoment('recovery');
+    },
+  });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
   $('#action-end-turn').addEventListener('click', () => handleEndTurn());
@@ -871,8 +966,12 @@ export function initGameView() {
     setSpeed: (cpuSpeed) => updateSettings({ cpuSpeed }),
   });
   bus.on('screen:shown', () => kickCpu());
-  // However people close an auction a CPU opened (Leave it, backdrop, Escape), it still settles.
-  $('#build-dialog').addEventListener('close', () => settleCpuAuction());
+  initAuctionView({ onResolved: auctionSettled });
+  $('#city-view-btn').addEventListener('click', toggleCityView);
+  bus.on('settings:changed', () => { if (game && document.body.dataset.activeScreen === 'game') applyCityView(); });
+  // Changed in Settings: shown on the way back to the board.
+  bus.on('screen:shown', ({ name }) => { if (name === 'game' && game) applyCityView(); });
+  initCityIntro();
   initTutorial({ getGame: () => game });
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });

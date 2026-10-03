@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CITY_ERA, ECONOMY } from '../../js/config.js';
+import { CITY_ERA, EXPANSION_ERA, ECONOMY } from '../../js/config.js';
 import { allRoadIds, getBlockById } from '../../js/core/board.js';
 import { applyDevelopment, buildOnBlock, upgradeBlock, DEV_ERRORS } from '../../js/core/development.js';
 import { refreshBonuses } from '../../js/core/bonuses.js';
@@ -47,6 +47,7 @@ function cityGame(options = {}) {
   const r = placeRoad(game, last);
   assert.equal(r.cityEra, true);
   resolveCapture(game, 'r5c5');
+  game.city.actionsLeft = game.city.actionsPerTurn; // as at the start of a full City turn
   const me = currentPlayer(game);
   me.cash = 30000;
   const dev = getBlockById(game.board, 'r0c0'); // seat 1's
@@ -59,20 +60,25 @@ const snap = (game) => JSON.stringify({ board: game.board, players: game.players
 
 /* ---------------- configuration ---------------- */
 
-test('CITY_ERA is configured in config.js: 4 full rounds, 2 City Actions per turn', () => {
+test('CITY_ERA / EXPANSION_ERA are configured in config.js: 4 full rounds, 2 City Actions, 1 Development Action', () => {
   assert.equal(CITY_ERA.ROUNDS, 4);
   assert.equal(CITY_ERA.ACTIONS_PER_TURN, 2);
+  assert.equal(EXPANSION_ERA.ACTIONS_PER_TURN, 1);
   const game = createGame({ seats: seats() });
   assert.equal(game.era, ERAS.EXPANSION);
-  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 });
-  assert.deepEqual(eraStatus(game), { era: 'expansion', rounds: 4, round: 0, roundsLeft: 4, actionsLeft: null, actionsPerTurn: 2 });
+  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, expansionActions: 1, startRound: null, endRound: null, actionsLeft: 1, takeovers: 0 });
+  assert.deepEqual(eraStatus(game), {
+    era: 'expansion', rounds: 4, round: 0, roundsLeft: 4,
+    actionsLeft: 1, turnActions: 1, actionName: 'Development Action', actionsPerTurn: 2, expansionActions: 1,
+  });
   assert.equal(cityTurnsLeft(game), null);
   assert.throws(() => createGame({ seats: seats(), cityRounds: -1 }), RangeError);
   assert.throws(() => createGame({ seats: seats(), cityActions: 0 }), RangeError);
   assert.throws(() => createGame({ seats: seats(), cityRounds: 1.5 }), RangeError);
+  assert.throws(() => createGame({ seats: seats(), expansionActions: 0 }), RangeError);
 });
 
-test('EXPANSION turns are unchanged: unlimited management, then pave; no City turn to end', () => {
+test('EXPANSION turns: one Development Action in Manage City, then the required road; no City turn to end', () => {
   const game = createGame({ seats: seats(), seed: 4, eventPool: [] });
   for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) placeRoad(game, id);
   placeRoad(game, 'v-0-1'); // seat 4 claims A1
@@ -83,11 +89,20 @@ test('EXPANSION turns are unchanged: unlimited management, then pave; no City tu
   for (const id of ['r0c1', 'r0c2', 'r1c1']) getBlockById(game.board, id).ownerSeat = 1;
   refreshBonuses(game.board);
   assert.equal(currentPlayer(game).seat, 1);
-  // Four developments in one Manage City: no action limit before the grid is complete.
-  for (const id of ['r0c0', 'r0c1', 'r0c2', 'r1c1']) assert.equal(buildOnBlock(game, id, 'park').ok, true);
-  assert.equal(game.city.actionsLeft, 0, 'untouched in EXPANSION');
+  // One development per Manage City; the second is refused until next turn.
+  assert.equal(game.city.actionsLeft, 1);
+  assert.equal(buildOnBlock(game, 'r0c0', 'park').ok, true);
+  assert.equal(game.city.actionsLeft, 0);
+  const before = snap(game);
+  assert.equal(buildOnBlock(game, 'r0c1', 'park').error, DEV_ERRORS.NO_ACTIONS);
+  assert.equal(upgradeBlock(game, 'r0c0').error, DEV_ERRORS.NO_ACTIONS);
+  assert.equal(snap(game), before);
   assert.deepEqual(endCityTurn(game), { ok: false, error: MOVE_ERRORS.NOT_CITY_ERA });
+  // The road is still required, and always allowed with no actions left.
   assert.equal(startPaving(game), true);
+  assert.equal(placeRoad(game, 'h-6-5').ok, true);
+  assert.equal(currentPlayer(game).seat, 2);
+  assert.equal(game.city.actionsLeft, 1, 'the next mayor gets a fresh Development Action');
 });
 
 /* ---------------- the transition ---------------- */
@@ -103,17 +118,38 @@ test('paving the final road starts the CITY era instead of ending the match', ()
   assert.equal(game.phase, PHASES.PLAYING);
   assert.equal(game.results, null);
   assert.equal(game.era, ERAS.CITY);
-  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, startRound: round + 1, endRound: round + 4, actionsLeft: 2, takeovers: 0 });
+  // The final mover already had this turn's Development Action: no City Actions on top.
+  assert.deepEqual(game.city, { rounds: 4, actionsPerTurn: 2, expansionActions: 1, startRound: round + 1, endRound: round + 4, actionsLeft: 0, takeovers: 0 });
   assert.ok(game.log.some((e) => e.type === 'era' && e.era === 'city'));
-  // The final capture keeps its Develop Now choice (free), then the mover's City turn.
+  // The final capture keeps its Develop Now choice (free), then the mover can only end the turn.
   assert.equal(currentPlayer(game).seat, 1);
   assert.equal(game.turnPhase, TURN_PHASES.CAPTURE_DEVELOP);
   getPlayer(game, 1).cash = 20000;
-  assert.equal(buildOnBlock(game, 'r5c5', 'commercial').ok, true);
-  assert.equal(game.city.actionsLeft, 2, 'developing the final capture is free');
+  assert.equal(buildOnBlock(game, 'r5c5', 'commercial').ok, true, 'developing the final capture is free');
   resolveCapture(game, 'r5c5');
   assert.equal(game.turnPhase, TURN_PHASES.MANAGE_CITY);
-  assert.deepEqual(eraStatus(game), { era: 'city', rounds: 4, round: 0, roundsLeft: 4, actionsLeft: 2, actionsPerTurn: 2 });
+  assert.deepEqual(eraStatus(game), {
+    era: 'city', rounds: 4, round: 0, roundsLeft: 4,
+    actionsLeft: 0, turnActions: 2, actionName: 'City Action', actionsPerTurn: 2, expansionActions: 1,
+  });
+  assert.equal(upgradeBlock(game, 'r5c5').error, DEV_ERRORS.NO_ACTIONS);
+  // Everyone after them this round, and everyone from next round on, gets full City turns.
+  assert.ok(endCityTurn(game).ok);
+  assert.equal(game.city.actionsLeft, 2);
+});
+
+test('the final mover gains no management at the transition, whether or not they used their action', () => {
+  for (const developFirst of [true, false]) {
+    const { game, last } = almostComplete();
+    getPlayer(game, 1).cash = 30000;
+    if (developFirst) assert.equal(buildOnBlock(game, 'r0c0', 'park').ok, true); // seat 1's block
+    assert.equal(placeRoad(game, last).cityEra, true);
+    resolveCapture(game, 'r5c5');
+    assert.equal(game.city.actionsLeft, 0, `developFirst=${developFirst}`);
+    const before = snap(game);
+    assert.equal(buildOnBlock(game, 'r4c0', 'park').ok, false);
+    assert.equal(snap(game), before);
+  }
 });
 
 test('no roads can be placed during the CITY era', () => {
@@ -322,12 +358,16 @@ test('saves from before eras load as EXPANSION; inconsistent era state is reject
   const game = createGame({ seats: seats(4), seed: 3 });
   saveActiveGame(game, { seats: seats(4) }, storage);
   const raw = JSON.parse(storage.getItem(SAVE_KEY));
+  raw.version = 1; // a V1.3 save: written before eras existed
   delete raw.game.era;
   delete raw.game.city;
   storage.setItem(SAVE_KEY, JSON.stringify(raw));
   const legacy = loadActiveGame(storage);
   assert.equal(legacy.game.era, ERAS.EXPANSION);
-  assert.deepEqual(legacy.game.city, { rounds: CITY_ERA.ROUNDS, actionsPerTurn: CITY_ERA.ACTIONS_PER_TURN, startRound: null, endRound: null, actionsLeft: 0, takeovers: 0 });
+  assert.deepEqual(legacy.game.city, {
+    rounds: CITY_ERA.ROUNDS, actionsPerTurn: CITY_ERA.ACTIONS_PER_TURN, expansionActions: EXPANSION_ERA.ACTIONS_PER_TURN,
+    startRound: null, endRound: null, actionsLeft: EXPANSION_ERA.ACTIONS_PER_TURN, takeovers: 0,
+  }); // in Manage City: this turn's Development Action
 
   const city = cityGame();
   const good = memoryStorage();

@@ -13,6 +13,12 @@
  *     market value; the premium is lost to redevelopment and transaction costs.
  *   - The development moves with the block. It is then shielded until SHIELD_ROUNDS full rounds
  *     have passed (the rest of this round and the next one, by default).
+ *   - A block bought out of abandonment (core/finance.js) is shielded until its new owner has
+ *     completed ACQUIRE_SHIELD_TURNS turns of their own (shieldOwnersTurns below).
+ *
+ * Shield state on a block: `shieldedUntil` (a round) and `shieldSeat`. With no shieldSeat the
+ * block is protected through the end of round shieldedUntil; with one, only until that seat
+ * finishes its turn in round shieldedUntil.
  */
 import { ECONOMY } from '../config.js';
 import { getBlockById } from './board.js';
@@ -48,7 +54,7 @@ export const TAKEOVER_REASONS = Object.freeze({
   [TAKEOVER_ERRORS.WRONG_PHASE]: 'Take over blocks during your City turn.',
   [TAKEOVER_ERRORS.IN_DISTRESS]: 'Clear your debt before a takeover.',
   [TAKEOVER_ERRORS.ONE_PER_TURN]: `Only ${T.PER_TURN} takeover per turn.`,
-  [TAKEOVER_ERRORS.SHIELDED]: 'Recently taken over: protected until the next full round is done.',
+  [TAKEOVER_ERRORS.SHIELDED]: 'Recently changed hands: protected from takeovers for now.',
   [TAKEOVER_ERRORS.CONTROL_HOLDS]: 'Not enough pressure: your adjacent development must beat the owner\'s control.',
   [TAKEOVER_ERRORS.NO_ACTIONS]: 'No City Actions left this turn.',
   [TAKEOVER_ERRORS.INSUFFICIENT_FUNDS]: 'Not enough cash for the takeover.',
@@ -56,8 +62,39 @@ export const TAKEOVER_REASONS = Object.freeze({
 
 const pct = (amount, percent) => Math.round((amount * percent) / 100);
 
-/** True while a block taken over recently can't be taken again. */
-export const isShielded = (game, block) => block.shieldedUntil != null && game.round <= block.shieldedUntil;
+/** True while a block that recently changed hands can't be taken over. */
+export function isShielded(game, block) {
+  const until = block.shieldedUntil;
+  if (until == null || game.round > until) return false;
+  if (game.round < until || block.shieldSeat == null) return true;
+  // Last shielded round: protected until the shield seat has finished its turn in it.
+  const ownerTurn = game.players.findIndex((p) => p.seat === block.shieldSeat);
+  return game.turnIndex <= ownerTurn;
+}
+
+/**
+ * Shields `block` for `seat` (its new owner) until they have completed `turns` turns of their
+ * own after the current one. Sets shieldedUntil to the round of the last of those turns and
+ * shieldSeat to `seat`; 0 turns clears the shield. Returns the block.
+ */
+export function shieldOwnersTurns(game, block, seat, turns = T.ACQUIRE_SHIELD_TURNS) {
+  const ownerTurn = game.players.findIndex((p) => p.seat === seat);
+  if (!Number.isSafeInteger(turns) || turns <= 0 || ownerTurn < 0) {
+    block.shieldedUntil = null;
+    block.shieldSeat = null;
+    return block;
+  }
+  // Their next turn is later this round if they sit after the current mayor, else next round.
+  const nextTurnRound = game.round + (ownerTurn > game.turnIndex ? 0 : 1);
+  block.shieldedUntil = nextTurnRound + turns - 1;
+  block.shieldSeat = seat;
+  return block;
+}
+
+/** Shield state for the inspector: null, or { untilRound, seat } (seat null: the whole round). */
+export function shieldStatus(game, block) {
+  return isShielded(game, block) ? { untilRound: block.shieldedUntil, seat: block.shieldSeat ?? null } : null;
+}
 
 /** Takeovers the current player has made this turn. */
 export const takeoversThisTurn = (game) => game.city?.takeovers ?? 0;
@@ -118,6 +155,7 @@ export function takeoverBlock(game, blockId) {
 
   block.ownerSeat = attacker.seat;
   block.shieldedUntil = game.round + T.SHIELD_ROUNDS;
+  block.shieldSeat = null; // whole rounds
   refreshBonuses(game.board);
 
   game.lastDevelopment = { block: block.id, seat: attacker.seat, type: block.type, level: block.level, takeover: defender.seat };
@@ -138,4 +176,32 @@ export function takeoverCandidates(game) {
     .filter((b) => b.ownerSeat != null && !b.abandoned && b.ownerSeat !== me.seat)
     .map((b) => quoteTakeover(game, b.id))
     .filter((q) => q.pressure > q.control);
+}
+
+/**
+ * The CITY VIEW overlay for `seat` (normally the person at the device): block ids by what they
+ * mean for that mayor right now. Each block lands in at most one list, in this order:
+ *   abandoned  ruins up for redevelopment (either era)
+ *   shielded   recently changed hands: no takeover for now (isShielded)
+ *   targets    CITY era: rival blocks whose control this mayor's pressure beats (takeover candidates;
+ *              one per turn and a City Action may still stand in the way)
+ *   atRisk     CITY era: this mayor's own blocks some rival's pressure beats
+ */
+export function influenceMap(game, seat = currentPlayer(game)?.seat) {
+  const out = { targets: [], atRisk: [], shielded: [], abandoned: [] };
+  const city = game.era === ERAS.CITY && game.phase === PHASES.PLAYING;
+  const rivals = game.players.map((p) => p.seat).filter((s) => s !== seat);
+  for (const block of game.board.blocks) {
+    if (block.abandoned) { out.abandoned.push(block.id); continue; }
+    if (block.ownerSeat == null) continue;
+    if (isShielded(game, block)) { out.shielded.push(block.id); continue; }
+    if (!city) continue;
+    const { control } = controlStrength(game.board, block);
+    if (block.ownerSeat !== seat) {
+      if (developmentPressure(game.board, seat, block).pressure > control) out.targets.push(block.id);
+    } else if (rivals.some((r) => developmentPressure(game.board, r, block).pressure > control)) {
+      out.atRisk.push(block.id);
+    }
+  }
+  return out;
 }

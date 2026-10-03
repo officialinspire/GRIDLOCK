@@ -4,6 +4,8 @@ A papercraft tabletop city-building game designed for **exactly 4 players on one
 
 It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no runtime dependencies**, so it runs on GitHub Pages as-is. It is also an **installable offline app (PWA)**: after the first visit it starts and plays with no network at all.
 
+**V1.4.1:** a core-rules hardening pass: finance actions check their turn phase and City Action cost in the rules engine, redeveloped blocks are protected from takeovers until their new owner's next turn, and saves move to schema 2 (see the release notes below).
+
 **V1.4:** the City era after the roads are paved, development-driven scoring with Prestige, strategic building effects, hostile takeovers, bankruptcy recovery, twelve new achievements and denser city blocks (see the release notes below).
 
 **V1.3:** a start screen and the INSPIRE Software intro, a downtown Fredericksburg main menu, two music themes with crossfades, and new sound effects for every building type and city event (see the release notes below).
@@ -11,6 +13,38 @@ It's plain HTML, CSS and JavaScript (ES modules) with **no build step and no run
 **V1.2:** installable offline play, a richer sound and haptics layer, a first-game tutorial, rule presets, career statistics and achievements, strategic forecasts, replayable cities with challenge links, and a simulation-backed balance pass (see the release notes below).
 
 **V1.1:** release-ready four-player flow, fair final settlement, explicit cost-basis scoring, paced city events, contested redevelopment, durable local autosave, keyboard/touch accessibility, cross-browser CI, and a responsive Fredericksburg papercraft presentation.
+
+### V1.4.1 release notes
+
+- **City era polish** (no new mechanics):
+  - **Transition card:** paving the final road shows a short papercraft notice, *THE GRID IS COMPLETE — BUILD THE CITY*, with the City rounds and actions per turn (and why the final mover's turn just ends). Skip it with the button, Escape or a tap outside; it closes itself after 4.5 s, and the final capture's Develop Now choice follows (`js/ui/cityIntro.js`).
+  - **City tips:** five contextual tutorial notes (first City turn, City Actions once one is spent, the first takeover you could make, the first abandoned lot to bid on, and bankruptcy & recovery). They show once each unless the tutorial was skipped, also for players who finished the first-game tips, and never hold up tutorial completion (`cityTipForGame` in `js/core/tutorial.js`).
+  - **CITY VIEW:** an optional influence overlay (the map button in the top bar; remembered between games) outlines your **takeover targets**, your blocks **at risk**, **protected** (recently changed hands) blocks and **abandoned** lots, dims everything else, and shows a small legend with counts. Each marked block also gets a screen-reader description (`influenceMap` in `js/core/takeover.js`).
+  - **Net / turn on the HUD:** player cards lead with income − upkeep; gross income, upkeep, bonus and event effects are in the tooltip and screen-reader text.
+  - **One turn summary:** routine income, upkeep and repairs, plus a calm-round or event-over note, are one short banner (*Player 2 · Net +$420 · Income +$900 − Upkeep $480*) instead of a toast, coin chips and a banner. New events and debt still get their own card or panel.
+  - **CPU playback** (Settings → *CPU mayors*, beside the speed): **Full** paces and announces every bot step (as before); **Brief** paces only major ones (captures, the final road, takeovers, debt sales, bankruptcy, auctions) and runs routine steps after a short beat without toasts; **Instant** runs routine steps at once and major ones after the fast pause (`CPU.PLAYBACK_ROUTINE_MS`, `stepDelay` in `js/ui/cpuDriver.js`).
+  - Reduced motion (the setting or the OS) shows the card, overlay and summary without animation; new smoke tests audit them for accessibility on desktop and phone.
+
+- **Fair sealed auctions for pass-and-play.** Redevelopment bids used to be typed side by side in one panel, so every "sealed" bid was visible and editable on the shared device. Now each person bids alone (`js/ui/auctionView.js`):
+  - The Build panel shows the lot, reserve, bid steps and who may bid (in turn order from the opener; former owners and mayors in debt sit out), then **Start sealed bidding**.
+  - Before each bidder other than the one holding the device, a **privacy screen** ("Pass to Player 2 … everyone else, please look away"). Escape can't skip it.
+  - Each bid screen shows only that mayor's terms: reserve, steps, their cash, their largest possible bid, and that passing is always allowed (or that they can only pass, when their cash can't meet the reserve). Invalid or unaffordable bids are refused privately; a placed bid leaves the page before the next screen.
+  - CPU bids stay hidden. After the last person, *All bids are in* → **Reveal the result** to the table: winner, price vs reserve, the ownership change, how many bid or passed, and when a tie went to the lowest seat. Then the device goes back to the mayor on turn.
+  - **No stuck turns:** nothing changes until the reveal; an auction everyone passes changes nothing and spends no action (`FIN_ERRORS.NO_BIDS`); the opener can cancel before anyone bids. Autosave never holds a half-run auction: a reload mid-auction simply cancels it.
+  - Core helpers in `js/core/finance.js`: `auctionOpenError`, `auctionBidders`, `auctionTerms`, `validateAuctionBid`; `resolveRedevelopmentAuction` reuses them and reports `tied` and `bidCount`.
+
+- **Turn economy with real opportunity cost:** an EXPANSION turn is now **1 Development Action + the required road** (`EXPANSION_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or auctioning a ruin each spend it; paving ends Manage City and an unused action is lost. **Develop Now** on a just-captured block stays a free capture reward, bonus-road chains are unchanged, selling to clear debt and bankruptcy stay free, and the City era keeps 2 City Actions per turn.
+  - **Fair transition:** the mayor who paves the final road already had that turn's Development Action, so they get no City Actions on top: they develop the final capture (free) and end the turn. Full City turns start for everyone after them.
+  - **HUD and prompts:** the round badge shows *Expansion · 1 action* during Manage City, the turn prompt says how many Development / City Actions are left (and when it's time to pave), Pave Road is highlighted once the action is spent, and the Build panel shows the budget or *Develop Now: free (capture reward)*.
+  - **Forecasts** report `usesAction` and `actionAvailable` and still forecast a build when the turn's action is spent (shown for next turn). CPU mayors spend their one action on the best option, then pave; across simulated all-CPU games there were no illegal moves or stalls.
+  - **Saves:** schema 3 (`city.expansionActions`; `city.actionsLeft` now counts both eras). Schema 2 saves made in an EXPANSION Manage City get this turn's action; later in a turn, none. City-era saves are unchanged.
+
+- **Finance actions follow the turn phases in the rules engine,** not just in the UI. Voluntary sales, downgrades and redevelopment (buying a ruin or opening an auction) are Manage City actions in both eras: they're refused during Pave Road, Capture / Develop (including the final road's Develop Now step in the City era, which used to let them through for free) and the bonus road, with no side effects (`FIN_ERRORS.WRONG_PHASE`). In the City era each one costs a City Action.
+- **Debt recovery stays free:** selling or downgrading while in debt and declaring bankruptcy never cost a City Action and are never phase-gated, so a mayor in debt can always dig out. Opening an auction, like any purchase, waits until the opener's debt is cleared.
+- **Redevelopment protection:** a block bought out of abandonment (directly or by auction, whoever wins) can't be taken over until its new owner has completed their next turn (`ECONOMY.TAKEOVER.ACQUIRE_SHIELD_TURNS`). Bought on your own turn, that's exactly one full round; nobody can snipe a block straight out of an auction. The inspector shows whose turn the protection waits for. Takeover protection after a hostile takeover is unchanged.
+- **Saves:** schema version 2 (saves record the app version too). V1.1–V1.4.0 saves migrate step by step and continue unchanged; existing takeover protection keeps its whole-round length. Unknown or newer versions are still ignored.
+- **Config-driven validation:** save checks take building levels, incomes and costs from `ECONOMY.DEVELOPMENT` (`MAX_LEVEL`, the level table) instead of hardcoded numbers, and the Level 3 achievements name the configured top level.
+- Version 1.4.1 (`APP_VERSION` in `js/config.js`, `package.json`, the title screen).
 
 ### V1.4 release notes
 
@@ -146,10 +180,11 @@ When it's a CPU seat's turn the game plays it: Manage City (builds and upgrades,
 
 - **Same moves as people:** every step is one decision from `js/core/cpu/` played through the same handlers a person's click uses (`placeRoad`, `buildOnBlock`/`upgradeBlock`, `resolveCapture`, `downgradeBlock`/`sellDevelopment`, `declareBankruptcy`, `resolveRedevelopmentAuction`, `startPaving`). Nothing edits the board or cash directly, and the usual toasts, sounds and event cards appear. A bot's moves don't vibrate your phone or trigger rule tips (only the tutorial's *CPU turns* note).
 - **Speed:** Settings → *CPU mayor speed* sets the thinking pause (Relaxed 1.1 s, Normal 0.65 s, Fast 0.22 s; `CPU.THINK_MS`). The strip has **Pause** (opens the pause menu, which stops the bots), **Speed up** (switches to Fast; pressed while on) and **Skip**, which plays the remaining CPU steps at once until a person has control again.
+- **Playback:** Settings → *CPU mayors* (the second menu, beside the speed): **Full** (every step paced and announced), **Brief** (only major steps — captures, the final road, takeovers, debt sales, bankruptcy, auctions — are paced, highlighted and announced) or **Instant** (routine steps run at once; major ones after the fast pause).
 - **Handoffs:** the pass-the-device screen appears only when control reaches a person other than the last person who played. A Solo game never shows it; Human A → CPU → Human B shows it once, for B. An all-human table gets it on every turn change, as always.
 - **Waiting its turn:** the bots never act while anything else needs the table: the pause menu, an event card, a handoff, an auction people are bidding in, or another screen. Pausing drops a pending step, and resuming re-plans it. People's clicks on the board during a bot's turn are politely refused.
 - **Reloads and game end:** the game autosaves after every step. Each scheduled step is tied to the exact state it was planned for and is dropped if anything changed, so a reload mid-turn resumes from the last completed step without repeating a move. Ending a game, leaving for the title screen or starting a new game stops all CPU timers.
-- **Redevelopment:** CPU mayors bid in every auction with **sealed** bids (shown as "Sealed bid", revealed only by the result), valued by running the real auction on a copy (`chooseRedevelopmentBid`). A CPU can also open bidding on an abandoned block during its Manage City. If people are eligible, the auction panel opens for their bids, and leaving it counts as passing.
+- **Redevelopment:** CPU mayors bid in every auction with **sealed** bids (never shown; only the result reveals the winner and price), valued by running the real auction on a copy (`chooseRedevelopmentBid`). A CPU can also open bidding on an abandoned block during its Manage City. If people are eligible, each bids or passes alone in the sealed-bid dialog; if none are, it settles at once with a short note.
 
 The driver is `js/ui/cpuDriver.js`. The CPU steps live in `cpuStep()` in `js/ui/gameView.js`.
 
@@ -169,7 +204,7 @@ Whole-game win rates are in [CPU simulation](#cpu-simulation). Hard decides in a
 
 ### CPU city strategy
 
-`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
+`chooseCityAction(game, { difficulty, seed, reserve })` in `js/core/cpu/city.js` decides the CPU's Manage City and Capture / Develop steps, one at a time. The possible actions are build, upgrade, leave a captured block vacant, downgrade or sell while in debt, declare bankruptcy, "pave" (done managing) and, in the CITY era, "end-turn" (done, or out of City Actions). In EXPANSION it gets one Development Action per Manage City, so it takes its single best option and then answers "pave". `applyCityAction()` plays a decision through the normal APIs (`buildOnBlock`, `upgradeBlock`, `resolveCapture`, `downgradeBlock`, `sellDevelopment`, `declareBankruptcy`, `startPaving`), resolving a capture after a build just as the UI does. The caller asks and applies until the answer is "pave" or "end-turn" (`endCityTurn`). In the CITY era the turns left are known exactly, so builds that can't pay back before the end are skipped.
 
 It has no economy formulas of its own:
 - Purchases are priced and scored with `forecastDevelopment()`, the real build on a copy, including event prices, income with bonuses and events, upkeep and City Value.
@@ -215,9 +250,9 @@ Every CPU mayor also has a **personality**. Personalities change priorities, nev
 - **Difficulty still matters more:** with the same personality on both sides, Hard took 76–77% of the combined City Value against Easy in head-to-head games, for every personality. Two Hard bots with different personalities split about 50–59%, mostly seat luck. A unit test checks the first for all four personalities.
 
 **Your turn**
-1. **MANAGE CITY:** collect **income**, pay **upkeep**, then build or upgrade any owned block. This phase does not end until you deliberately choose **Pave Road**.
+1. **MANAGE CITY:** collect **income**, pay **upkeep**, then spend your **1 Development Action** (`EXPANSION_ERA.ACTIONS_PER_TURN`): one build, upgrade, voluntary sale or downgrade, or redevelopment purchase/auction. This phase does not end until you deliberately choose **Pave Road**; an unspent action is lost when you do.
 2. **PAVE ROAD:** tap one gap between neighbouring intersections. A road that closes nothing passes play to the next mayor's MANAGE CITY phase.
-3. **CAPTURE / DEVELOP:** completing a block claims it (+$500). For each captured block—including both halves of a double capture—choose **Develop Now** or **Leave Vacant**.
+3. **CAPTURE / DEVELOP:** completing a block claims it (+$500). For each captured block—including both halves of a double capture—choose **Develop Now** (free: it costs no Development Action) or **Leave Vacant**.
 4. **BONUS ROAD:** after all capture choices are resolved, pave another road. Another capture repeats CAPTURE / DEVELOP and preserves normal Dots & Boxes chaining; a quiet bonus road ends the turn.
 
 Blocks left vacant can be developed during any later legal MANAGE CITY phase.
@@ -227,10 +262,10 @@ Blocks left vacant can be developed during any later legal MANAGE CITY phase.
 **Debt:** if upkeep or emergency repairs take you below $0, you must sell or downgrade buildings (50% refund) before you can play on. If even that can't cover it, you can declare bankruptcy: your blocks are **abandoned** for contested redevelopment, the debt is wiped, and you restart with recovery capital ($2,000, less each further time, never below $500) and a final-score penalty that grows with each bankruptcy. You're never out of the game.
 
 **Two eras.** Everything above is the **EXPANSION** era. Paving the final road does not end the match: it starts the **CITY** era.
-- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free), then plays a City turn; the rest of that round is City turns too.
+- No more roads. The mayor who paved the last road resolves any capture it made (Develop Now stays free); they already had this turn's Development Action, so they then just end the turn (no City Actions on top). The rest of that round is full City turns.
 - Then **4 full City rounds** (`CITY_ERA.ROUNDS` in `js/config.js`). Income, upkeep, repairs and city events carry on as normal.
 - Each City turn gives **2 City Actions** (`CITY_ERA.ACTIONS_PER_TURN`). Building, upgrading, a voluntary sale or downgrade, and buying or opening bidding on an abandoned block each cost one. Selling to clear debt and declaring bankruptcy are free, so a mayor can always recover. Choose **End Turn** when done; unused actions are lost.
-- The round badge shows the era: *Expansion*, then e.g. *City 2/4 · 1 action*.
+- The round badge shows the era and the turn's actions: *Expansion · 1 action* in Manage City, then e.g. *City 2/4 · 1 action*.
 
 **End:** the match ends after the last seat of the last City round, so every mayor has had the same number of turns. Highest **City Value** wins: all cash + 70% of land + all actual construction investment + Prestige. See [Scoring](#scoring). (With `CITY_ERA.ROUNDS` set to 0 the match ends on the final road instead, after unfinished income, upkeep and repairs are settled.)
 
@@ -302,7 +337,7 @@ Sound effects and ambience are synthesised in the browser with Web Audio (no sou
 
 ### Saving a local game
 
-Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely.
+Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely. Saves carry a schema version (`SAVE_VERSION`, now 2) and older versions are migrated one step at a time (`migrateSave` in `js/core/persistence.js`).
 
 ## Install & play offline
 
@@ -425,6 +460,7 @@ In the **CITY era** a mayor can take over a rival's block. The rules are in `js/
 - A takeover needs pressure **greater** than control. It is allowed only in the attacker's City-era Manage City, never while they are in debt, costs **one City Action**, and at most **one** happens per player turn.
 - **Price:** the attacker pays **125%** of the block's market value (land + list-price development). The defender receives the market value; the 25% premium is lost to redevelopment and transaction costs.
 - Ownership moves with the development intact. The block is then **protected** until the next full round is done (`shieldedUntil`), so it can't bounce straight back.
+- A block bought out of abandonment (a redevelopment purchase or auction) is **protected** until its new owner has completed their next turn (`ACQUIRE_SHIELD_TURNS`; stored as `shieldedUntil` plus `shieldSeat`, the owner whose turn ends it). Bought on the owner's own turn, that's one full round; won at auction by a mayor seated later this round, it lasts until their turn this round ends.
 - Each takeover is logged (`{ type: 'takeover', round, seat, from, block, label, cost, marketValue, premium, pressure, control }`) and appears in the ledger as `takeover` for both mayors.
 - **UI:** in the City era, tapping a rival's block opens the takeover view: price and where the money goes, your pressure against its control (with where each comes from), and the reason when it isn't possible. The inspector shows control, protection and your pressure.
 - **CPU:** Normal and Hard mayors run the takeover on a copy and take it only when it returns at least 25% of its price over the turns left (income net of upkeep × turns + City Value change) and leaves the reserve plus two turns of upkeep in hand (`CPU.TAKEOVER`); Easy never tries. In simulated all-CPU games, the takeovers that arose were weak blocks that didn't pay, so bots passed on them.
@@ -486,7 +522,7 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
 - **Upkeep:** charged after income: 6% of owned land value plus 7% of invested construction cost. Idle expansion and aggressive building now carry meaningful risk without making ordinary developed blocks unprofitable.
 - **Emergency repairs:** targeted emergencies can queue a modest configured expense at the affected owner's next turn. Civic protection prevents both the income loss and repair charge.
 - **Financial distress:** cash < $0. This is derived from cash, not stored as a flag. While in distress, a player can't pave or buy. The distress panel opens automatically, after any event card is dismissed, and can be reopened with the **Resolve Debt** button.
-- **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. It's also available any time from the Build panel. Recovering (cash ≥ $0) unblocks play immediately.
+- **Selling:** *Downgrade* removes one level and refunds 50% of that level's cost. *Sell* clears the block to Vacant and refunds 50% of everything invested. Recovering (cash ≥ $0) unblocks play immediately. Selling to clear debt is free and always allowed; a voluntary sale (from the Build panel) is a Manage City action and costs a City Action in the City era.
 - **Bankruptcy:** allowed only when selling everything couldn't cover the debt.
   - Every block the player owns becomes **Abandoned**: ownerless, with the development kept but inactive (no income, upkeep, bonuses, events or score).
   - Roads stay as they are, the debt is written off, and the player stays in the game with **recovery capital**: $2,000 the first time, then half the previous amount each time, never below $500 (`FINANCE.RECOVERY`).
@@ -494,7 +530,7 @@ Numbers are in `ECONOMY.FINANCE`; the rules are in `core/finance.js`.
   - **Score penalty** (`FINANCE.BANKRUPTCY_PENALTY`): the nth bankruptcy costs n × $1,000 of final City Value (so 1, 2, 3 bankruptcies cost $1,000, $3,000, $6,000 in all) and 2 Prestige each. The results card shows it in the City Value breakdown.
   - Any queued event repair bills and takeover protection on the abandoned blocks are dropped. Ruins keep their buildings on the board (dark, marked *Abandoned*), can't be taken over, and go to redevelopment.
   - **Messaging:** the bankruptcy card lists the debt written off, blocks abandoned, recovery capital, the total penalty so far and what another bankruptcy would pay. The HUD card shows **↺n Recovering** for the rest of that round and the next (tooltip: penalty so far, next recovery capital), the turn prompt says *Recovering from bankruptcy*, and the log entry records era, count, capital, penalty and next capital.
-- **Contested redevelopment:** the Build panel collects quick sealed bids from every eligible mayor. Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid.
+- **Contested redevelopment:** sealed bids from every eligible mayor, one at a time behind privacy screens on a shared device (see the V1.4.1 notes). Restore reserves at land plus 40% of invested cost and keeps the building; Clear & rebuild reserves at land value and starts Vacant. Highest affordable valid bid wins, with lowest seat breaking ties. Distressed players and the former owner cannot bid. Buying or opening bidding happens in the current mayor's Manage City (a City Action in the City era), never while they're in debt, and the winner's block is protected from takeovers until their next turn is done.
   - Roads can never capture an abandoned block.
 - **Loop and orphan safety:**
   - After bankruptcy the player owns nothing, so they owe no upkeep and can't fall straight back into distress.

@@ -123,7 +123,7 @@
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Solo or local play</strong>
         <span>1–4 people, one device</span>
-        <span class="title-note__ver">v1.3</span>
+        <span class="title-note__ver">v1.4.1</span>
       </aside>
     </section>
 
@@ -195,8 +195,8 @@
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:building"></span>
           <h3>Develop</h3>
-          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). Choose <strong>Develop Now</strong> or <strong>Leave Vacant</strong>; double captures are offered one at a time. During a later MANAGE CITY phase, tap your blocks to build or upgrade up to <strong>Level 3</strong>.</p>
-          <p>Costs are paid immediately. Once you choose PAVE ROAD, management ends for that turn unless you capture another block.</p>
+          <p>Claimed blocks start <strong>Vacant</strong> (Level 0). Choose <strong>Develop Now</strong> (free: a capture reward) or <strong>Leave Vacant</strong>; double captures are offered one at a time. During a later MANAGE CITY phase, tap your blocks to build or upgrade up to <strong>Level 3</strong>.</p>
+          <p>Each MANAGE CITY gives you <strong>1 Development Action</strong>: one build, upgrade, sale or redevelopment, then you must pave a road. Costs are paid immediately. Once you choose PAVE ROAD, an unused action is lost.</p>
           <p><strong>★ Bonuses:</strong> 3+ connected homes or shops form a district, parks boost the homes next to them, and a connected home + shop + park cluster earns a mixed-use bonus.</p>
         </article>
         <article class="paper howto-card">
@@ -216,12 +216,13 @@
           <span class="howto-card__icon" data-sprite="icons:restart"></span>
           <h3>Debt &amp; Bankruptcy</h3>
           <p>Every turn you pay <strong>upkeep</strong>: land tax plus building maintenance, and some emergencies add a repair bill. If this pushes you below $0, sell or downgrade buildings before playing.</p>
-          <p>If even that can't cover it, declare bankruptcy: your blocks are abandoned, the debt is wiped and you restart with recovery capital ($2,000, less each time, never below $500). You keep playing, but each bankruptcy costs more final City Value and some Prestige. Eligible mayors then submit quick sealed bids to restore or clear each abandoned property; the former owner cannot bid.</p>
+          <p>If even that can't cover it, declare bankruptcy: your blocks are abandoned, the debt is wiped and you restart with recovery capital ($2,000, less each time, never below $500). You keep playing, but each bankruptcy costs more final City Value and some Prestige. Any mayor can open sealed bidding to restore or clear an abandoned property: the device goes round and each eligible mayor bids or passes in private, then the winner is revealed. The former owner cannot bid, and if everyone passes nothing happens.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
-          <p>Paving the final road starts the <strong>City era</strong>: no more roads, <strong>4 more rounds</strong> of income, upkeep and events, and <strong>2 City Actions</strong> per turn to build, upgrade, sell or redevelop. Then choose <strong>End Turn</strong>. Clearing debt never costs an action.</p>
+          <p>Paving the final road starts the <strong>City era</strong>: no more roads, <strong>4 more rounds</strong> of income, upkeep and events, and <strong>2 City Actions</strong> per turn to build, upgrade, sell or redevelop. Then choose <strong>End Turn</strong>. Clearing debt never costs an action. The mayor who paves the final road has already used this turn's Development Action, so they just develop that capture (free) and end the turn.</p>
+          <p><strong>City view</strong> (the map button at the top) outlines your takeover targets, your blocks at risk, recently protected blocks and abandoned lots. Player cards show your <strong>Net / turn</strong>: income minus upkeep.</p>
           <p>After the last City round, highest <strong>City Value</strong> wins: all cash + 70% of land + 100% of actual construction investment + $150 per <strong>Prestige</strong> point.</p>
           <p>Ties go to more Prestige, then more development levels, then more cash, then more blocks. Awards like Most Prestigious and Greenest City go to standouts too.</p>
         </article>
@@ -301,14 +302,23 @@
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:swap"></span>Quick Handoff (skip pass screen)</span>
             <input type="checkbox" class="toggle" name="quickHandoff">
           </label>
-          <label class="setting-row">
-            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>CPU mayor speed</span>
-            <select class="select" name="cpuSpeed">
-              <option value="relaxed">Relaxed</option>
-              <option value="normal">Normal</option>
-              <option value="fast">Fast</option>
-            </select>
-          </label>
+          <!-- CPU mayors: thinking pause and turn playback share one row. -->
+          <div class="setting-row setting-row--pair">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:clock"></span>CPU mayors</span>
+            <span class="setting-row__controls">
+              <select class="select" name="cpuSpeed" aria-label="CPU mayor speed" title="How long CPU mayors think before each move">
+                <option value="relaxed">Relaxed</option>
+                <option value="normal">Normal</option>
+                <option value="fast">Fast</option>
+              </select>
+              <select class="select" name="cpuPlayback" aria-label="CPU turn playback"
+                title="Full: every step paced and announced. Brief: only captures, takeovers, bankruptcies and auctions. Instant: routine steps at once.">
+                <option value="full">Full playback</option>
+                <option value="brief">Brief playback</option>
+                <option value="instant">Instant playback</option>
+              </select>
+            </span>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -398,6 +408,9 @@
           <span class="round-badge__era" id="hud-era" data-era="expansion">Expansion</span>
         </div>
         <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
+        <button class="btn btn--icon btn--sm" id="city-view-btn" aria-pressed="false" aria-label="City view: show takeover targets, at-risk, protected and abandoned blocks" title="City view">
+          <span class="btn__icon" data-sprite="icons:map"></span>
+        </button>
         <button class="btn btn--icon btn--sm" id="mute-btn" aria-pressed="false" aria-label="Mute sound">
           <span class="btn__icon" data-sprite="icons:sound"></span>
         </button>
@@ -422,6 +435,8 @@
           <div class="economy-summary" id="economy-summary" role="status" aria-live="polite" hidden></div>
           <div class="board-frame paper" id="board-frame">
             <div class="board" id="board" role="group" aria-label="City blocks"></div>
+            <!-- CITY VIEW legend (js/ui/gameView.js applyCityView). -->
+            <ul class="influence-legend" id="influence-legend" aria-label="City view" hidden></ul>
           </div>
         </div>
 
@@ -503,6 +518,23 @@
 
       <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">
         <div class="build-panel__body" id="build-body"></div>
+      </dialog>
+
+      <dialog class="modal city-intro" id="city-intro-dialog" aria-labelledby="city-intro-title" aria-describedby="city-intro-facts">
+        <div class="city-intro__card paper">
+          <span class="city-intro__tape" aria-hidden="true"></span>
+          <p class="city-intro__eyebrow">Every road is paved</p>
+          <h3 id="city-intro-title" class="city-intro__title">The grid is complete <span class="city-intro__dash">—</span> <span class="city-intro__call">build the city</span></h3>
+          <ul class="city-intro__facts" id="city-intro-facts"></ul>
+          <p class="city-intro__note" id="city-intro-note"></p>
+          <button type="button" class="btn btn--gold" id="city-intro-go">
+            <span class="btn__icon" data-sprite="icons:building"></span><span>Build the city</span>
+          </button>
+        </div>
+      </dialog>
+
+      <dialog class="modal paper handoff-card auction" id="auction-dialog" aria-labelledby="auction-title">
+        <div class="auction__body" id="auction-body" aria-live="polite"></div>
       </dialog>
 
       <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">

@@ -353,6 +353,7 @@ test('cost modifiers change quotes and the amount charged, then revert', () => {
   game.round = 5;
   expireEvents(game);
   getBlock(game.board, 0, 1).ownerSeat = 1;
+  game.city.actionsLeft = 1; // a later Manage City
   assert.equal(quoteBuild(game, 'r0c1', 'park').cost, base);
 
   startEvent(game, 'housing-boom'); // residential ×1.25

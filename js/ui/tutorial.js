@@ -10,8 +10,9 @@ import { bus } from '../core/bus.js';
 import { PHASES } from '../core/game.js';
 import {
   TUTORIAL_STEPS, loadTutorial, saveTutorial, onNewGame, markSeen, skipTutorial, replayTutorial,
-  tipForGame, almostCompleteBlock, isRunning, stepsFor,
+  tipForGame, almostCompleteBlock, isRunning, stepsFor, cityTipForGame, cityTipsOn, isCityStep, CITY_STEP_IDS,
 } from '../core/tutorial.js';
+import { takeoverCandidates } from '../core/takeover.js';
 
 let state = loadTutorial();
 let current = null; // { id, el, moment }
@@ -33,7 +34,21 @@ const TARGETS = {
   events: () => $('#event-dialog'),
   cpu: () => visible($('#cpu-status')),
   scoring: (game) => (game?.phase === PHASES.ENDED ? $('#results-dialog') : document.querySelector('.round-badge')),
+  city: () => visible($('#hud-era')) ?? $('#turn-prompt'),
+  actions: () => visible($('#action-end-turn')) ?? $('#turn-prompt'),
+  takeover: (game) => {
+    const target = game && takeoverCandidates(game)[0];
+    return target ? document.querySelector(`#board [data-block="${target.blockId}"]`) : null;
+  },
+  redevelop: (game) => {
+    const lot = game?.board.blocks.find((b) => b.abandoned);
+    return lot ? document.querySelector(`#board [data-block="${lot.id}"]`) : null;
+  },
+  recovery: () => ($('#finance-dialog').open ? $('#finance-dialog') : document.querySelector('.player-card.is-active')),
 };
+
+/** May this tip show now? First-game tips while the tutorial runs; City tips unless it was skipped. */
+const allowed = (id) => (isCityStep(id) ? cityTipsOn(state) : isRunning(state));
 
 function persist(next) {
   const wasDone = state.status === 'done';
@@ -73,9 +88,10 @@ function show(id, { moment = false } = {}) {
   if (!target) return false;
   hide(false);
   const step = TUTORIAL_STEPS.find((s) => s.id === id);
-  const steps = stepsFor(game); // numbered among the tips that apply at this table
+  const city = isCityStep(id);
+  const steps = city ? CITY_STEP_IDS : stepsFor(game); // numbered among the tips that apply at this table
   const el = h('aside', { class: 'coach-mark sticky-note', 'aria-label': 'Tutorial tip', dataset: { step: id } },
-    h('p', { class: 'coach-mark__count' }, `Tip ${steps.indexOf(id) + 1} of ${steps.length}`),
+    h('p', { class: 'coach-mark__count' }, `${city ? 'City tip' : 'Tip'} ${steps.indexOf(id) + 1} of ${steps.length}`),
     h('p', { class: 'coach-mark__body', role: 'status' },
       h('strong', { class: 'coach-mark__title' }, step.title), ' ', step.text),
     h('div', { class: 'coach-mark__actions' },
@@ -97,9 +113,9 @@ function show(id, { moment = false } = {}) {
 /** Re-evaluates state tips after the game re-renders. */
 export function updateTutorial() {
   const game = getGame();
-  if (!isRunning(state) || !game) return hide(false);
+  if (!(isRunning(state) || cityTipsOn(state)) || !game) return hide(false);
   if (current?.moment) return undefined;
-  const id = tipForGame(state, game);
+  const id = tipForGame(state, game) ?? cityTipForGame(state, game);
   if (current && current.id !== id) hide(true); // its moment has passed
   if (!current && id) show(id);
   else if (current && !current.el.classList.contains('coach-mark--inline')) {
@@ -112,7 +128,7 @@ export function updateTutorial() {
 /** A tip tied to a moment (capture choice, first income, first event, results). */
 export function tutorialMoment(id) {
   // One note at a time: a tip already open for another moment wins (this one recurs later).
-  if (!isRunning(state) || state.seen.includes(id) || current?.moment) return;
+  if (!allowed(id) || state.seen.includes(id) || current?.moment) return;
   show(id, { moment: true });
 }
 

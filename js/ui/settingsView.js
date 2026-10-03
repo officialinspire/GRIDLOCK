@@ -21,10 +21,11 @@ export function applySettingsToDocument(s = settings) {
 
 /** Reads the controls directly: FormData would drop the disabled ones (e.g. ambience while muted). */
 function readForm(form) {
-  const raw = {};
-  for (const key of BOOLEAN_SETTINGS) raw[key] = form.elements[key].checked;
-  for (const key of VOLUME_SETTINGS) raw[key] = form.elements[key].valueAsNumber;
-  for (const key of Object.keys(CHOICE_SETTINGS)) raw[key] = form.elements[key].value;
+  // Settings without a control here (e.g. City view, toggled from the game's top bar) keep their value.
+  const raw = { ...settings };
+  for (const key of BOOLEAN_SETTINGS) if (form.elements[key]) raw[key] = form.elements[key].checked;
+  for (const key of VOLUME_SETTINGS) if (form.elements[key]) raw[key] = form.elements[key].valueAsNumber;
+  for (const key of Object.keys(CHOICE_SETTINGS)) if (form.elements[key]) raw[key] = form.elements[key].value;
   return normalizeSettings(raw);
 }
 
@@ -44,9 +45,9 @@ function syncSoundControls(form, s) {
 }
 
 function writeForm(form, s) {
-  for (const key of BOOLEAN_SETTINGS) form.elements[key].checked = s[key];
-  for (const key of VOLUME_SETTINGS) form.elements[key].value = String(s[key]);
-  for (const key of Object.keys(CHOICE_SETTINGS)) form.elements[key].value = s[key];
+  for (const key of BOOLEAN_SETTINGS) if (form.elements[key]) form.elements[key].checked = s[key];
+  for (const key of VOLUME_SETTINGS) if (form.elements[key]) form.elements[key].value = String(s[key]);
+  for (const key of Object.keys(CHOICE_SETTINGS)) if (form.elements[key]) form.elements[key].value = s[key];
   syncSoundControls(form, s);
 }
 

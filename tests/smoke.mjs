@@ -41,7 +41,7 @@ const VIEWPORTS = [
 async function playOutCityEra(page) {
   for (let i = 0; i < 80; i++) {
     if (await page.locator('#results-dialog[open]').count()) return;
-    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+    for (const [sel, click] of [['#city-intro-dialog', '#city-intro-go'], ['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
       ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
       if (await page.locator(`${sel}[open]`).count()) await page.click(click);
     }
@@ -50,6 +50,11 @@ async function playOutCityEra(page) {
     } else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn');
     else await page.waitForTimeout(50);
   }
+}
+
+/** Skips the City era transition card if it's showing (it also closes itself after a few seconds). */
+async function dismissCityIntro(page) {
+  if (await page.locator('#city-intro-dialog[open]').count()) await page.click('#city-intro-go');
 }
 
 async function dismissEvent(page) {
@@ -152,6 +157,51 @@ async function pave(page, locator) {
   await locator.click();
 }
 
+/**
+ * Plays a sealed redevelopment auction in #auction-dialog. `bids` maps a bidder's name to an
+ * amount, 'reserve' (keep the prefilled reserve) or null / missing (pass). Checks on every
+ * screen that no earlier bid amount is visible or left in an input. Returns
+ * { reveal, bidders, handoffs }: the result text, who bid in order, and the privacy screens seen.
+ */
+async function sealedAuction(page, bids = {}) {
+  const dialog = page.locator('#auction-dialog');
+  await dialog.waitFor({ state: 'visible' });
+  const placed = [];
+  const bidders = [];
+  const handoffs = [];
+  const money = (n) => `$${n.toLocaleString('en-US')}`;
+  for (let guard = 0; guard < 30; guard++) {
+    const body = await dialog.locator('#auction-body').textContent();
+    for (const amount of placed) assert.ok(!body.includes(money(amount)), `earlier bid ${money(amount)} is hidden`);
+    if (await dialog.locator('[data-auction-step="done"]').count()) {
+      await dialog.locator('[data-auction-step="done"]').click();
+      return { reveal: body, bidders, handoffs };
+    }
+    if (await dialog.locator('[data-auction-step="reveal"]').count()) {
+      await dialog.locator('[data-auction-step="reveal"]').click();
+      continue;
+    }
+    if (await dialog.locator('[data-auction-step="ready"]').count()) {
+      handoffs.push((await dialog.locator('#auction-title').textContent()).replace('Pass to ', ''));
+      await dialog.locator('[data-auction-step="ready"]').click();
+      continue;
+    }
+    const name = await dialog.locator('#auction-title').textContent();
+    bidders.push(name);
+    const input = dialog.locator('[name="bid"]');
+    const value = await input.inputValue();
+    assert.ok(!placed.some((a) => value === String(a)), 'no earlier bid left in the input');
+    const bid = bids[name] ?? null;
+    if (bid == null) await dialog.locator('[data-auction-step="pass"]').click();
+    else {
+      if (bid !== 'reserve') await input.fill(String(bid));
+      await dialog.locator('[data-auction-form] [type="submit"]').click();
+      if (bid !== 'reserve') placed.push(bid);
+    }
+  }
+  throw new Error('sealedAuction: the auction never finished');
+}
+
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
@@ -164,7 +214,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -252,7 +302,8 @@ for (const vp of VIEWPORTS) {
     await noHorizontalScroll(page, 'game');
     await shot('5-game');
 
-    assert.match(await page.textContent('#turn-prompt'), /MANAGE CITY/);
+    assert.match(await page.textContent('#turn-prompt'), /MANAGE CITY · 1 Development Action left/);
+    assert.match(await page.textContent('#hud-era'), /^Expansion · 1 action$/);
     await pave(page, road('h-0-0'));
     assert.match(await banner(), /<b>Bo<\/b>'s turn/);
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('road--red')));
@@ -286,7 +337,7 @@ for (const vp of VIEWPORTS) {
       await shot('9-event-card');
       await page.click('#event-continue');
     } else {
-      assert.match(await page.textContent('#toasts'), /Calm round/);
+      assert.match(await page.textContent('#economy-summary'), /Calm round/, 'folded into the turn summary');
     }
     assert.equal(await page.textContent('#hud-round'), '2');
 
@@ -338,7 +389,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -385,11 +436,23 @@ for (const vp of VIEWPORTS) {
     const panel = page.locator('#build-dialog');
     await page.locator('[data-block="r0c0"]').click();
     await panel.locator('[data-auction="restore"]').click();
+    const restored = await sealedAuction(page, { 'Player 4': 'reserve' });
+    assert.match(restored.reveal, /Player 4 wins!/);
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')));
-    assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel closes');
+    assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel stays closed');
+    // That auction was this EXPANSION turn's Development Action: a second one is refused.
+    assert.match(await page.textContent('#turn-prompt'), /0 Development Actions left: now Pave Road/);
+    await page.locator('[data-block="r0c1"]').click();
+    await panel.locator('[data-auction="rebuild"]').click();
+    assert.match(await page.textContent('#toasts'), /No Development Actions left/);
+    assert.ok(await page.locator('[data-block="r0c1"]').evaluate((el) => el.classList.contains('block--abandoned')));
+    await panel.locator('[data-action="close"]').click();
+    // The rest checks the Clear & Rebuild flow with actions to spare (as on a City turn).
+    await page.evaluate(() => { window.__GRIDLOCK__.getGame().city.actionsLeft = 2; });
     await page.locator('[data-block="r0c1"]').click();
     assert.equal(await panel.locator('[data-auction="restore"]').count(), 0);
     await panel.locator('[data-auction="rebuild"]').click();
+    assert.match((await sealedAuction(page, { 'Player 4': 'reserve' })).reveal, /cleared to a vacant lot/);
     assert.ok(await page.locator('[data-block="r0c1"]').evaluate((el) => el.classList.contains('block--green')), 'auction winner owns cleared lot');
     assert.ok(await panel.isVisible(), 'Clear & Rebuild reopens build selection');
     assert.equal(await panel.locator('[data-auction]').count(), 0, 'reopened on the build choices, not the auction');
@@ -410,7 +473,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -442,7 +505,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -467,7 +530,7 @@ for (const vp of VIEWPORTS) {
       await panel.locator('[data-build="residential"]').click();
     }
     assert.equal(await page.locator('#board .block--green').count(), 3);
-    const income = page.locator('.player-card[data-seat="4"] .stat--income');
+    const income = page.locator('.player-card[data-seat="4"] .stat--net');
     assert.equal(await income.getAttribute('data-normal'), '1080', '3 × ($300 + 20%)');
     assert.equal(await page.locator('#board .block__badge.has-bonus').count(), 3);
     assert.match(await page.textContent('#toasts'), /Bonus income \+\$180\/turn/);
@@ -494,7 +557,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -515,14 +578,18 @@ for (const vp of VIEWPORTS) {
     await pave(page, page.locator(`[data-road="${last}"]`));
     // The final road starts the CITY era: no Pave Road, an End Turn button and the era in the HUD.
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    await dismissCityIntro(page);
     assert.ok(await page.isHidden('#action-pave'));
     assert.ok(await page.isVisible('#action-end-turn'));
     assert.ok(await page.isHidden('.round-badge__roads'));
-    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 2 actions$/);
-    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left/);
+    // The final mover already had this turn's Development Action: no City Actions until next round.
+    assert.match(await page.textContent('#hud-era'), /^City · 4 rounds to go · 0 actions$/);
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 0 City Actions left \(this turn's Development Action came before the final road\), then End Turn/);
+    await page.click('#action-end-turn');
+    assert.match(await page.textContent('#turn-prompt'), /CITY TURN · 2 City Actions left: build, upgrade, sell or redevelop/);
     for (let turns = 0; turns < 40; turns++) {
       if (await page.evaluate(() => window.__GRIDLOCK__.getGame().phase === 'ended')) break;
-      if (turns === 4) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/);
+      if (turns === 3) assert.match(await page.textContent('#hud-era'), /^City 1\/4 · 2 actions$/); // seat 1 already ended its turn
       await page.click('#action-end-turn');
     }
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().phase === 'ended');
@@ -546,7 +613,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -577,6 +644,10 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#inspector'), /Your pressure\s*8 vs 3/);
     await pave(page, page.locator(`[data-road="${last}"]`));
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    await dismissCityIntro(page);
+    // The final mover's turn already had its Development Action: play round to its first full City turn.
+    for (let i = 0; i < 4; i++) await page.click('#action-end-turn');
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0 && window.__GRIDLOCK__.getGame().city.actionsLeft === 2);
 
     await page.click('#board [data-block="r2c2"]');
     const panel = page.locator('#build-dialog');
@@ -612,7 +683,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: browserName !== 'firefox', hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -682,11 +753,149 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Sealed redevelopment auctions on one shared device: one bidder at a time behind privacy
+// screens, bids hidden until the reveal, passes, a mayor who can only pass, a tie, invalid and
+// unaffordable bids, an all-pass auction (no action used) and a reload mid-auction.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const dialog = page.locator('#auction-dialog');
+  const game = () => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    const lot = (id) => { const b = g.board.blocks.find((x) => x.id === id); return { owner: b.ownerSeat, abandoned: b.abandoned, type: b.type }; };
+    return { cash: g.players.map((p) => p.cash), actions: g.city.actionsLeft, c3: lot('r2c2'), d4: lot('r3c3'), seat: g.players[g.turnIndex].seat };
+  });
+  try {
+    await page.goto(`${base}?seed=3&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    // Two ruins Player 4 walked away from (so Player 4 can't bid); Player 3 can't meet a reserve.
+    await page.evaluate(async () => {
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      for (const id of ['r2c2', 'r3c3']) {
+        const b = g.board.blocks.find((x) => x.id === id);
+        applyDevelopment(b, 'commercial', 1);
+        Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 4 });
+      }
+      refreshBonuses(g.board);
+      g.players[2].cash = 1000;
+      // Save the staged city, as an autosave would, so the reload below restores it.
+      const { saveActiveGame } = await import('/js/core/persistence.js');
+      if (!saveActiveGame(g, null)) throw new Error('staged game did not save');
+    });
+
+    // 1. Reload mid-auction: the auction is dropped, nothing changed, the action is still there.
+    await page.click('#board [data-block="r3c3"]');
+    const panel = page.locator('#build-dialog');
+    const lotText = await panel.textContent();
+    assert.match(lotText, /Reserve \$2,600 · steps of \$100/);
+    assert.deepEqual(await panel.locator('[data-auction-mode="restore"] [data-bidder]').evaluateAll((els) => els.map((e) => e.dataset.bidder)),
+      ['1', '2', '3'], 'bidders in turn order from the opener; the former owner sits out');
+    assert.equal(await panel.locator('input').count(), 0, 'nobody types a bid in the shared panel');
+    await panel.locator('[data-auction="restore"]').click();
+    await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 1', 'the opener bids first, no handoff');
+    await dialog.locator('[name="bid"]').fill('2800');
+    await dialog.locator('[data-auction-form] [type="submit"]').click();
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2');
+    const before = await game();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await page.locator('dialog[open]').count(), 0, 'no half-run auction comes back');
+    assert.deepEqual(await game(), before, 'nothing changed: no owner, no money moved, the action unspent');
+    assert.equal(before.actions, 1);
+
+    // 2. Everyone passes: nothing happens and no action is used.
+    await page.click('#board [data-block="r3c3"]');
+    await panel.locator('[data-auction="rebuild"]').click();
+    const allPass = await sealedAuction(page, {});
+    assert.deepEqual(allPass.bidders, ['Player 1', 'Player 2', 'Player 3']);
+    assert.deepEqual(allPass.handoffs, ['Player 2', 'Player 3']);
+    assert.match(allPass.reveal, /No valid bids.*Block D4 stays abandoned\. No action was used\./s);
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1', 'the device goes back to the mayor on turn');
+    await page.click('#handoff-ready');
+    assert.deepEqual((await game()).d4, { owner: null, abandoned: true, type: 'commercial' });
+    assert.equal((await game()).actions, 1);
+
+    // 3. A real contest: invalid and unaffordable bids are refused privately, a privacy screen
+    //    before each bidder (Escape can't skip it), a mayor who can only pass, and a tie.
+    await page.click('#board [data-block="r2c2"]');
+    await panel.locator('[data-auction="restore"]').click();
+    await dialog.waitFor({ state: 'visible' });
+    const terms = await dialog.textContent();
+    assert.match(terms, /Reserve\s*\$2,600.*Bid steps\s*\$100.*Your cash\s*\$12,000.*Your largest bid\s*\$12,000/s);
+    assert.match(terms, /Passing is always allowed/);
+    assert.equal(await page.evaluate(() => document.activeElement?.name), 'bid', 'focus starts in the bid box');
+    await dialog.locator('[name="bid"]').fill('2650');
+    await page.keyboard.press('Enter'); // keyboard submit
+    assert.match(await page.textContent('#auction-error'), /in steps of \$100/);
+    await dialog.locator('[name="bid"]').fill('50000');
+    await page.keyboard.press('Enter');
+    assert.match(await page.textContent('#auction-error'), /You only have \$12,000/);
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 1', 'still Player 1: nothing was recorded');
+    await dialog.locator('[name="bid"]').fill('3000');
+    await page.keyboard.press('Enter');
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2');
+    assert.ok(!(await dialog.textContent()).includes('3,000'), 'the bid is gone from the screen');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.auctionStep), 'ready', 'focus on the handoff button');
+    await page.keyboard.press('Escape');
+    assert.ok(await dialog.isVisible());
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2', 'Escape doesn\'t skip the privacy screen');
+    await page.keyboard.press('Enter'); // "I'm Player 2"
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 2');
+    assert.ok(!(await dialog.textContent()).includes('3,000'), 'Player 2 never sees Player 1\'s bid');
+    await dialog.locator('[name="bid"]').fill('3000'); // a tie
+    await dialog.locator('[data-auction-form] [type="submit"]').click();
+    await dialog.locator('[data-auction-step="ready"]').click();
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 3');
+    assert.match(await dialog.textContent(), /can't meet the \$2,600 reserve: you can only pass/);
+    assert.ok(await dialog.locator('[name="bid"]').isDisabled());
+    assert.equal(await dialog.locator('[data-auction-form] [type="submit"]').count(), 0);
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.auctionStep), 'pass');
+    await dialog.locator('[data-auction-step="pass"]').click();
+    assert.match(await dialog.textContent(), /All bids are in/);
+    assert.deepEqual((await game()).c3, { owner: null, abandoned: true, type: 'commercial' }, 'nothing changes before the reveal');
+    await dialog.locator('[data-auction-step="reveal"]').click();
+    const reveal = await dialog.textContent();
+    assert.match(reveal, /Player 1 wins!/);
+    assert.match(reveal, /Price \$3,000 · reserve \$2,600/);
+    assert.match(reveal, /Block C3 now belongs to Player 1, its building restored\./);
+    assert.match(reveal, /2 valid bids, 1 pass\. Tie at \$3,000: the lowest seat wins\./);
+    const after = await game();
+    assert.deepEqual(after.c3, { owner: 1, abandoned: false, type: 'commercial' });
+    assert.deepEqual(after.cash, [9000, 12000, 1000, 12000], 'only the winner pays');
+    assert.equal(after.actions, 0, 'the auction was Player 1\'s Development Action');
+    // Saved at resolution: a reload now keeps the result.
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game.board.blocks.find((b) => b.id === 'r2c2').ownerSeat), 1);
+    await page.keyboard.press('Escape'); // Escape continues from the result
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1');
+    await page.click('#handoff-ready');
+    assert.equal(await page.locator('dialog[open]').count(), 0);
+    assert.match(await page.textContent('#turn-prompt'), /0 Development Actions left: now Pave Road/, 'the turn carries on');
+    assert.deepEqual(errors, []);
+    console.log('✔ sealed auction: privacy screens, hidden bids, passes, can-only-pass, tie, invalid bids, all-pass, reload');
+  } catch (err) {
+    failures++;
+    console.error(`✘ sealed auction: ${err.message}`);
+    await page.screenshot({ path: 'test-results/sealed-auction-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 // Persistence survives reload and can be abandoned safely.
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -719,7 +928,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -739,7 +948,7 @@ for (const vp of VIEWPORTS) {
       await pave(page, page.locator(`[data-road="${id}"]`));
       await dismissEvent(page);
     }
-    assert.match(await page.locator('#economy-summary').textContent(), /Gross Income.*Upkeep.*Net/);
+    assert.match(await page.locator('#economy-summary').textContent(), /Net [+−]\$[\d,]+ · Income \+\$[\d,]+ − Upkeep \$[\d,]+/);
     assert.deepEqual(errors, []);
     console.log('✔ money animation');
   } catch (err) {
@@ -757,7 +966,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -901,7 +1110,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1057,7 +1266,7 @@ const recordVibration = () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   await context.addInitScript(recordVibration);
-  await context.addInitScript(() => localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'));
+  await context.addInitScript(() => localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -1251,7 +1460,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1343,7 +1552,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1382,8 +1591,11 @@ const recordVibration = () => {
 
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
     await newGame('Classic', 2);
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       for (let i = 0; i < 400; i++) {
+        // The City era card: skipped as a player would; its close (and the final capture's choice) follows.
+        const intro = document.querySelector('#city-intro-dialog[open] #city-intro-go');
+        if (intro) { intro.click(); await new Promise((r) => setTimeout(r, 30)); continue; }
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
         if (vacant) { vacant.click(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
@@ -1443,7 +1655,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1509,6 +1721,7 @@ const recordVibration = () => {
       const g = window.__GRIDLOCK__.getGame();
       g.turnPhase = 'manage-city'; // stage P4's Manage City to reach the upgrade card
       g.pendingCaptures = [];
+      g.city.actionsLeft = g.city.expansionActions; // with its Development Action
     });
     await page.click('#board [data-block="r0c0"]');
     const card = panel.locator('.upgrade-card .forecast');
@@ -1537,7 +1750,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1705,7 +1918,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1777,6 +1990,163 @@ const recordVibration = () => {
   } finally {
     await context.close();
   }
+
+  // City era UX: the transition card, City tips, the single turn summary, Net / turn, CITY VIEW,
+  // the new settings, and an accessibility audit of each, all under reduced motion; then CPU
+  // Instant playback. Desktop and phone.
+  for (const vp of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+    const cityContext = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.isMobile, hasTouch: vp.hasTouch, reducedMotion: 'reduce' });
+    await cityContext.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    await cityContext.addInitScript(() => {
+      if (sessionStorage.getItem('gl-city-init')) return;
+      sessionStorage.setItem('gl-city-init', '1');
+      // Finished first-game tips: the City tips still come (once each).
+      localStorage.setItem('gridlock.tutorial.v1', JSON.stringify({ status: 'done', seen: ['manage', 'pave', 'complete', 'develop', 'bonus', 'income', 'events', 'scoring'] }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    });
+    const city = await cityContext.newPage();
+    const cityErrors = watchForBrowserErrors(city);
+    const cityProblems = [];
+    const cityCheck = async (label) => {
+      cityProblems.push(...await audit(city, `${vp.name} ${label}`));
+      const moving = await stillMoving(city);
+      if (moving.length) cityProblems.push(`${vp.name} ${label}: animating under reduced motion (${moving.join(', ')})`);
+    };
+    const tip = (id) => city.locator(`.coach-mark[data-step="${id}"]`);
+    try {
+      await city.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
+      await city.getByRole('button', { name: 'Local Multiplayer' }).click();
+      await city.click('#setup-start');
+      const last = await city.evaluate(async () => {
+        const { allRoadIds, getBlockById } = await import('/js/core/board.js');
+        const { applyDevelopment } = await import('/js/core/development.js');
+        const { refreshBonuses } = await import('/js/core/bonuses.js');
+        const g = window.__GRIDLOCK__.getGame();
+        g.eventPool = [];
+        const ids = allRoadIds(g.board);
+        ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+        // Seat 1's Market and Corner Store press on seat 2's House; the rest are ruins.
+        for (const [id, seat, type, level] of [['r2c2', 2, 'residential', 1], ['r2c3', 1, 'commercial', 2], ['r1c2', 1, 'commercial', 1], ['r4c4', 3, 'industrial', 1]]) {
+          Object.assign(getBlockById(g.board, id), { ownerSeat: seat });
+          applyDevelopment(getBlockById(g.board, id), type, level);
+        }
+        for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 4; }
+        refreshBonuses(g.board);
+        return ids.at(-1);
+      });
+
+      // 1. The final road: the papercraft City era card, skippable, with rounds and actions.
+      await city.click(`#board [data-road="${last}"]`);
+      const intro = city.locator('#city-intro-dialog');
+      await intro.waitFor({ state: 'visible' });
+      const card = await intro.textContent();
+      assert.match(card, /The grid is complete — build the city/);
+      assert.match(card, /4 City rounds to go/);
+      assert.match(card, /2 City Actions per turn/);
+      assert.match(card, /Player 1 paved the final road/);
+      assert.equal(await city.evaluate(() => getComputedStyle(document.querySelector('.city-intro__title')).textTransform), 'uppercase');
+      assert.equal(await city.evaluate(() => document.activeElement?.id), 'city-intro-go', 'focus on the Build the city button');
+      await cityCheck('city intro');
+      await city.keyboard.press('Escape');
+      await intro.waitFor({ state: 'hidden' });
+      assert.match(await city.textContent('#turn-prompt'), /0 City Actions left/);
+
+      // 2. The next mayor's first City turn: one turn summary, Net / turn on the HUD, City tips.
+      await city.click('#action-end-turn');
+      const summary = await city.textContent('#economy-summary');
+      assert.match(summary, /Player 2 · Net [+−]\$[\d,]+ · Income \+\$[\d,]+ − Upkeep \$[\d,]+/);
+      assert.doesNotMatch(await city.textContent('#toasts'), /upkeep|income/i, 'no separate income toast');
+      const net = city.locator('.player-card[data-seat="2"] .stat--net');
+      assert.equal(await net.locator('dt').textContent(), 'Net / turn');
+      assert.match(await net.getAttribute('title'), /income \+\$[\d,]+ − upkeep \$[\d,]+/);
+      await tip('city').waitFor();
+      assert.match(await tip('city').textContent(), /City tip 1 of 5.*City era.*2 City Actions/s);
+      await cityCheck('city tip');
+      await tip('city').getByRole('button', { name: 'Got it' }).click();
+      await tip('redevelop').waitFor();
+      assert.match(await tip('redevelop').textContent(), /Abandoned property.*sealed bidding/s);
+      await tip('redevelop').getByRole('button', { name: 'Got it' }).click();
+
+      // 3. CITY VIEW: Player 2 sees its House at risk and the ruins; nothing else stands out.
+      await city.click('#city-view-btn');
+      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true');
+      assert.ok(await city.isVisible('#influence-legend'));
+      assert.equal(await city.getAttribute('#board [data-block="r2c2"]', 'data-influence'), 'risk');
+      assert.match(await city.getAttribute('#board [data-block="r2c2"]', 'aria-description'), /at risk/);
+      assert.ok(await city.locator('#board [data-influence="abandoned"]').count() > 10);
+      assert.equal(await city.locator('#board [data-block="r4c4"][data-influence]').count(), 0, 'a safe block is left plain');
+      assert.match(await city.textContent('#influence-legend'), /Takeover target 0.*At risk 1.*Protected 0.*Abandoned \d+/);
+      await cityCheck('city view');
+      // Round to Player 1: the same House is now its takeover target, and the takeover tip says so.
+      for (let i = 0; i < 3; i++) await city.click('#action-end-turn');
+      await city.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0);
+      assert.equal(await city.getAttribute('#board [data-block="r2c2"]', 'data-influence'), 'target');
+      await tip('takeover').waitFor();
+      assert.match(await tip('takeover').textContent(), /Hostile takeover.*125%/s);
+      await tip('takeover').getByRole('button', { name: 'Got it' }).click();
+      await city.click('#city-view-btn');
+      assert.equal(await city.isVisible('#influence-legend'), false);
+      assert.equal(await city.locator('#board [data-influence]').count(), 0);
+
+      // 4. Settings: CPU speed and playback share the CPU mayors row; City view is remembered.
+      await city.click('.game-topbar [data-nav="settings"]');
+      assert.deepEqual(await city.locator('[name="cpuPlayback"] option').evaluateAll((els) => els.map((o) => o.value)), ['full', 'brief', 'instant']);
+      assert.equal(await city.getAttribute('[name="cpuPlayback"]', 'aria-label'), 'CPU turn playback');
+      await city.selectOption('[name="cpuPlayback"]', 'brief');
+      await cityCheck('settings');
+      await city.click('[data-screen="settings"] [data-nav="back"]');
+      await city.click('#city-view-btn');
+      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true');
+      assert.deepEqual(await city.evaluate(() => {
+        const saved = JSON.parse(localStorage.getItem('gridlock.settings.v1'));
+        return [saved.cityView, saved.cpuPlayback];
+      }), [true, 'brief'], 'both saved');
+      assert.ok(await city.isVisible('#influence-legend'));
+      await noHorizontalScroll(city, `${vp.name} city view`);
+      assert.deepEqual(cityProblems, [], 'accessibility problems');
+      assert.deepEqual(cityErrors, []);
+      console.log(`✔ ${vp.name}: City era card, City tips, turn summary, Net / turn, City view and settings (a11y, reduced motion)`);
+    } catch (err) {
+      failures++;
+      console.error(`✘ ${vp.name} City era UX: ${err.message}`);
+      await city.screenshot({ path: `test-results/city-ux-${vp.name}-FAIL.png` }).catch(() => {});
+    } finally {
+      await cityContext.close();
+    }
+  }
+
+  // CPU playback: Instant runs the bots' routine steps at once and keeps their routine toasts quiet.
+  const instantContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await instantContext.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await instantContext.addInitScript(() => {
+    if (sessionStorage.getItem('gl-instant-init')) return;
+    sessionStorage.setItem('gl-instant-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"skipped"}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, cpuSpeed: 'relaxed', cpuPlayback: 'instant' }));
+  });
+  const fast = await instantContext.newPage();
+  const fastErrors = watchForBrowserErrors(fast);
+  try {
+    await fast.goto(`${base}?seed=4&debug`, { waitUntil: 'networkidle' });
+    await fast.getByRole('button', { name: 'Play Solo' }).click();
+    await fast.click('#setup-start');
+    await fast.evaluate(() => { window.__GRIDLOCK__.getGame().eventPool = []; });
+    const started = Date.now();
+    await fast.click('#board [data-road="h-6-5"]'); // a quiet road: three bots play
+    await fast.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0 && window.__GRIDLOCK__.getGame().round === 2, null, { timeout: 15_000 });
+    const elapsed = Date.now() - started;
+    // Relaxed Full playback would pause 1.1 s before every step (at least three roads).
+    assert.ok(elapsed < 3000, `three bot turns took ${elapsed} ms`);
+    assert.doesNotMatch(await fast.textContent('#toasts'), /builds|leaves .* vacant/, 'routine bot steps stay quiet');
+    assert.deepEqual(fastErrors, []);
+    console.log(`✔ CPU playback Instant: three bot turns in ${elapsed} ms, routine steps quiet`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU playback Instant: ${err.message}`);
+    await fast.screenshot({ path: 'test-results/cpu-instant-FAIL.png' }).catch(() => {});
+  } finally {
+    await instantContext.close();
+  }
 }
 
 // Seat controllers: Solo / Local Friends / Mixed presets, CPU difficulty, validation, and the
@@ -1787,7 +2157,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1892,7 +2262,7 @@ const recordVibration = () => {
     await context.addInitScript((initial) => {
       if (!sessionStorage.getItem('gl-test-init')) {
         sessionStorage.setItem('gl-test-init', '1');
-        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
         localStorage.setItem('gridlock.settings.v1', JSON.stringify(initial));
       }
       // Record every dialog that opens, to prove which screens were (not) shown.
@@ -1910,7 +2280,7 @@ const recordVibration = () => {
   });
   /** A person's move: clear any dialog in the way, then pave the road a Normal CPU would pick. */
   async function humanStep(page) {
-    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+    for (const [sel, click] of [['#city-intro-dialog', '#city-intro-go'], ['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
       ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
       if (await page.locator(`${sel}[open]`).count()) return page.click(click);
     }
@@ -2093,15 +2463,17 @@ const recordVibration = () => {
     await auction.waitFor();
     assert.deepEqual(await auction.locator('[data-cpu-bidder]').evaluateAll((els) => els.map((e) => e.dataset.cpuBidder)), ['4'],
       'Hard bot bids sealed (the Easy bot abandoned it, so it can\'t)');
-    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /Sealed bid/);
-    await auction.locator('[name="bid-1"]').fill('');
-    await auction.locator('[name="bid-3"]').fill('');
+    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /CPU, sealed bid/);
     await auction.locator('[data-auction="restore"]').click();
+    const mixedAuction = await sealedAuction(mixed, {}); // both people pass
+    assert.deepEqual([...mixedAuction.bidders].sort(), ['Player 1', 'Player 3'], 'each person bids alone; the bot never gets a bid screen');
+    assert.deepEqual(mixedAuction.handoffs, mixedAuction.bidders.slice(1), 'a privacy screen before the second person');
+    assert.match(mixedAuction.reveal, /Mayor Bot 2 wins!/);
     assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
+    if (await mixed.locator('#handoff-dialog[open]').count()) await mixed.click('#handoff-ready'); // back to the opener
     // The inspector names the bot's difficulty and personality.
     await mixed.click('#board [data-block="r5c5"]');
     assert.match(await mixed.textContent('#inspector'), /Mayor Bot 2 \(CPU · Hard · Tycoon\)/);
-    assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
 
     // (The Solo run plays a whole city to the results; this one stops here to keep CI quick.)
     assert.deepEqual(mixedErrors, []);
@@ -2139,17 +2511,20 @@ const recordVibration = () => {
       refreshBonuses(g.board);
     });
     await bidPage.click('#board [data-road="h-0-0"]'); // Player 1 paves → the Hard bot's turn
-    await bidPage.locator('#build-dialog [data-auction-mode="restore"]').waitFor({ timeout: 15_000 });
+    await bidPage.locator('#auction-dialog').waitFor({ state: 'visible', timeout: 15_000 });
     assert.match(await bidPage.textContent('#toasts'), /Mayor Bot 1 opens bidding on abandoned Block C3/);
-    assert.equal(await bidPage.locator('#build-dialog [data-cpu-bidder="2"]').count() > 0, true, 'the bot\'s own bid is sealed');
+    assert.match(await bidPage.textContent('#auction-dialog'), /opened by Mayor Bot 1/);
     assert.deepEqual(await state(bidPage).then((x) => x.roads), 1, 'the bot waits while people can bid');
-    await bidPage.click('#build-dialog [data-action="close"]'); // Player 1 passes
+    const cpuAuction = await sealedAuction(bidPage, {}); // Player 1 passes
+    assert.deepEqual(cpuAuction.bidders, ['Player 1'], 'only Player 1 may bid (Player 3 abandoned it)');
+    assert.deepEqual(cpuAuction.handoffs, [], 'Player 1 already holds the device');
+    assert.match(cpuAuction.reveal, /Mayor Bot 1 wins!/);
     await bidPage.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
     const lot = await bidPage.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r2c2'));
     assert.deepEqual([lot.ownerSeat, lot.abandoned], [2, false], 'the bot won its own auction');
     assert.equal(await bidPage.textContent('#handoff-title'), 'Pass to Player 3', 'then finished its turn');
     assert.deepEqual(bidErrors, []);
-    console.log('✔ CPU opens redevelopment bidding: people can bid, leaving passes, the bot plays on');
+    console.log('✔ CPU opens redevelopment bidding: people bid sealed or pass, the bot plays on');
   } catch (err) {
     failures++;
     console.error(`✘ CPU opens bidding: ${err.message}`);
@@ -2291,7 +2666,7 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false, cpuSpeed: 'fast' }));
     }
     window.__opened = [];
@@ -2368,7 +2743,7 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
@@ -2487,7 +2862,7 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
