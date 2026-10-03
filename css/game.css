@@ -1768,6 +1768,22 @@ html[data-coords='on'] .block__coord { display: block; }
 .cpu-status .btn { flex: 0 0 auto; min-height: 44px; }
 #cpu-faster[aria-pressed='true'] { background-color: #fdf0c4; }
 .auction-bid--cpu { margin: 0; font-weight: 800; }
+/* Sealed-bid auction (js/ui/auctionView.js): one bidder at a time on a shared device. */
+.auction { width: min(440px, calc(100vw - 28px)); }
+.auction__lot { margin: 0 0 10px; font-size: 0.85rem; color: var(--ink-soft); }
+.auction__terms { display: grid; grid-template-columns: auto auto; justify-content: center; gap: 4px 14px; margin: 0 0 12px; text-align: left; }
+.auction__terms dt { color: var(--ink-soft); }
+.auction__terms dd { margin: 0; font-weight: 800; }
+.auction__form { display: grid; gap: 8px; justify-items: center; }
+.auction__form .auction-bid { max-width: 260px; }
+.auction__form input { min-height: 44px; font-size: 1.1rem; }
+.auction__note { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
+.auction__error { margin: 0; min-height: 1.2em; font-size: 0.85rem; font-weight: 800; color: var(--red-deep); }
+.auction__error:empty { min-height: 0; }
+.auction__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.auction__actions .btn { min-height: 44px; }
+.auction__price { font-size: 1.2rem; font-weight: 900; }
+.acquire-option__bidders { margin: 0; padding: 0; list-style: none; font-size: 0.8rem; color: var(--ink-soft); }
 .auction-bid__sealed { justify-self: end; font-style: italic; color: var(--ink-soft); }
 /* The card's second line: "CPU · Hard · Tycoon" for bots, "Human" for people (every card has
    one, so cards line up). Names scale down on narrow cards instead of being cut short. */

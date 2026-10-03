@@ -56,6 +56,9 @@ export const FIN_ERRORS = Object.freeze({
   BAD_MODE: 'bad-mode',
   NO_ACTIONS: 'no-city-actions', // CITY era: this turn's City Actions are spent
   WRONG_PHASE: 'wrong-turn-phase', // voluntary finance actions need Manage City
+  BAD_BID: 'bad-bid', // not a whole-dollar bid at the reserve plus a multiple of the increment, or a second bid
+  NOT_BIDDER: 'not-a-bidder', // no such mayor at the table
+  NO_BIDS: 'no-valid-bids', // an auction everyone passed (or nobody could pay): nothing happens
 });
 
 /**
@@ -251,43 +254,102 @@ export function quoteAcquire(game, blockId, mode) {
 }
 
 /**
+ * Why the current mayor can't open bidding on `blockId` right now (null: they can). The same
+ * checks resolution makes, so an auction that opens can always be settled: opening changes
+ * nothing, and an auction everyone passes settles with no effect (no action spent), so it can
+ * never leave a turn stuck.
+ */
+export function auctionOpenError(game, blockId, mode) {
+  const block = getBlockById(game.board, blockId);
+  if (game.phase !== PHASES.PLAYING) return FIN_ERRORS.GAME_OVER;
+  if (!block?.abandoned || block.ownerSeat != null) return FIN_ERRORS.NOT_ABANDONED;
+  if (!Object.values(ACQUIRE_MODES).includes(mode)) return FIN_ERRORS.BAD_MODE;
+  if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return FIN_ERRORS.NOT_DEVELOPED;
+  // Opening an auction is the current mayor's Manage City action (a City Action in the CITY
+  // era), whoever wins it, and like any purchase it waits until their debt is cleared.
+  if (isInDistress(currentPlayer(game))) return FIN_ERRORS.IN_DISTRESS;
+  return voluntaryCheck(game);
+}
+
+/**
+ * Everyone who may bid on `blockId`, in turn order starting from the current mayor (the opener
+ * bids first if eligible): former owners and mayors in debt sit out.
+ */
+export function auctionBidders(game, blockId) {
+  const block = getBlockById(game.board, blockId);
+  if (!block) return [];
+  const eligible = new Set(eligibleRedevelopers(game, block).map((p) => p.seat));
+  const n = game.players.length;
+  return Array.from({ length: n }, (_, k) => game.players[(game.turnIndex + k) % n]).filter((p) => eligible.has(p.seat));
+}
+
+/** Why `bid` from `seat` can't count (null: it's valid). `bid` null or undefined is a pass, always allowed. */
+export function validateAuctionBid(game, blockId, mode, seat, bid) {
+  const block = getBlockById(game.board, blockId);
+  const player = game.players.find((p) => p.seat === seat);
+  if (!block) return FIN_ERRORS.NO_BLOCK;
+  if (!player) return FIN_ERRORS.NOT_BIDDER;
+  if (bid == null) return null;
+  if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) return FIN_ERRORS.FORMER_OWNER;
+  if (isInDistress(player)) return FIN_ERRORS.IN_DISTRESS;
+  const { reserve } = redevelopmentPrice(block, mode);
+  if (!Number.isSafeInteger(bid) || bid < reserve || (bid - reserve) % FIN.REDEVELOPMENT.MIN_BID_INCREMENT !== 0) return FIN_ERRORS.BAD_BID;
+  if (!canAfford(player, bid)) return FIN_ERRORS.INSUFFICIENT_FUNDS;
+  return null;
+}
+
+/**
+ * One mayor's private bidding terms: { ok, error?, reserve, land, restore, increment, cash,
+ * maxBid, canBid, canPass }. maxBid is the largest valid bid they can afford (null if they
+ * can't meet the reserve, when passing is their only choice). Passing is always allowed.
+ */
+export function auctionTerms(game, blockId, mode, seat) {
+  const block = getBlockById(game.board, blockId);
+  const player = game.players.find((p) => p.seat === seat);
+  if (!block || !player || !Object.values(ACQUIRE_MODES).includes(mode)) {
+    return { ok: false, error: !player ? FIN_ERRORS.NOT_BIDDER : !block ? FIN_ERRORS.NO_BLOCK : FIN_ERRORS.BAD_MODE };
+  }
+  const { land, restore, reserve } = redevelopmentPrice(block, mode);
+  const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
+  const barred = (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === seat) ? FIN_ERRORS.FORMER_OWNER
+    : isInDistress(player) ? FIN_ERRORS.IN_DISTRESS : null;
+  const maxBid = !barred && player.cash >= reserve ? reserve + Math.floor((player.cash - reserve) / increment) * increment : null;
+  return {
+    ok: !barred, ...(barred && { error: barred }), reserve, land, restore, increment, cash: player.cash,
+    maxBid, canBid: maxBid != null, canPass: true,
+  };
+}
+
+/**
  * Resolve a fast sealed-bid redevelopment contest. Invalid, unaffordable and
  * former-owner bids are reported but cannot win. Highest bid wins; configured
- * seat order resolves ties deterministically.
+ * seat order resolves ties deterministically (`tied` says it did). With no valid
+ * bid nothing happens ({ ok:false, error: NO_BIDS }) and no action is spent.
  */
 export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   const block = getBlockById(game.board, blockId);
-  if (game.phase !== PHASES.PLAYING) return { ok: false, error: FIN_ERRORS.GAME_OVER };
-  if (!block?.abandoned || block.ownerSeat != null) return { ok: false, error: FIN_ERRORS.NOT_ABANDONED };
-  if (!Object.values(ACQUIRE_MODES).includes(mode)) return { ok: false, error: FIN_ERRORS.BAD_MODE };
-  if (mode === ACQUIRE_MODES.RESTORE && !isDeveloped(block)) return { ok: false, error: FIN_ERRORS.NOT_DEVELOPED };
-  // Opening an auction is the current mayor's Manage City action (a City Action in the CITY
-  // era), whoever wins it, and like any purchase it waits until their debt is cleared.
-  if (isInDistress(currentPlayer(game))) return { ok: false, error: FIN_ERRORS.IN_DISTRESS };
-  const notNow = voluntaryCheck(game);
-  if (notNow) return { ok: false, error: notNow };
+  const notOpen = auctionOpenError(game, blockId, mode);
+  if (notOpen) return { ok: false, error: notOpen };
   const { land, restore, reserve } = redevelopmentPrice(block, mode);
-  const increment = FIN.REDEVELOPMENT.MIN_BID_INCREMENT;
   const rejected = [];
   const valid = [];
   const seen = new Set();
   for (const offer of Array.isArray(bids) ? bids : []) {
     const player = game.players.find((p) => p.seat === offer?.seat);
     const bid = offer?.bid;
-    let error = null;
-    if (!player || seen.has(player.seat)) error = FIN_ERRORS.BAD_MODE;
-    else if (!FIN.FORMER_OWNER_MAY_BUY && block.abandonedBy === player.seat) error = FIN_ERRORS.FORMER_OWNER;
-    else if (isInDistress(player)) error = FIN_ERRORS.IN_DISTRESS;
-    else if (!Number.isSafeInteger(bid) || bid < reserve || (bid - reserve) % increment !== 0) error = FIN_ERRORS.BAD_MODE;
-    else if (!canAfford(player, bid)) error = FIN_ERRORS.INSUFFICIENT_FUNDS;
+    if (bid == null && player && !seen.has(player.seat)) { seen.add(player.seat); continue; } // a pass
+    const error = !player ? FIN_ERRORS.NOT_BIDDER
+      : seen.has(player.seat) ? FIN_ERRORS.BAD_BID
+        : validateAuctionBid(game, blockId, mode, player.seat, bid);
     seen.add(player?.seat);
     if (error) rejected.push({ seat: offer?.seat, bid, error });
     else valid.push({ player, bid });
   }
-  if (!valid.length) return { ok: false, error: FIN_ERRORS.INSUFFICIENT_FUNDS, reserve, land, restore, rejected };
+  if (!valid.length) return { ok: false, error: FIN_ERRORS.NO_BIDS, reserve, land, restore, rejected };
   const seatOrder = FIN.REDEVELOPMENT.TIE_BREAKER === 'highest-seat' ? -1 : 1;
   valid.sort((a, b) => b.bid - a.bid || seatOrder * (a.player.seat - b.player.seat));
   const winner = valid[0];
+  const tied = valid.filter((v) => v.bid === winner.bid).length > 1;
   spendCityAction(game);
   debit(game, winner.player, winner.bid, TXN.ACQUIRE, { block: block.id, mode, auction: true });
   block.ownerSeat = winner.player.seat;
@@ -300,7 +362,7 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   game.log.push({ type: 'redevelopment-auction', seat: winner.player.seat, block: block.id, mode, bid: winner.bid });
   return {
     ok: true, block: block.id, mode, winnerSeat: winner.player.seat, cost: winner.bid, reserve, land, restore, rejected,
-    shieldedUntil: block.shieldedUntil,
+    shieldedUntil: block.shieldedUntil, tied, bidCount: valid.length,
   };
 }
 

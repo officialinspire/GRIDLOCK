@@ -216,7 +216,7 @@
           <span class="howto-card__icon" data-sprite="icons:restart"></span>
           <h3>Debt &amp; Bankruptcy</h3>
           <p>Every turn you pay <strong>upkeep</strong>: land tax plus building maintenance, and some emergencies add a repair bill. If this pushes you below $0, sell or downgrade buildings before playing.</p>
-          <p>If even that can't cover it, declare bankruptcy: your blocks are abandoned, the debt is wiped and you restart with recovery capital ($2,000, less each time, never below $500). You keep playing, but each bankruptcy costs more final City Value and some Prestige. Eligible mayors then submit quick sealed bids to restore or clear each abandoned property; the former owner cannot bid.</p>
+          <p>If even that can't cover it, declare bankruptcy: your blocks are abandoned, the debt is wiped and you restart with recovery capital ($2,000, less each time, never below $500). You keep playing, but each bankruptcy costs more final City Value and some Prestige. Any mayor can open sealed bidding to restore or clear an abandoned property: the device goes round and each eligible mayor bids or passes in private, then the winner is revealed. The former owner cannot bid, and if everyone passes nothing happens.</p>
         </article>
         <article class="paper howto-card">
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
@@ -503,6 +503,10 @@
 
       <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">
         <div class="build-panel__body" id="build-body"></div>
+      </dialog>
+
+      <dialog class="modal paper handoff-card auction" id="auction-dialog" aria-labelledby="auction-title">
+        <div class="auction__body" id="auction-body" aria-live="polite"></div>
       </dialog>
 
       <dialog class="modal paper results" id="results-dialog" aria-labelledby="results-heading">

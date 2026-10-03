@@ -5,7 +5,7 @@ import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
 import {
   createGame, placeRoad, currentPlayer, getPlayer, MOVE_ERRORS, PHASES, TURN_PHASES, ERAS,
-  startPaving, resolveCapture, endCityTurn, eraStatus,
+  startPaving, resolveCapture, endCityTurn, eraStatus, outOfCityActions,
 } from '../core/game.js';
 import { getBlockById, DISTRICTS, builtSides, roadBlocks } from '../core/board.js';
 import { describeDevelopment, getCategory } from '../core/buildings.js';
@@ -37,11 +37,12 @@ import { getSettings, updateSettings } from './settingsView.js';
 import { saveActiveGame, loadActiveGame, clearActiveGame } from '../core/persistence.js';
 import { isCpu, controllerLabel } from '../core/seats.js';
 import { chooseRoad } from '../core/cpu/roads.js';
-import { chooseCityAction, cpuBids } from '../core/cpu/city.js';
+import { chooseCityAction } from '../core/cpu/city.js';
 import { buildOnBlock, upgradeBlock } from '../core/development.js';
 import {
-  downgradeBlock, sellDevelopment, declareBankruptcy, resolveRedevelopmentAuction, eligibleRedevelopers,
+  downgradeBlock, sellDevelopment, declareBankruptcy, ACQUIRE_MODES,
 } from '../core/finance.js';
+import { initAuctionView, startAuction, cancelAuction } from './auctionView.js';
 import { takeoverBlock } from '../core/takeover.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 
@@ -54,7 +55,6 @@ let game = null;
 let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
 let lastHuman = null; // seat of the last person to have the device (for handoffs)
-let cpuAuction = null; // { blockId, mode } while people bid in an auction a CPU mayor opened
 
 export const getGame = () => game;
 
@@ -223,7 +223,6 @@ function render() {
 /** Re-render after a build/upgrade/sale and celebrate any new bonus income. */
 function handleDevelopment(change) {
   const { bonusBefore } = change;
-  if (change.winnerSeat != null) cpuAuction = null; // people settled the CPU's auction in the panel
   const captured = game.turnPhase === TURN_PHASES.CAPTURE_DEVELOP ? game.pendingCaptures[0] : null;
   if (captured) resolveCapture(game, captured);
   autosave();
@@ -279,8 +278,6 @@ function showHandoff(player, onReady) {
 }
 
 function leaveCapturedBlock(blockId) {
-  // People leaving an auction a CPU mayor opened are passing: the CPU bids decide it.
-  if (cpuAuction?.blockId === blockId) return settleCpuAuction();
   if (!game || game.turnPhase !== TURN_PHASES.CAPTURE_DEVELOP || game.pendingCaptures[0] !== blockId) return;
   resolveCapture(game, blockId);
   autosave();
@@ -534,15 +531,38 @@ function passTurn(result, mover) {
 
 const bonusTotal = (seat) => game.board.blocks.filter((b) => b.ownerSeat === seat).reduce((s, b) => s + bonusIncome(b), 0);
 
-/** Settles an auction a CPU mayor opened: CPU sealed bids plus whatever people entered (none if they left). */
-function settleCpuAuction(humanBids = []) {
-  if (!cpuAuction || !game) return;
-  const { blockId, mode } = cpuAuction;
-  cpuAuction = null;
-  const result = resolveRedevelopmentAuction(game, blockId, mode, [...cpuBids(game, blockId, mode), ...humanBids]);
+/**
+ * Runs a sealed redevelopment auction opened by the current mayor (person or CPU): each person
+ * at the table bids alone behind a privacy screen (js/ui/auctionView.js), CPU bids stay hidden,
+ * then the result is revealed. Nothing changes until it resolves, and an all-pass auction
+ * changes nothing, so the turn always carries on. Afterwards the device goes back to the mayor
+ * on turn (a handoff if someone else bid last), and a person who just cleared a lot on their
+ * own turn goes straight to the build choices if they still have an action.
+ */
+function runAuction(blockId, mode) {
+  const opener = currentPlayer(game);
+  startAuction(game, {
+    blockId, mode, holderSeat: isCpu(opener) ? lastHuman : opener.seat,
+    onDone: (result, { holder }) => {
+      if (!game) return;
+      if (holder != null) lastHuman = holder;
+      const me = currentPlayer(game);
+      const buildNow = () => {
+        render();
+        if (result.ok && result.mode === ACQUIRE_MODES.REBUILD && result.winnerSeat === me.seat && !isCpu(me)
+          && !outOfCityActions(game)) openBuildPanel(game, result.block);
+      };
+      if (!isCpu(me) && needsHandoff(me)) showHandoff(me, buildNow);
+      else buildNow();
+    },
+  });
+}
+
+/** Right after an auction resolves: save, redraw and sound off (the dialog shows the details). */
+function auctionSettled(result) {
   if (result.ok) {
-    toast(`${getPlayer(game, result.winnerSeat).name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
     play('coins');
+    clearSelection();
   }
   autosave();
   render();
@@ -671,13 +691,10 @@ function cpuPlan(g) {
         text: `Opening bidding on abandoned ${label(d.blockId)}`,
         target: blockTarget(d.blockId),
         run: () => {
-          cpuAuction = { blockId: d.blockId, mode: d.mode };
           const block = getBlockById(g.board, d.blockId);
-          const people = eligibleRedevelopers(g, block).filter((p) => !isCpu(p));
           toast(`${me.name} opens bidding on abandoned Block ${block.label}`);
-          // People at the table may bid (sealed, in the auction panel); otherwise it settles at once.
-          if (people.length && openBuildPanel(g, d.blockId)) return;
-          settleCpuAuction();
+          // People at the table bid one at a time, sealed; the bots' bids stay hidden.
+          runAuction(d.blockId, d.mode);
         },
       };
     default:
@@ -715,7 +732,7 @@ function startGame(setup) {
   // Development art and effects are needed as soon as blocks are captured.
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
   lastSetup = setup;
   clearActiveGame();
   tutorialNewGame();
@@ -734,7 +751,7 @@ function startGame(setup) {
 
 function leaveForTitle() {
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
   disarm();
@@ -762,7 +779,7 @@ function continueGame(saved = loadActiveGame()) {
   disarm();
   clearSelection();
   stopCpu();
-  cpuAuction = null;
+  cancelAuction();
   game = saved.game;
   lastSetup = saved.setup;
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
@@ -841,7 +858,11 @@ export function initGameView() {
   info.addEventListener('click', (e) => {
     if (e.target === info || e.target.closest('[data-info-close]')) info.close();
   });
-  initBuildPanel({ onChange: handleDevelopment, onLeave: ({ blockId }) => leaveCapturedBlock(blockId) });
+  initBuildPanel({
+    onChange: handleDevelopment,
+    onLeave: ({ blockId }) => leaveCapturedBlock(blockId),
+    onAuction: ({ blockId, mode }) => runAuction(blockId, mode),
+  });
   initFinanceView({ onChange: () => { autosave(); render(); } });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
@@ -881,8 +902,7 @@ export function initGameView() {
     setSpeed: (cpuSpeed) => updateSettings({ cpuSpeed }),
   });
   bus.on('screen:shown', () => kickCpu());
-  // However people close an auction a CPU opened (Leave it, backdrop, Escape), it still settles.
-  $('#build-dialog').addEventListener('close', () => settleCpuAuction());
+  initAuctionView({ onResolved: auctionSettled });
   initTutorial({ getGame: () => game });
   $('#action-results').addEventListener('click', showResults);
   initEventView({ getGame: () => game });

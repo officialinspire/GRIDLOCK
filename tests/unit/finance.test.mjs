@@ -270,7 +270,8 @@ test('redevelopment contest fails cleanly when nobody can meet the reserve', () 
     { seat: 3, bid: reserve },
   ]);
   assert.equal(result.ok, false);
-  assert.equal(result.error, FIN_ERRORS.INSUFFICIENT_FUNDS);
+  assert.equal(result.error, FIN_ERRORS.NO_BIDS);
+  assert.deepEqual(result.rejected.map((r) => r.error).sort(), [FIN_ERRORS.FORMER_OWNER, FIN_ERRORS.INSUFFICIENT_FUNDS].sort());
   assert.equal(snap(game), before);
 });
 

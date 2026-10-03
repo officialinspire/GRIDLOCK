@@ -152,6 +152,51 @@ async function pave(page, locator) {
   await locator.click();
 }
 
+/**
+ * Plays a sealed redevelopment auction in #auction-dialog. `bids` maps a bidder's name to an
+ * amount, 'reserve' (keep the prefilled reserve) or null / missing (pass). Checks on every
+ * screen that no earlier bid amount is visible or left in an input. Returns
+ * { reveal, bidders, handoffs }: the result text, who bid in order, and the privacy screens seen.
+ */
+async function sealedAuction(page, bids = {}) {
+  const dialog = page.locator('#auction-dialog');
+  await dialog.waitFor({ state: 'visible' });
+  const placed = [];
+  const bidders = [];
+  const handoffs = [];
+  const money = (n) => `$${n.toLocaleString('en-US')}`;
+  for (let guard = 0; guard < 30; guard++) {
+    const body = await dialog.locator('#auction-body').textContent();
+    for (const amount of placed) assert.ok(!body.includes(money(amount)), `earlier bid ${money(amount)} is hidden`);
+    if (await dialog.locator('[data-auction-step="done"]').count()) {
+      await dialog.locator('[data-auction-step="done"]').click();
+      return { reveal: body, bidders, handoffs };
+    }
+    if (await dialog.locator('[data-auction-step="reveal"]').count()) {
+      await dialog.locator('[data-auction-step="reveal"]').click();
+      continue;
+    }
+    if (await dialog.locator('[data-auction-step="ready"]').count()) {
+      handoffs.push((await dialog.locator('#auction-title').textContent()).replace('Pass to ', ''));
+      await dialog.locator('[data-auction-step="ready"]').click();
+      continue;
+    }
+    const name = await dialog.locator('#auction-title').textContent();
+    bidders.push(name);
+    const input = dialog.locator('[name="bid"]');
+    const value = await input.inputValue();
+    assert.ok(!placed.some((a) => value === String(a)), 'no earlier bid left in the input');
+    const bid = bids[name] ?? null;
+    if (bid == null) await dialog.locator('[data-auction-step="pass"]').click();
+    else {
+      if (bid !== 'reserve') await input.fill(String(bid));
+      await dialog.locator('[data-auction-form] [type="submit"]').click();
+      if (bid !== 'reserve') placed.push(bid);
+    }
+  }
+  throw new Error('sealedAuction: the auction never finished');
+}
+
 for (const vp of VIEWPORTS) {
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
@@ -386,8 +431,10 @@ for (const vp of VIEWPORTS) {
     const panel = page.locator('#build-dialog');
     await page.locator('[data-block="r0c0"]').click();
     await panel.locator('[data-auction="restore"]').click();
+    const restored = await sealedAuction(page, { 'Player 4': 'reserve' });
+    assert.match(restored.reveal, /Player 4 wins!/);
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')));
-    assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel closes');
+    assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel stays closed');
     // That auction was this EXPANSION turn's Development Action: a second one is refused.
     assert.match(await page.textContent('#turn-prompt'), /0 Development Actions left: now Pave Road/);
     await page.locator('[data-block="r0c1"]').click();
@@ -400,6 +447,7 @@ for (const vp of VIEWPORTS) {
     await page.locator('[data-block="r0c1"]').click();
     assert.equal(await panel.locator('[data-auction="restore"]').count(), 0);
     await panel.locator('[data-auction="rebuild"]').click();
+    assert.match((await sealedAuction(page, { 'Player 4': 'reserve' })).reveal, /cleared to a vacant lot/);
     assert.ok(await page.locator('[data-block="r0c1"]').evaluate((el) => el.classList.contains('block--green')), 'auction winner owns cleared lot');
     assert.ok(await panel.isVisible(), 'Clear & Rebuild reopens build selection');
     assert.equal(await panel.locator('[data-auction]').count(), 0, 'reopened on the build choices, not the auction');
@@ -693,6 +741,141 @@ for (const vp of VIEWPORTS) {
   } catch (err) {
     failures++;
     console.error(`✘ touch: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+// Sealed redevelopment auctions on one shared device: one bidder at a time behind privacy
+// screens, bids hidden until the reveal, passes, a mayor who can only pass, a tie, invalid and
+// unaffordable bids, an all-pass auction (no action used) and a reload mid-auction.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const dialog = page.locator('#auction-dialog');
+  const game = () => page.evaluate(() => {
+    const g = window.__GRIDLOCK__.getGame();
+    const lot = (id) => { const b = g.board.blocks.find((x) => x.id === id); return { owner: b.ownerSeat, abandoned: b.abandoned, type: b.type }; };
+    return { cash: g.players.map((p) => p.cash), actions: g.city.actionsLeft, c3: lot('r2c2'), d4: lot('r3c3'), seat: g.players[g.turnIndex].seat };
+  });
+  try {
+    await page.goto(`${base}?seed=3&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    // Two ruins Player 4 walked away from (so Player 4 can't bid); Player 3 can't meet a reserve.
+    await page.evaluate(async () => {
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { refreshBonuses } = await import('/js/core/bonuses.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      for (const id of ['r2c2', 'r3c3']) {
+        const b = g.board.blocks.find((x) => x.id === id);
+        applyDevelopment(b, 'commercial', 1);
+        Object.assign(b, { ownerSeat: null, abandoned: true, abandonedBy: 4 });
+      }
+      refreshBonuses(g.board);
+      g.players[2].cash = 1000;
+    });
+
+    // 1. Reload mid-auction: the auction is dropped, nothing changed, the action is still there.
+    await page.click('#board [data-block="r3c3"]');
+    const panel = page.locator('#build-dialog');
+    const lotText = await panel.textContent();
+    assert.match(lotText, /Reserve \$2,600 · steps of \$100/);
+    assert.deepEqual(await panel.locator('[data-auction-mode="restore"] [data-bidder]').evaluateAll((els) => els.map((e) => e.dataset.bidder)),
+      ['1', '2', '3'], 'bidders in turn order from the opener; the former owner sits out');
+    assert.equal(await panel.locator('input').count(), 0, 'nobody types a bid in the shared panel');
+    await panel.locator('[data-auction="restore"]').click();
+    await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 1', 'the opener bids first, no handoff');
+    await dialog.locator('[name="bid"]').fill('2800');
+    await dialog.locator('[data-auction-form] [type="submit"]').click();
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2');
+    const before = await game();
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await page.locator('dialog[open]').count(), 0, 'no half-run auction comes back');
+    assert.deepEqual(await game(), before, 'nothing changed: no owner, no money moved, the action unspent');
+    assert.equal(before.actions, 1);
+
+    // 2. Everyone passes: nothing happens and no action is used.
+    await page.click('#board [data-block="r3c3"]');
+    await panel.locator('[data-auction="rebuild"]').click();
+    const allPass = await sealedAuction(page, {});
+    assert.deepEqual(allPass.bidders, ['Player 1', 'Player 2', 'Player 3']);
+    assert.deepEqual(allPass.handoffs, ['Player 2', 'Player 3']);
+    assert.match(allPass.reveal, /No valid bids.*Block D4 stays abandoned\. No action was used\./s);
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1', 'the device goes back to the mayor on turn');
+    await page.click('#handoff-ready');
+    assert.deepEqual((await game()).d4, { owner: null, abandoned: true, type: 'commercial' });
+    assert.equal((await game()).actions, 1);
+
+    // 3. A real contest: invalid and unaffordable bids are refused privately, a privacy screen
+    //    before each bidder (Escape can't skip it), a mayor who can only pass, and a tie.
+    await page.click('#board [data-block="r2c2"]');
+    await panel.locator('[data-auction="restore"]').click();
+    await dialog.waitFor({ state: 'visible' });
+    const terms = await dialog.textContent();
+    assert.match(terms, /Reserve\s*\$2,600.*Bid steps\s*\$100.*Your cash\s*\$12,000.*Your largest bid\s*\$12,000/s);
+    assert.match(terms, /Passing is always allowed/);
+    assert.equal(await page.evaluate(() => document.activeElement?.name), 'bid', 'focus starts in the bid box');
+    await dialog.locator('[name="bid"]').fill('2650');
+    await page.keyboard.press('Enter'); // keyboard submit
+    assert.match(await page.textContent('#auction-error'), /in steps of \$100/);
+    await dialog.locator('[name="bid"]').fill('50000');
+    await page.keyboard.press('Enter');
+    assert.match(await page.textContent('#auction-error'), /You only have \$12,000/);
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 1', 'still Player 1: nothing was recorded');
+    await dialog.locator('[name="bid"]').fill('3000');
+    await page.keyboard.press('Enter');
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2');
+    assert.ok(!(await dialog.textContent()).includes('3,000'), 'the bid is gone from the screen');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.auctionStep), 'ready', 'focus on the handoff button');
+    await page.keyboard.press('Escape');
+    assert.ok(await dialog.isVisible());
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Pass to Player 2', 'Escape doesn\'t skip the privacy screen');
+    await page.keyboard.press('Enter'); // "I'm Player 2"
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 2');
+    assert.ok(!(await dialog.textContent()).includes('3,000'), 'Player 2 never sees Player 1\'s bid');
+    await dialog.locator('[name="bid"]').fill('3000'); // a tie
+    await dialog.locator('[data-auction-form] [type="submit"]').click();
+    await dialog.locator('[data-auction-step="ready"]').click();
+    assert.equal(await dialog.locator('#auction-title').textContent(), 'Player 3');
+    assert.match(await dialog.textContent(), /can't meet the \$2,600 reserve: you can only pass/);
+    assert.ok(await dialog.locator('[name="bid"]').isDisabled());
+    assert.equal(await dialog.locator('[data-auction-form] [type="submit"]').count(), 0);
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.auctionStep), 'pass');
+    await dialog.locator('[data-auction-step="pass"]').click();
+    assert.match(await dialog.textContent(), /All bids are in/);
+    assert.deepEqual((await game()).c3, { owner: null, abandoned: true, type: 'commercial' }, 'nothing changes before the reveal');
+    await dialog.locator('[data-auction-step="reveal"]').click();
+    const reveal = await dialog.textContent();
+    assert.match(reveal, /Player 1 wins!/);
+    assert.match(reveal, /Price \$3,000 · reserve \$2,600/);
+    assert.match(reveal, /Block C3 now belongs to Player 1, its building restored\./);
+    assert.match(reveal, /2 valid bids, 1 pass\. Tie at \$3,000: the lowest seat wins\./);
+    const after = await game();
+    assert.deepEqual(after.c3, { owner: 1, abandoned: false, type: 'commercial' });
+    assert.deepEqual(after.cash, [9000, 12000, 1000, 12000], 'only the winner pays');
+    assert.equal(after.actions, 0, 'the auction was Player 1\'s Development Action');
+    // Saved at resolution: a reload now keeps the result.
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.active-game')).game.board.blocks.find((b) => b.id === 'r2c2').ownerSeat), 1);
+    await page.keyboard.press('Escape'); // Escape continues from the result
+    await page.locator('#handoff-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.textContent('#handoff-title'), 'Pass to Player 1');
+    await page.click('#handoff-ready');
+    assert.equal(await page.locator('dialog[open]').count(), 0);
+    assert.match(await page.textContent('#turn-prompt'), /0 Development Actions left: now Pave Road/, 'the turn carries on');
+    assert.deepEqual(errors, []);
+    console.log('✔ sealed auction: privacy screens, hidden bids, passes, can-only-pass, tie, invalid bids, all-pass, reload');
+  } catch (err) {
+    failures++;
+    console.error(`✘ sealed auction: ${err.message}`);
+    await page.screenshot({ path: 'test-results/sealed-auction-FAIL.png' }).catch(() => {});
   } finally {
     await context.close();
   }
@@ -2110,15 +2293,17 @@ const recordVibration = () => {
     await auction.waitFor();
     assert.deepEqual(await auction.locator('[data-cpu-bidder]').evaluateAll((els) => els.map((e) => e.dataset.cpuBidder)), ['4'],
       'Hard bot bids sealed (the Easy bot abandoned it, so it can\'t)');
-    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /Sealed bid/);
-    await auction.locator('[name="bid-1"]').fill('');
-    await auction.locator('[name="bid-3"]').fill('');
+    assert.match(await auction.locator('[data-cpu-bidder]').textContent(), /CPU, sealed bid/);
     await auction.locator('[data-auction="restore"]').click();
+    const mixedAuction = await sealedAuction(mixed, {}); // both people pass
+    assert.deepEqual([...mixedAuction.bidders].sort(), ['Player 1', 'Player 3'], 'each person bids alone; the bot never gets a bid screen');
+    assert.deepEqual(mixedAuction.handoffs, mixedAuction.bidders.slice(1), 'a privacy screen before the second person');
+    assert.match(mixedAuction.reveal, /Mayor Bot 2 wins!/);
     assert.equal(await mixed.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r5c5').ownerSeat), 4, 'the bot won the lot');
+    if (await mixed.locator('#handoff-dialog[open]').count()) await mixed.click('#handoff-ready'); // back to the opener
     // The inspector names the bot's difficulty and personality.
     await mixed.click('#board [data-block="r5c5"]');
     assert.match(await mixed.textContent('#inspector'), /Mayor Bot 2 \(CPU · Hard · Tycoon\)/);
-    assert.match(await mixed.textContent('#toasts'), /Mayor Bot 2 wins redevelopment/);
 
     // (The Solo run plays a whole city to the results; this one stops here to keep CI quick.)
     assert.deepEqual(mixedErrors, []);
@@ -2156,17 +2341,20 @@ const recordVibration = () => {
       refreshBonuses(g.board);
     });
     await bidPage.click('#board [data-road="h-0-0"]'); // Player 1 paves → the Hard bot's turn
-    await bidPage.locator('#build-dialog [data-auction-mode="restore"]').waitFor({ timeout: 15_000 });
+    await bidPage.locator('#auction-dialog').waitFor({ state: 'visible', timeout: 15_000 });
     assert.match(await bidPage.textContent('#toasts'), /Mayor Bot 1 opens bidding on abandoned Block C3/);
-    assert.equal(await bidPage.locator('#build-dialog [data-cpu-bidder="2"]').count() > 0, true, 'the bot\'s own bid is sealed');
+    assert.match(await bidPage.textContent('#auction-dialog'), /opened by Mayor Bot 1/);
     assert.deepEqual(await state(bidPage).then((x) => x.roads), 1, 'the bot waits while people can bid');
-    await bidPage.click('#build-dialog [data-action="close"]'); // Player 1 passes
+    const cpuAuction = await sealedAuction(bidPage, {}); // Player 1 passes
+    assert.deepEqual(cpuAuction.bidders, ['Player 1'], 'only Player 1 may bid (Player 3 abandoned it)');
+    assert.deepEqual(cpuAuction.handoffs, [], 'Player 1 already holds the device');
+    assert.match(cpuAuction.reveal, /Mayor Bot 1 wins!/);
     await bidPage.locator('#handoff-dialog').waitFor({ state: 'visible', timeout: 15_000 });
     const lot = await bidPage.evaluate(() => window.__GRIDLOCK__.getGame().board.blocks.find((x) => x.id === 'r2c2'));
     assert.deepEqual([lot.ownerSeat, lot.abandoned], [2, false], 'the bot won its own auction');
     assert.equal(await bidPage.textContent('#handoff-title'), 'Pass to Player 3', 'then finished its turn');
     assert.deepEqual(bidErrors, []);
-    console.log('✔ CPU opens redevelopment bidding: people can bid, leaving passes, the bot plays on');
+    console.log('✔ CPU opens redevelopment bidding: people bid sealed or pass, the bot plays on');
   } catch (err) {
     failures++;
     console.error(`✘ CPU opens bidding: ${err.message}`);

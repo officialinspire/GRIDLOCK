@@ -20,18 +20,17 @@ import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
 import { currentPlayer, getPlayer, usesCityAction, outOfCityActions, actionName, TURN_PHASES, ERAS } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
-import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
 import { buzz } from './haptics.js';
 import {
   quoteDowngrade, quoteSale, downgradeBlock, sellDevelopment, quoteAcquire, acquireAbandoned,
-  quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES, FIN_ERRORS,
+  quoteRedevelopment, auctionBidders, auctionOpenError, ACQUIRE_MODES, FIN_ERRORS,
 } from '../core/finance.js';
 import { quoteTakeover, takeoverBlock, TAKEOVER_ERRORS } from '../core/takeover.js';
 import { CATEGORY_EFFECTS } from '../core/strategy.js';
 import { ECONOMY } from '../config.js';
 
-let state = { game: null, blockId: null, onChange: () => {}, onLeave: () => {} };
+let state = { game: null, blockId: null, onChange: () => {}, onLeave: () => {}, onAuction: () => {} };
 
 const ERROR_TEXT = {
   [DEV_ERRORS.NOT_OWNER]: 'Only the owner can develop this block, on their turn.',
@@ -220,23 +219,17 @@ function abandonedView(game, block, player) {
     const q = quoteRedevelopment(game, block.id, mode);
     const blocked = !q.ok;
     if (blocked && q.error === FIN_ERRORS.NOT_DEVELOPED) return null;
-    const bidders = eligibleRedevelopers(game, block);
+    // Who may bid (everyone bids alone and sealed in the auction dialog; nobody's cash or bid is shown here).
+    const bidders = auctionBidders(game, block.id);
     return h('section', { class: 'acquire-option', dataset: { auctionMode: mode } },
       h('strong', { class: 'acquire-option__title' }, title),
       h('span', { class: 'acquire-option__detail' }, detail({ ...q, cost: q.reserve })),
-      h('span', { class: 'price__cost' }, `Reserve ${formatCash(q.reserve)}`),
-      ...bidders.map((bidder) => (isCpu(bidder)
-        // CPU mayors bid too, sealed: their amounts are only revealed by the result.
-        ? h('p', { class: 'auction-bid auction-bid--cpu', dataset: { cpuBidder: bidder.seat } },
-          h('span', {}, bidder.name), h('span', { class: 'auction-bid__sealed' }, 'Sealed bid'))
-        : h('label', { class: 'auction-bid' },
-        h('span', {}, bidder.name),
-        h('input', {
-          type: 'number', min: q.reserve, step: ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT,
-          max: bidder.cash, name: `bid-${bidder.seat}`, placeholder: 'Pass',
-          value: bidder.seat === player.seat && bidder.cash >= q.reserve ? q.reserve : null,
-        })))),
-      h('button', { type: 'button', class: 'btn btn--sm', dataset: { auction: mode } }, 'Resolve bids'),
+      h('span', { class: 'price__cost' }, `Reserve ${formatCash(q.reserve)} · steps of ${formatCash(ECONOMY.FINANCE.REDEVELOPMENT.MIN_BID_INCREMENT)}`),
+      h('ul', { class: 'acquire-option__bidders', 'aria-label': 'Bidders' },
+        bidders.length ? bidders.map((b) => h('li', { dataset: { bidder: b.seat, ...(isCpu(b) && { cpuBidder: b.seat }) } },
+          `${b.name}${isCpu(b) ? ' (CPU, sealed bid)' : ''}`)) : h('li', {}, 'Nobody can bid')),
+      h('button', { type: 'button', class: 'btn btn--sm', dataset: { auction: mode }, 'aria-disabled': bidders.length ? null : 'true' },
+        'Start sealed bidding'),
     );
   };
   return [
@@ -393,28 +386,23 @@ function handleAcquire(result) {
   if (reopen) openBuildPanel(state.game, result.block); // go straight to choosing what to build
 }
 
+/** Opens sealed bidding (js/ui/auctionView.js) if the auction can start now; otherwise says why. */
 function handleAuction(mode) {
-  const panel = document.querySelector(`[data-auction-mode="${mode}"]`);
-  const bids = [...panel.querySelectorAll('[name^="bid-"]')]
-    .filter((input) => input.value !== '')
-    .map((input) => ({ seat: Number(input.name.slice(4)), bid: Number(input.value) }));
-  bids.push(...cpuBids(state.game, state.blockId, mode));
-  const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
-  if (!result.ok) {
-    if (result.error === FIN_ERRORS.NO_ACTIONS) return refuse(result.error); // buzzes too
+  const error = auctionOpenError(state.game, state.blockId, mode);
+  if (error) {
+    if (error === FIN_ERRORS.NO_ACTIONS) return refuse(error);
     buzz('error');
-    toast(ERROR_TEXT[result.error] ?? 'No eligible affordable bid met the reserve.', { tone: 'warn' });
+    toast(ERROR_TEXT[error] ?? 'Bidding can\'t start right now.', { tone: 'warn' });
     return;
   }
-  const winner = getPlayer(state.game, result.winnerSeat);
-  toast(`${winner.name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
-  // A cleared lot goes straight to the build choices, if this turn has an action left to build with.
-  const reopen = result.mode === ACQUIRE_MODES.REBUILD && !outOfCityActions(state.game);
+  if (!auctionBidders(state.game, state.blockId).length) {
+    buzz('error');
+    toast('Nobody can bid on this lot right now.', { tone: 'warn' });
+    return;
+  }
+  const blockId = state.blockId;
   $('#build-dialog').close();
-  state.onChange({ ...result, bonusBefore: Infinity });
-  // A cleared lot goes straight to choosing what to build (only if the winner is on turn and a
-  // person: a CPU mayor chooses for itself).
-  if (reopen && !isCpu(currentPlayer(state.game))) openBuildPanel(state.game, result.block);
+  state.onAuction({ blockId, mode });
 }
 
 /**
@@ -449,9 +437,10 @@ export function closeBuildPanel() {
   if (dialog.open) dialog.close();
 }
 
-export function initBuildPanel({ onChange, onLeave = () => {} }) {
+export function initBuildPanel({ onChange, onLeave = () => {}, onAuction = () => {} }) {
   state.onChange = onChange;
   state.onLeave = onLeave;
+  state.onAuction = onAuction;
   const dialog = $('#build-dialog');
   dialog.addEventListener('click', (e) => {
     if (e.target === dialog) {
@@ -468,7 +457,7 @@ export function initBuildPanel({ onChange, onLeave = () => {} }) {
     if (sell) return handleSale(sellDevelopment(state.game, sell.dataset.sell), 'Sold development');
     const acquire = e.target.closest('[data-acquire]');
     if (acquire) return handleAcquire(acquireAbandoned(state.game, state.blockId, acquire.dataset.acquire));
-    const auction = e.target.closest('[data-auction]');
+    const auction = e.target.closest('[data-auction]:not([aria-disabled])');
     if (auction) return handleAuction(auction.dataset.auction);
     if (e.target.closest('[data-takeover]')) return handleTakeover(takeoverBlock(state.game, state.blockId));
     if (e.target.closest('[data-action="close"]')) {
