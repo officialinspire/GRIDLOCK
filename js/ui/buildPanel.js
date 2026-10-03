@@ -18,7 +18,7 @@ import { formatCash, formatDelta, blockIncome, bonusIncome } from '../core/econo
 import { bonusList } from './bonusView.js';
 import { forecastDevelopment, blockContribution } from '../core/forecast.js';
 import { forecastSummary, forecastText, forecastDetails, compareForecasts } from './forecastView.js';
-import { currentPlayer, getPlayer, usesCityAction, actionName, TURN_PHASES, ERAS } from '../core/game.js';
+import { currentPlayer, getPlayer, usesCityAction, outOfCityActions, actionName, TURN_PHASES, ERAS } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
 import { cpuBids } from '../core/cpu/city.js';
 import { toast } from './toast.js';
@@ -386,7 +386,8 @@ function handleAcquire(result) {
     return;
   }
   toast(result.mode === 'restore' ? `Restored Block · −${formatCash(result.cost)}` : `Bought the lot · −${formatCash(result.cost)}. Build something!`, { tone: 'success' });
-  const reopen = result.mode === ACQUIRE_MODES.REBUILD;
+  // A cleared lot goes straight to the build choices, if this turn has an action left to build with.
+  const reopen = result.mode === ACQUIRE_MODES.REBUILD && !outOfCityActions(state.game);
   $('#build-dialog').close();
   state.onChange({ ...result, bonusBefore: Infinity });
   if (reopen) openBuildPanel(state.game, result.block); // go straight to choosing what to build
@@ -400,13 +401,15 @@ function handleAuction(mode) {
   bids.push(...cpuBids(state.game, state.blockId, mode));
   const result = resolveRedevelopmentAuction(state.game, state.blockId, mode, bids);
   if (!result.ok) {
+    if (result.error === FIN_ERRORS.NO_ACTIONS) return refuse(result.error); // buzzes too
     buzz('error');
     toast(ERROR_TEXT[result.error] ?? 'No eligible affordable bid met the reserve.', { tone: 'warn' });
     return;
   }
   const winner = getPlayer(state.game, result.winnerSeat);
   toast(`${winner.name} wins redevelopment · ${formatCash(result.cost)}`, { tone: 'success' });
-  const reopen = result.mode === ACQUIRE_MODES.REBUILD;
+  // A cleared lot goes straight to the build choices, if this turn has an action left to build with.
+  const reopen = result.mode === ACQUIRE_MODES.REBUILD && !outOfCityActions(state.game);
   $('#build-dialog').close();
   state.onChange({ ...result, bonusBefore: Infinity });
   // A cleared lot goes straight to choosing what to build (only if the winner is on turn and a

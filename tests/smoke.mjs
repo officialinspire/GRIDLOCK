@@ -388,6 +388,15 @@ for (const vp of VIEWPORTS) {
     await panel.locator('[data-auction="restore"]').click();
     assert.ok(await page.locator('[data-block="r0c0"]').evaluate((el) => el.classList.contains('block--green')));
     assert.equal(await panel.isVisible(), false, 'restored block keeps its building, so the panel closes');
+    // That auction was this EXPANSION turn's Development Action: a second one is refused.
+    assert.match(await page.textContent('#turn-prompt'), /0 Development Actions left: now Pave Road/);
+    await page.locator('[data-block="r0c1"]').click();
+    await panel.locator('[data-auction="rebuild"]').click();
+    assert.match(await page.textContent('#toasts'), /No Development Actions left/);
+    assert.ok(await page.locator('[data-block="r0c1"]').evaluate((el) => el.classList.contains('block--abandoned')));
+    await panel.locator('[data-action="close"]').click();
+    // The rest checks the Clear & Rebuild flow with actions to spare (as on a City turn).
+    await page.evaluate(() => { window.__GRIDLOCK__.getGame().city.actionsLeft = 2; });
     await page.locator('[data-block="r0c1"]').click();
     assert.equal(await panel.locator('[data-auction="restore"]').count(), 0);
     await panel.locator('[data-auction="rebuild"]').click();
@@ -581,6 +590,9 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#inspector'), /Your pressure\s*8 vs 3/);
     await pave(page, page.locator(`[data-road="${last}"]`));
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    // The final mover's turn already had its Development Action: play round to its first full City turn.
+    for (let i = 0; i < 4; i++) await page.click('#action-end-turn');
+    await page.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0 && window.__GRIDLOCK__.getGame().city.actionsLeft === 2);
 
     await page.click('#board [data-block="r2c2"]');
     const panel = page.locator('#build-dialog');
@@ -1513,6 +1525,7 @@ const recordVibration = () => {
       const g = window.__GRIDLOCK__.getGame();
       g.turnPhase = 'manage-city'; // stage P4's Manage City to reach the upgrade card
       g.pendingCaptures = [];
+      g.city.actionsLeft = g.city.expansionActions; // with its Development Action
     });
     await page.click('#board [data-block="r0c0"]');
     const card = panel.locator('.upgrade-card .forecast');
