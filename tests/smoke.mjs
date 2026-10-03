@@ -41,7 +41,7 @@ const VIEWPORTS = [
 async function playOutCityEra(page) {
   for (let i = 0; i < 80; i++) {
     if (await page.locator('#results-dialog[open]').count()) return;
-    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+    for (const [sel, click] of [['#city-intro-dialog', '#city-intro-go'], ['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
       ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
       if (await page.locator(`${sel}[open]`).count()) await page.click(click);
     }
@@ -50,6 +50,11 @@ async function playOutCityEra(page) {
     } else if (await page.isVisible('#action-end-turn')) await page.click('#action-end-turn');
     else await page.waitForTimeout(50);
   }
+}
+
+/** Skips the City era transition card if it's showing (it also closes itself after a few seconds). */
+async function dismissCityIntro(page) {
+  if (await page.locator('#city-intro-dialog[open]').count()) await page.click('#city-intro-go');
 }
 
 async function dismissEvent(page) {
@@ -209,7 +214,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -332,7 +337,7 @@ for (const vp of VIEWPORTS) {
       await shot('9-event-card');
       await page.click('#event-continue');
     } else {
-      assert.match(await page.textContent('#toasts'), /Calm round/);
+      assert.match(await page.textContent('#economy-summary'), /Calm round/, 'folded into the turn summary');
     }
     assert.equal(await page.textContent('#hud-round'), '2');
 
@@ -384,7 +389,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -468,7 +473,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -500,7 +505,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -525,7 +530,7 @@ for (const vp of VIEWPORTS) {
       await panel.locator('[data-build="residential"]').click();
     }
     assert.equal(await page.locator('#board .block--green').count(), 3);
-    const income = page.locator('.player-card[data-seat="4"] .stat--income');
+    const income = page.locator('.player-card[data-seat="4"] .stat--net');
     assert.equal(await income.getAttribute('data-normal'), '1080', '3 × ($300 + 20%)');
     assert.equal(await page.locator('#board .block__badge.has-bonus').count(), 3);
     assert.match(await page.textContent('#toasts'), /Bonus income \+\$180\/turn/);
@@ -552,7 +557,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -573,6 +578,7 @@ for (const vp of VIEWPORTS) {
     await pave(page, page.locator(`[data-road="${last}"]`));
     // The final road starts the CITY era: no Pave Road, an End Turn button and the era in the HUD.
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    await dismissCityIntro(page);
     assert.ok(await page.isHidden('#action-pave'));
     assert.ok(await page.isVisible('#action-end-turn'));
     assert.ok(await page.isHidden('.round-badge__roads'));
@@ -607,7 +613,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -638,6 +644,7 @@ for (const vp of VIEWPORTS) {
     assert.match(await page.textContent('#inspector'), /Your pressure\s*8 vs 3/);
     await pave(page, page.locator(`[data-road="${last}"]`));
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().era === 'city');
+    await dismissCityIntro(page);
     // The final mover's turn already had its Development Action: play round to its first full City turn.
     for (let i = 0; i < 4; i++) await page.click('#action-end-turn');
     await page.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0 && window.__GRIDLOCK__.getGame().city.actionsLeft === 2);
@@ -676,7 +683,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: browserName !== 'firefox', hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -752,7 +759,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   const dialog = page.locator('#auction-dialog');
@@ -888,7 +895,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -921,7 +928,7 @@ for (const vp of VIEWPORTS) {
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -941,7 +948,7 @@ for (const vp of VIEWPORTS) {
       await pave(page, page.locator(`[data-road="${id}"]`));
       await dismissEvent(page);
     }
-    assert.match(await page.locator('#economy-summary').textContent(), /Gross Income.*Upkeep.*Net/);
+    assert.match(await page.locator('#economy-summary').textContent(), /Net [+−]\$[\d,]+ · Income \+\$[\d,]+ − Upkeep \$[\d,]+/);
     assert.deepEqual(errors, []);
     console.log('✔ money animation');
   } catch (err) {
@@ -959,7 +966,7 @@ for (const vp of VIEWPORTS) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1103,7 +1110,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: true, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1259,7 +1266,7 @@ const recordVibration = () => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true, reducedMotion: 'reduce' });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   await context.addInitScript(recordVibration);
-  await context.addInitScript(() => localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'));
+  await context.addInitScript(() => localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'));
   const page = await context.newPage();
   const errors = watchForBrowserErrors(page);
   try {
@@ -1453,7 +1460,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1545,7 +1552,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1645,7 +1652,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1740,7 +1747,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1908,7 +1915,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -1980,6 +1987,158 @@ const recordVibration = () => {
   } finally {
     await context.close();
   }
+
+  // City era UX: the transition card, City tips, the single turn summary, Net / turn, CITY VIEW,
+  // the new settings, and an accessibility audit of each, all under reduced motion; then CPU
+  // Instant playback. Desktop and phone.
+  for (const vp of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'phone', width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+    const cityContext = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: vp.isMobile, hasTouch: vp.hasTouch, reducedMotion: 'reduce' });
+    await cityContext.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+    await cityContext.addInitScript(() => {
+      if (sessionStorage.getItem('gl-city-init')) return;
+      sessionStorage.setItem('gl-city-init', '1');
+      // Finished first-game tips: the City tips still come (once each).
+      localStorage.setItem('gridlock.tutorial.v1', JSON.stringify({ status: 'done', seen: ['manage', 'pave', 'complete', 'develop', 'bonus', 'income', 'events', 'scoring'] }));
+      localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    });
+    const city = await cityContext.newPage();
+    const cityErrors = watchForBrowserErrors(city);
+    const cityProblems = [];
+    const cityCheck = async (label) => {
+      cityProblems.push(...await audit(city, `${vp.name} ${label}`));
+      const moving = await stillMoving(city);
+      if (moving.length) cityProblems.push(`${vp.name} ${label}: animating under reduced motion (${moving.join(', ')})`);
+    };
+    const tip = (id) => city.locator(`.coach-mark[data-step="${id}"]`);
+    try {
+      await city.goto(`${base}?seed=1&debug`, { waitUntil: 'networkidle' });
+      await city.getByRole('button', { name: 'Local Multiplayer' }).click();
+      await city.click('#setup-start');
+      const last = await city.evaluate(async () => {
+        const { allRoadIds, getBlockById } = await import('/js/core/board.js');
+        const { applyDevelopment } = await import('/js/core/development.js');
+        const { refreshBonuses } = await import('/js/core/bonuses.js');
+        const g = window.__GRIDLOCK__.getGame();
+        g.eventPool = [];
+        const ids = allRoadIds(g.board);
+        ids.slice(0, -1).forEach((id) => { g.board.roads[id] = 1; });
+        // Seat 1's Market and Corner Store press on seat 2's House; the rest are ruins.
+        for (const [id, seat, type, level] of [['r2c2', 2, 'residential', 1], ['r2c3', 1, 'commercial', 2], ['r1c2', 1, 'commercial', 1], ['r4c4', 3, 'industrial', 1]]) {
+          Object.assign(getBlockById(g.board, id), { ownerSeat: seat });
+          applyDevelopment(getBlockById(g.board, id), type, level);
+        }
+        for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 4; }
+        refreshBonuses(g.board);
+        return ids.at(-1);
+      });
+
+      // 1. The final road: the papercraft City era card, skippable, with rounds and actions.
+      await city.click(`#board [data-road="${last}"]`);
+      const intro = city.locator('#city-intro-dialog');
+      await intro.waitFor({ state: 'visible' });
+      const card = await intro.textContent();
+      assert.match(card, /The grid is complete — build the city/);
+      assert.match(card, /4 City rounds to go/);
+      assert.match(card, /2 City Actions per turn/);
+      assert.match(card, /Player 1 paved the final road/);
+      assert.equal(await city.evaluate(() => getComputedStyle(document.querySelector('.city-intro__title')).textTransform), 'uppercase');
+      assert.equal(await city.evaluate(() => document.activeElement?.id), 'city-intro-go', 'focus on the Build the city button');
+      await cityCheck('city intro');
+      await city.keyboard.press('Escape');
+      await intro.waitFor({ state: 'hidden' });
+      assert.match(await city.textContent('#turn-prompt'), /0 City Actions left/);
+
+      // 2. The next mayor's first City turn: one turn summary, Net / turn on the HUD, City tips.
+      await city.click('#action-end-turn');
+      const summary = await city.textContent('#economy-summary');
+      assert.match(summary, /Player 2 · Net [+−]\$[\d,]+ · Income \+\$[\d,]+ − Upkeep \$[\d,]+/);
+      assert.doesNotMatch(await city.textContent('#toasts'), /upkeep|income/i, 'no separate income toast');
+      const net = city.locator('.player-card[data-seat="2"] .stat--net');
+      assert.equal(await net.locator('dt').textContent(), 'Net / turn');
+      assert.match(await net.getAttribute('title'), /income \+\$[\d,]+ − upkeep \$[\d,]+/);
+      await tip('city').waitFor();
+      assert.match(await tip('city').textContent(), /City tip 1 of 5.*City era.*2 City Actions/s);
+      await cityCheck('city tip');
+      await tip('city').getByRole('button', { name: 'Got it' }).click();
+      await tip('redevelop').waitFor();
+      assert.match(await tip('redevelop').textContent(), /Abandoned property.*sealed bidding/s);
+      await tip('redevelop').getByRole('button', { name: 'Got it' }).click();
+
+      // 3. CITY VIEW: Player 2 sees its House at risk and the ruins; nothing else stands out.
+      await city.click('#city-view-btn');
+      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true');
+      assert.ok(await city.isVisible('#influence-legend'));
+      assert.equal(await city.getAttribute('#board [data-block="r2c2"]', 'data-influence'), 'risk');
+      assert.match(await city.getAttribute('#board [data-block="r2c2"]', 'aria-description'), /at risk/);
+      assert.ok(await city.locator('#board [data-influence="abandoned"]').count() > 10);
+      assert.equal(await city.locator('#board [data-block="r4c4"][data-influence]').count(), 0, 'a safe block is left plain');
+      assert.match(await city.textContent('#influence-legend'), /Takeover target 0.*At risk 1.*Protected 0.*Abandoned \d+/);
+      await cityCheck('city view');
+      // Round to Player 1: the same House is now its takeover target, and the takeover tip says so.
+      for (let i = 0; i < 3; i++) await city.click('#action-end-turn');
+      await city.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0);
+      assert.equal(await city.getAttribute('#board [data-block="r2c2"]', 'data-influence'), 'target');
+      await tip('takeover').waitFor();
+      assert.match(await tip('takeover').textContent(), /Hostile takeover.*125%/s);
+      await tip('takeover').getByRole('button', { name: 'Got it' }).click();
+      await city.click('#city-view-btn');
+      assert.equal(await city.isVisible('#influence-legend'), false);
+      assert.equal(await city.locator('#board [data-influence]').count(), 0);
+
+      // 4. Settings: City view and CPU playback.
+      await city.click('.game-topbar [data-nav="settings"]');
+      assert.deepEqual(await city.locator('[name="cpuPlayback"] option').evaluateAll((els) => els.map((o) => o.value)), ['full', 'brief', 'instant']);
+      assert.equal(await city.isChecked('[name="cityView"]'), false);
+      await city.locator('label:has([name="cityView"])').click();
+      await cityCheck('settings');
+      await city.click('[data-screen="settings"] [data-nav="back"]');
+      assert.equal(await city.getAttribute('#city-view-btn', 'aria-pressed'), 'true', 'the setting and the button agree');
+      assert.ok(await city.isVisible('#influence-legend'));
+      await noHorizontalScroll(city, `${vp.name} city view`);
+      assert.deepEqual(cityProblems, [], 'accessibility problems');
+      assert.deepEqual(cityErrors, []);
+      console.log(`✔ ${vp.name}: City era card, City tips, turn summary, Net / turn, City view and settings (a11y, reduced motion)`);
+    } catch (err) {
+      failures++;
+      console.error(`✘ ${vp.name} City era UX: ${err.message}`);
+      await city.screenshot({ path: `test-results/city-ux-${vp.name}-FAIL.png` }).catch(() => {});
+    } finally {
+      await cityContext.close();
+    }
+  }
+
+  // CPU playback: Instant runs the bots' routine steps at once and keeps their routine toasts quiet.
+  const instantContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await instantContext.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await instantContext.addInitScript(() => {
+    if (sessionStorage.getItem('gl-instant-init')) return;
+    sessionStorage.setItem('gl-instant-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"skipped"}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, cpuSpeed: 'relaxed', cpuPlayback: 'instant' }));
+  });
+  const fast = await instantContext.newPage();
+  const fastErrors = watchForBrowserErrors(fast);
+  try {
+    await fast.goto(`${base}?seed=4&debug`, { waitUntil: 'networkidle' });
+    await fast.getByRole('button', { name: 'Play Solo' }).click();
+    await fast.click('#setup-start');
+    await fast.evaluate(() => { window.__GRIDLOCK__.getGame().eventPool = []; });
+    const started = Date.now();
+    await fast.click('#board [data-road="h-6-5"]'); // a quiet road: three bots play
+    await fast.waitForFunction(() => window.__GRIDLOCK__.getGame().turnIndex === 0 && window.__GRIDLOCK__.getGame().round === 2, null, { timeout: 15_000 });
+    const elapsed = Date.now() - started;
+    // Relaxed Full playback would pause 1.1 s before every step (at least three roads).
+    assert.ok(elapsed < 3000, `three bot turns took ${elapsed} ms`);
+    assert.doesNotMatch(await fast.textContent('#toasts'), /builds|leaves .* vacant/, 'routine bot steps stay quiet');
+    assert.deepEqual(fastErrors, []);
+    console.log(`✔ CPU playback Instant: three bot turns in ${elapsed} ms, routine steps quiet`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ CPU playback Instant: ${err.message}`);
+    await fast.screenshot({ path: 'test-results/cpu-instant-FAIL.png' }).catch(() => {});
+  } finally {
+    await instantContext.close();
+  }
 }
 
 // Seat controllers: Solo / Local Friends / Mixed presets, CPU difficulty, validation, and the
@@ -1990,7 +2149,7 @@ const recordVibration = () => {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
+      (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true })));
     }
   });
   const page = await context.newPage();
@@ -2095,7 +2254,7 @@ const recordVibration = () => {
     await context.addInitScript((initial) => {
       if (!sessionStorage.getItem('gl-test-init')) {
         sessionStorage.setItem('gl-test-init', '1');
-        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+        localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
         localStorage.setItem('gridlock.settings.v1', JSON.stringify(initial));
       }
       // Record every dialog that opens, to prove which screens were (not) shown.
@@ -2113,7 +2272,7 @@ const recordVibration = () => {
   });
   /** A person's move: clear any dialog in the way, then pave the road a Normal CPU would pick. */
   async function humanStep(page) {
-    for (const [sel, click] of [['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
+    for (const [sel, click] of [['#city-intro-dialog', '#city-intro-go'], ['#event-dialog', '#event-continue'], ['#handoff-dialog', '#handoff-ready'],
       ['#capture-choice-dialog', '[data-capture-choice="vacant"]']]) {
       if (await page.locator(`${sel}[open]`).count()) return page.click(click);
     }
@@ -2499,7 +2658,7 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: false, cpuSpeed: 'fast' }));
     }
     window.__opened = [];
@@ -2576,7 +2735,7 @@ for (const vp of [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone'
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });
@@ -2695,7 +2854,7 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
   await context.addInitScript(() => {
     if (!sessionStorage.getItem('gl-test-init')) {
       sessionStorage.setItem('gl-test-init', '1');
-      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done"}');
+      localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
       localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
     }
   });

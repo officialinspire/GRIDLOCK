@@ -35,6 +35,23 @@ let stuck = 0; // steps in a row that changed nothing (see STUCK_LIMIT)
  */
 const STUCK_LIMIT = 2;
 
+/**
+ * The pause before a planned step (ms), by the cpuPlayback and cpuSpeed settings:
+ *   full     every step: THINK_MS[cpuSpeed]
+ *   brief    major steps: THINK_MS[cpuSpeed]; routine: PLAYBACK_ROUTINE_MS.brief
+ *   instant  major steps: THINK_MS.fast; routine: PLAYBACK_ROUTINE_MS.instant (at once)
+ */
+export function stepDelay(settings, step) {
+  const think = CPU.THINK_MS[settings.cpuSpeed] ?? CPU.THINK_MS.normal;
+  const playback = settings.cpuPlayback ?? 'full';
+  if (playback === 'full') return think;
+  if (step?.major) return playback === 'instant' ? Math.min(think, CPU.THINK_MS.fast) : think;
+  return CPU.PLAYBACK_ROUTINE_MS[playback] ?? 0;
+}
+
+/** Whether a step is announced in the thinking strip (Full: all; Brief/Instant: major only). */
+const shows = (settings, step) => (settings.cpuPlayback ?? 'full') === 'full' || Boolean(step?.major);
+
 /** A fingerprint of everything a step could change: if it differs, the plan is stale. */
 function stateKey(game) {
   return [game.log.length, game.ledger.length, game.turnPhase, game.turnIndex, game.round,
@@ -95,15 +112,16 @@ export function kickCpu() {
   }
   const key = stateKey(game);
   if (timer && plannedFor === key) {
-    showIntent(plan); // a re-render may have replaced the highlighted element
+    if (shows(hooks.getSettings(), plan)) showIntent(plan); // a re-render may have replaced the highlighted element
     return;
   }
   cancel();
   plannedFor = key;
   plan = (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game);
-  showIntent(plan);
   const planned = plan;
-  const delay = skipping ? 0 : CPU.THINK_MS[hooks.getSettings().cpuSpeed] ?? CPU.THINK_MS.normal;
+  const delay = skipping ? 0 : stepDelay(hooks.getSettings(), planned);
+  // Brief/Instant: only major steps get the "what it's doing" line and highlight.
+  showIntent(shows(hooks.getSettings(), planned) ? planned : null);
   timer = setTimeout(() => {
     timer = null;
     const now = hooks.getGame();

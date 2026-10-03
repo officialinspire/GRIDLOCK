@@ -177,3 +177,31 @@ export function takeoverCandidates(game) {
     .map((b) => quoteTakeover(game, b.id))
     .filter((q) => q.pressure > q.control);
 }
+
+/**
+ * The CITY VIEW overlay for `seat` (normally the person at the device): block ids by what they
+ * mean for that mayor right now. Each block lands in at most one list, in this order:
+ *   abandoned  ruins up for redevelopment (either era)
+ *   shielded   recently changed hands: no takeover for now (isShielded)
+ *   targets    CITY era: rival blocks whose control this mayor's pressure beats (takeover candidates;
+ *              one per turn and a City Action may still stand in the way)
+ *   atRisk     CITY era: this mayor's own blocks some rival's pressure beats
+ */
+export function influenceMap(game, seat = currentPlayer(game)?.seat) {
+  const out = { targets: [], atRisk: [], shielded: [], abandoned: [] };
+  const city = game.era === ERAS.CITY && game.phase === PHASES.PLAYING;
+  const rivals = game.players.map((p) => p.seat).filter((s) => s !== seat);
+  for (const block of game.board.blocks) {
+    if (block.abandoned) { out.abandoned.push(block.id); continue; }
+    if (block.ownerSeat == null) continue;
+    if (isShielded(game, block)) { out.shielded.push(block.id); continue; }
+    if (!city) continue;
+    const { control } = controlStrength(game.board, block);
+    if (block.ownerSeat !== seat) {
+      if (developmentPressure(game.board, seat, block).pressure > control) out.targets.push(block.id);
+    } else if (rivals.some((r) => developmentPressure(game.board, r, block).pressure > control)) {
+      out.atRisk.push(block.id);
+    }
+  }
+  return out;
+}

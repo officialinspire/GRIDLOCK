@@ -222,6 +222,7 @@
           <span class="howto-card__icon" data-sprite="icons:trophy"></span>
           <h3>Winning</h3>
           <p>Paving the final road starts the <strong>City era</strong>: no more roads, <strong>4 more rounds</strong> of income, upkeep and events, and <strong>2 City Actions</strong> per turn to build, upgrade, sell or redevelop. Then choose <strong>End Turn</strong>. Clearing debt never costs an action. The mayor who paves the final road has already used this turn's Development Action, so they just develop that capture (free) and end the turn.</p>
+          <p><strong>City view</strong> (the map button at the top, or Settings) outlines your takeover targets, your blocks at risk, recently protected blocks and abandoned lots. Player cards show your <strong>Net / turn</strong>: income minus upkeep.</p>
           <p>After the last City round, highest <strong>City Value</strong> wins: all cash + 70% of land + 100% of actual construction investment + $150 per <strong>Prestige</strong> point.</p>
           <p>Ties go to more Prestige, then more development levels, then more cash, then more blocks. Awards like Most Prestigious and Greenest City go to standouts too.</p>
         </article>
@@ -309,10 +310,23 @@
               <option value="fast">Fast</option>
             </select>
           </label>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:play"></span>CPU turn playback</span>
+            <select class="select" name="cpuPlayback" aria-describedby="cpu-playback-hint">
+              <option value="full">Full: every step</option>
+              <option value="brief">Brief: major events only</option>
+              <option value="instant">Instant: routine steps at once</option>
+            </select>
+          </label>
+          <p class="setting-row__hint" id="cpu-playback-hint">Brief and Instant still pause on captures, takeovers, bankruptcies and auctions.</p>
         </fieldset>
 
         <fieldset>
           <legend>Display</legend>
+          <label class="setting-row">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:map"></span>City view (influence overlay)</span>
+            <input type="checkbox" class="toggle" name="cityView">
+          </label>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:star"></span>Reduce motion</span>
             <input type="checkbox" class="toggle" name="reducedMotion">
@@ -398,6 +412,9 @@
           <span class="round-badge__era" id="hud-era" data-era="expansion">Expansion</span>
         </div>
         <div class="turn-banner" id="turn-banner" aria-live="polite"></div>
+        <button class="btn btn--icon btn--sm" id="city-view-btn" aria-pressed="false" aria-label="City view: show takeover targets, at-risk, protected and abandoned blocks" title="City view">
+          <span class="btn__icon" data-sprite="icons:map"></span>
+        </button>
         <button class="btn btn--icon btn--sm" id="mute-btn" aria-pressed="false" aria-label="Mute sound">
           <span class="btn__icon" data-sprite="icons:sound"></span>
         </button>
@@ -422,6 +439,8 @@
           <div class="economy-summary" id="economy-summary" role="status" aria-live="polite" hidden></div>
           <div class="board-frame paper" id="board-frame">
             <div class="board" id="board" role="group" aria-label="City blocks"></div>
+            <!-- CITY VIEW legend (js/ui/gameView.js applyCityView). -->
+            <ul class="influence-legend" id="influence-legend" aria-label="City view" hidden></ul>
           </div>
         </div>
 
@@ -503,6 +522,19 @@
 
       <dialog class="modal paper build-panel" id="build-dialog" aria-labelledby="build-title">
         <div class="build-panel__body" id="build-body"></div>
+      </dialog>
+
+      <dialog class="modal city-intro" id="city-intro-dialog" aria-labelledby="city-intro-title" aria-describedby="city-intro-facts">
+        <div class="city-intro__card paper">
+          <span class="city-intro__tape" aria-hidden="true"></span>
+          <p class="city-intro__eyebrow">Every road is paved</p>
+          <h3 id="city-intro-title" class="city-intro__title">The grid is complete <span class="city-intro__dash">—</span> <span class="city-intro__call">build the city</span></h3>
+          <ul class="city-intro__facts" id="city-intro-facts"></ul>
+          <p class="city-intro__note" id="city-intro-note"></p>
+          <button type="button" class="btn btn--gold" id="city-intro-go">
+            <span class="btn__icon" data-sprite="icons:building"></span><span>Build the city</span>
+          </button>
+        </div>
       </dialog>
 
       <dialog class="modal paper handoff-card auction" id="auction-dialog" aria-labelledby="auction-title">

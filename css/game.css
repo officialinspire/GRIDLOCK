@@ -194,7 +194,12 @@
   white-space: nowrap;
   background: var(--paper-hi);
 }
-.economy-summary.is-showing { animation: economy-to-hud 1800ms ease-out forwards; }
+.economy-summary.is-showing { animation: economy-to-hud 2600ms ease-out forwards; }
+.economy-summary.is-warn { background: #f7d9cf; }
+.economy-summary__net.is-negative { color: var(--red-deep); }
+.economy-summary__gross { font-family: var(--font-body, inherit); font-size: .85em; }
+.economy-summary__note { display: block; font-family: var(--font-body, inherit); font-size: .8em; color: var(--ink-soft); }
+.board-area:has(.board-frame.is-city-view) .economy-summary { bottom: 44px; }
 .economy-summary[data-seat='1'].is-showing,
 .economy-summary[data-seat='4'].is-showing { --cash-destination: -24px; }
 .economy-summary[data-seat='2'].is-showing,
@@ -1820,3 +1825,53 @@ html[data-coords='on'] .block__coord { display: block; }
 .cpu-status__lines { display: grid; gap: 0; text-align: center; }
 .cpu-status__intent { margin: 0; font-size: 0.9rem; font-weight: 800; }
 .cpu-status__intent[hidden] { display: none; }
+
+/* EXPANSION → CITY transition card (js/ui/cityIntro.js): a taped papercraft notice. */
+.city-intro { background: none; border: 0; padding: 0; max-width: none; overflow: visible; }
+.city-intro__card {
+  position: relative; width: min(480px, calc(100vw - 32px)); padding: 26px 22px 20px; text-align: center;
+  transform: rotate(-1.2deg); box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+  animation: city-intro-drop 520ms cubic-bezier(.2, .9, .3, 1.25) both;
+}
+.city-intro__tape {
+  position: absolute; top: -12px; left: 50%; width: 120px; height: 26px; transform: translateX(-50%) rotate(2deg);
+  background: rgba(240, 222, 170, 0.85); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.city-intro__eyebrow { margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); font-size: .8rem; }
+.city-intro__title {
+  margin: 8px 0 14px; font-family: var(--font-display); font-weight: 400; font-size: clamp(1.5rem, 6vw, 2.2rem);
+  line-height: 1.05; text-transform: uppercase;
+}
+.city-intro__call { display: inline-block; color: var(--red-deep); animation: city-intro-stamp 420ms 360ms ease-out both; }
+.city-intro__facts { display: grid; gap: 4px; margin: 0 0 10px; padding: 0; list-style: none; }
+.city-intro__facts strong { font-size: 1.25rem; }
+.city-intro__note { margin: 0 0 12px; font-size: .8rem; color: var(--ink-soft); }
+.city-intro__note:empty { display: none; }
+.city-intro .btn { min-height: 44px; }
+@keyframes city-intro-drop { from { opacity: 0; transform: translateY(-40px) rotate(-6deg) scale(.9); } }
+@keyframes city-intro-stamp { 0% { opacity: 0; transform: scale(1.8) rotate(-8deg); } 70% { opacity: 1; transform: scale(.95); } }
+
+/* CITY VIEW / influence overlay (js/ui/gameView.js applyCityView): marks what matters, dims the rest. */
+.board-frame.is-city-view .block:not([data-influence]) .block__building,
+.board-frame.is-city-view .block:not([data-influence]) .block__lot { filter: saturate(0.45) opacity(0.7); }
+.board-frame.is-city-view .block[data-influence] { outline-offset: -4px; z-index: 1; }
+.block[data-influence='target'] { outline: 3px dashed var(--gold-deep, #b07d12); }
+.block[data-influence='risk'] { outline: 3px solid var(--red-deep); }
+.block[data-influence='shield'] { outline: 3px double #2c5aa0; }
+.block[data-influence='abandoned'] { outline: 3px dotted #6b4a2b; }
+.influence-legend {
+  position: absolute; left: 8px; bottom: 8px; z-index: 3; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  max-width: calc(100% - 16px); margin: 0; padding: 4px 8px; list-style: none; pointer-events: none;
+  background: rgba(255, 250, 236, 0.92); border-radius: 4px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  font-size: 0.68rem; font-weight: 800; color: var(--ink);
+}
+.influence-legend__item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.influence-legend__swatch { width: 12px; height: 12px; border-radius: 2px; background: transparent; }
+.influence-legend__item[data-influence='target'] .influence-legend__swatch { border: 2px dashed var(--gold-deep, #b07d12); }
+.influence-legend__item[data-influence='risk'] .influence-legend__swatch { border: 2px solid var(--red-deep); }
+.influence-legend__item[data-influence='shield'] .influence-legend__swatch { border: 3px double #2c5aa0; }
+.influence-legend__item[data-influence='abandoned'] .influence-legend__swatch { border: 2px dotted #6b4a2b; }
+#city-view-btn[aria-pressed='true'] { box-shadow: inset 0 0 0 3px var(--gold, #e9a91e); }
+.setting-row__hint { margin: -4px 0 6px; font-size: 0.75rem; color: var(--ink-soft); }
+.board-frame { position: relative; } /* anchors the City view legend */
+.stat--net.is-negative dd { color: var(--red-deep); }

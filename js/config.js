@@ -31,6 +31,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   showCoords: false,
   quickHandoff: false,
   cpuSpeed: 'normal', // how long CPU mayors pause before each move: relaxed | normal | fast
+  // How CPU turns play back: full (every step paced and announced) | brief (only major events —
+  // captures, takeovers, bankruptcy, auctions — are paced and announced) | instant (routine steps
+  // run at once; major events are still announced, briefly).
+  cpuPlayback: 'full',
+  cityView: false, // the CITY VIEW / influence overlay on the board
 });
 
 /**
@@ -229,6 +234,13 @@ export const ECONOMY = Object.freeze({
 export const CPU = Object.freeze({
   /** Pause before each CPU move, by the cpuSpeed setting, so people can follow along (ms). */
   THINK_MS: Object.freeze({ relaxed: 1100, normal: 650, fast: 220 }),
+  /**
+   * CPU turn playback (the cpuPlayback setting): the pause before a step by playback and step
+   * kind. Full paces every step with THINK_MS; Brief paces major steps (captures, takeovers,
+   * bankruptcy, debt sales, auctions, the final road) with THINK_MS and runs routine ones after a
+   * short beat; Instant runs routine steps at once and major ones after THINK_MS.fast.
+   */
+  PLAYBACK_ROUTINE_MS: Object.freeze({ brief: 90, instant: 0 }),
   /** Cash a CPU mayor keeps in hand after any purchase (a table can pass its own). */
   RESERVE: Object.freeze({ easy: 300, normal: 1000, hard: 1000 }),
   /** Easy: chance to develop a block it just captured (when something sensible is affordable)… */

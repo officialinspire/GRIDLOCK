@@ -188,6 +188,7 @@ export function playerStats(game, player) {
     normalIncome: normal,
     eventDelta: income - normal,
     upkeep: upkeepFor(game.board, player.seat),
+    net: income - upkeepFor(game.board, player.seat), // what next turn start adds: income − upkeep (before repairs)
     distress: isInDistress(player),
     bankruptcies: player.bankruptcies,
     bonus: owned.reduce((sum, b) => sum + bonusIncome(b), 0),
