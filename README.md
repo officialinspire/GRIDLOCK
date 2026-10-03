@@ -657,6 +657,7 @@ Notes:
 - The offline precache is about **5.7 MB** (69 files) and downloads in the background after the first page load; the 23 MB of original PNGs are never installed.
 - The board re-renders only on game actions; no animation loops run while idle.
 - Animations use transforms, opacity and filters only, and turn off with reduced motion.
+- **Timing (development only):** open the game with `?perf` (or run Node tools with `DEBUG_PERF=1`) to time `render` (and `renderBoard`, `renderHud`, `renderInspector`, `applyCityView`), `autosave` (`saveActiveGame` + `loadActiveGame`), CPU planning (`cpuPlan`, `chooseRoad`, `chooseCityAction`, `cpuBids`), `forecastDevelopment`, `influenceMap` and turn resolution (`placeRoad`, `endTurn`, `endCityTurn`). Any call of 8 ms or more is logged as it happens; `__GRIDLOCK_PERF__.report()` in the console prints a table per label (calls, total, mean, max) and `.reset()` starts again. Off by default, and then it only calls through (`js/core/perf.js`).
 
 ## Mobile & accessibility
 
@@ -714,6 +715,7 @@ js/
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
     bus.js                 Pub/sub between core and UI
+    perf.js                Development-only timing behind DEBUG_PERF (?perf): measure(), per-label stats, report
   ui/                      DOM rendering and input
     router.js              Screen switching + back stack
     startView.js           Start screen (once per session) → INSPIRE intro → main menu

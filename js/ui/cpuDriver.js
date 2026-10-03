@@ -20,6 +20,7 @@ import { $ } from './dom.js';
 import { CPU } from '../config.js';
 import { PHASES, currentPlayer, roadsBuilt } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
+import { measure } from '../core/perf.js';
 
 let hooks = null;
 let timer = null;
@@ -117,7 +118,7 @@ export function kickCpu() {
   }
   cancel();
   plannedFor = key;
-  plan = (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game);
+  plan = measure('cpuPlan', () => (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game));
   const planned = plan;
   const delay = skipping ? 0 : stepDelay(hooks.getSettings(), planned);
   // Brief/Instant: only major steps get the "what it's doing" line and highlight.

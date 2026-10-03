@@ -16,6 +16,7 @@ import { scorePlayer } from './scoring.js';
 import { blockPrestige, controlStrength } from './strategy.js';
 import { usesCityAction } from './game.js';
 import { quoteTakeover, shieldStatus } from './takeover.js';
+import { measure } from './perf.js';
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
@@ -90,6 +91,10 @@ const bonusKey = (b) => `${b.block}:${b.id}`;
  * depend on cash) and cash/City Value after are null.
  */
 export function forecastDevelopment(game, blockId, type) {
+  return measure('forecastDevelopment', () => forecast(game, blockId, type));
+}
+
+function forecast(game, blockId, type) {
   const upgrade = type == null;
   const requote = () => (upgrade ? quoteUpgrade(game, blockId) : quoteBuild(game, blockId, type));
   let quote = requote();

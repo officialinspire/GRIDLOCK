@@ -74,6 +74,7 @@ import { eventRules } from '../modes.js';
 import { getEventDef } from '../events.js';
 import { expectedTurnsLeft } from './roads.js';
 import { stream, mix, defaultCpuSeed } from './random.js';
+import { measure } from '../perf.js';
 
 export const CITY_REASONS = Object.freeze({
   WAIT: 'wait-for-price', // Hard: a price surcharge ends soon; buying after it is better
@@ -453,6 +454,10 @@ export function chooseRedevelopmentBid(game, seat, blockId, mode, { difficulty, 
 
 /** Sealed bids from every eligible CPU seat (humans bid through the auction panel). */
 export function cpuBids(game, blockId, mode) {
+  return measure('cpuBids', () => sealedBids(game, blockId, mode));
+}
+
+function sealedBids(game, blockId, mode) {
   const block = getBlockById(game.board, blockId);
   if (!block) return [];
   return eligibleRedevelopers(game, block).filter(isCpu)
@@ -541,7 +546,11 @@ function chooseTakeover(game, level, reserve, profile) {
  * turn), reserve (dollars to keep after any purchase; default CPU.RESERVE[difficulty] adjusted
  * by the seat's personality).
  */
-export function chooseCityAction(game, { difficulty, seed, reserve } = {}) {
+export function chooseCityAction(game, options = {}) {
+  return measure('chooseCityAction', () => pickCityAction(game, options));
+}
+
+function pickCityAction(game, { difficulty, seed, reserve }) {
   if (game.phase !== PHASES.PLAYING) return { action: null, error: 'game-over' };
   const me = currentPlayer(game);
   const level = difficulty ?? me.difficulty ?? 'normal';

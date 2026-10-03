@@ -28,6 +28,7 @@ import {
   currentPlayer, getPlayer, outOfCityActions, spendCityAction, PHASES, TURN_PHASES, ERAS,
 } from './game.js';
 import { controlStrength, developmentPressure } from './strategy.js';
+import { measure } from './perf.js';
 
 const T = ECONOMY.TAKEOVER;
 
@@ -188,6 +189,10 @@ export function takeoverCandidates(game) {
  *   atRisk     CITY era: this mayor's own blocks some rival's pressure beats
  */
 export function influenceMap(game, seat = currentPlayer(game)?.seat) {
+  return measure('influenceMap', () => mapInfluence(game, seat));
+}
+
+function mapInfluence(game, seat) {
   const out = { targets: [], atRisk: [], shielded: [], abandoned: [] };
   const city = game.era === ERAS.CITY && game.phase === PHASES.PLAYING;
   const rivals = game.players.map((p) => p.seat).filter((s) => s !== seat);

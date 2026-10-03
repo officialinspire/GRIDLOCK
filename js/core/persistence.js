@@ -8,6 +8,7 @@ import { MAX_LEVEL, levelStats } from './development.js';
 import { refreshBonuses } from './bonuses.js';
 import { getMode, resolveRules } from './modes.js';
 import { controllerOf } from './seats.js';
+import { measure } from './perf.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
 /**
@@ -225,6 +226,10 @@ function setupFrom(game, setup) {
 }
 
 export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
+  return measure('saveActiveGame', () => writeSave(game, setup, storage));
+}
+
+function writeSave(game, setup, storage) {
   if (!validGame(game)) return false;
   try {
     const snapshot = {
@@ -252,6 +257,10 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
 }
 
 export function loadActiveGame(storage = globalThis.localStorage) {
+  return measure('loadActiveGame', () => readSave(storage));
+}
+
+function readSave(storage) {
   try {
     const migrated = migrateSave(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
     if (!migrated || !validGame(migrated.game)) return null;

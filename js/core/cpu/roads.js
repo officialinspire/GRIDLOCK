@@ -27,6 +27,7 @@ import { ECONOMY, CPU } from '../../config.js';
 import { allRoadIds, roadBlocks, blockRoadIds, hasRoad } from '../board.js';
 import { validateRoad, currentPlayer, cityTurnsLeft } from '../game.js';
 import { stream, defaultCpuSeed } from './random.js';
+import { measure } from '../perf.js';
 
 export { defaultCpuSeed };
 
@@ -329,7 +330,11 @@ export function expectedTurnsLeft(game, { lookAhead = false } = {}) {
  * seat's own difficulty, else normal). Returns { road: null, error } when no road can be paved
  * right now (not a paving phase, in debt, game over).
  */
-export function chooseRoad(game, { difficulty, seed } = {}) {
+export function chooseRoad(game, options = {}) {
+  return measure('chooseRoad', () => pickRoad(game, options));
+}
+
+function pickRoad(game, { difficulty, seed }) {
   const level = difficulty ?? currentPlayer(game)?.difficulty ?? 'normal';
   const legal = allRoadIds(game.board).filter((id) => !validateRoad(game, id));
   if (!legal.length) {

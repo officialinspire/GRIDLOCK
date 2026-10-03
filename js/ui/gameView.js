@@ -46,6 +46,7 @@ import { initAuctionView, startAuction, cancelAuction } from './auctionView.js';
 import { initCityIntro, showCityIntro, cancelCityIntro } from './cityIntro.js';
 import { takeoverBlock, influenceMap } from '../core/takeover.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
+import { measure } from '../core/perf.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -67,8 +68,10 @@ function refreshSavedGameControls() {
 }
 
 function autosave() {
-  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
-  refreshSavedGameControls();
+  measure('autosave', () => {
+    if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+    refreshSavedGameControls();
+  });
 }
 
 /** Saves the game in progress right now (e.g. before an app update reloads the page). */
@@ -207,18 +210,20 @@ function renderActions() {
 }
 
 function render() {
-  renderBoard(game);
-  renderHud(game);
-  renderPrompt();
-  renderInspector(getSelectedBlock());
-  renderEventStrip(game);
-  renderActions();
   // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
   const botTurn = isCpuTurn(game);
-  $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
-  applyCityView();
-  updateTutorial();
-  kickCpu();
+  measure('render', () => {
+    measure('renderBoard', () => renderBoard(game));
+    measure('renderHud', () => renderHud(game));
+    renderPrompt();
+    measure('renderInspector', () => renderInspector(getSelectedBlock()));
+    renderEventStrip(game);
+    renderActions();
+    $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
+    measure('applyCityView', applyCityView);
+    updateTutorial();
+  });
+  kickCpu(); // may plan the CPU's next step: timed as cpuPlan, not as part of render
   if (botTurn) tutorialMoment('cpu');
 }
 

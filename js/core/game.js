@@ -28,6 +28,7 @@ import { prestigeFor } from './strategy.js';
 import { createEventState, onRoundStart, effectiveIncome, takeRepairExpenses, EVENT_POOL } from './events.js';
 import { randomSeed } from './rng.js';
 import { computeResults } from './scoring.js';
+import { measure } from './perf.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 /** Gameplay eras: road/capture play, then (once every road is paved) city management only. */
@@ -376,6 +377,10 @@ export function cityTurnsLeft(game) {
  * Returns { roundEnded, event: { expired, started } | null, turnIncome }.
  */
 export function endTurn(game) {
+  return measure('endTurn', () => passTurn(game));
+}
+
+function passTurn(game) {
   const summary = { roundEnded: false, event: null, turnIncome: null, turnUpkeep: null, turnRepair: null, gameEnded: false };
   game.turnIndex += 1;
   if (game.turnIndex >= game.players.length) {
@@ -404,6 +409,10 @@ export function endTurn(game) {
  * Returns { ok:false, error } or { ok:true, seat, roundEnded, event, turnIncome, turnUpkeep, turnRepair, gameEnded }.
  */
 export function endCityTurn(game) {
+  return measure('endCityTurn', () => finishCityTurn(game));
+}
+
+function finishCityTurn(game) {
   if (game.phase !== PHASES.PLAYING) return { ok: false, error: MOVE_ERRORS.GAME_OVER };
   if (game.era !== ERAS.CITY) return { ok: false, error: MOVE_ERRORS.NOT_CITY_ERA };
   const player = currentPlayer(game);
@@ -429,6 +438,10 @@ export function endCityTurn(game) {
  * { ok:true, road, seat, captured:[blockIds], reward, extraTurn, roundEnded, turnIncome, gameEnded, cityEra }.
  */
 export function placeRoad(game, id) {
+  return measure('placeRoad', () => buildRoad(game, id));
+}
+
+function buildRoad(game, id) {
   // Reject malformed/taken moves without advancing a phase or resolving a
   // capture choice. This keeps failed input completely side-effect free.
   if (game.phase !== PHASES.PLAYING) return { ok: false, error: MOVE_ERRORS.GAME_OVER };
