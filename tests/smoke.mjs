@@ -1027,9 +1027,9 @@ for (const vp of VIEWPORTS) {
       const game = () => window.__GRIDLOCK__.getGame();
       const nextTap = () => new Promise((r) => setTimeout(r, 0)); // a player's taps are separate tasks
       // Compared as markup, ignoring what only the live board carries (the roving tab stop, City
-      // view marks, a refused road's shake) and class order (selection is toggled in place).
+      // view marks, a refused road's shake and its replay) and class order (selection is toggled in place).
       const normal = (html) => html.replace(/ tabindex="-?\d+"/g, '').replace(/ data-influence="[^"]*"| aria-description="[^"]*"/g, '')
-        .replace(/ class="([^"]*)"/g, (m, cls) => ` class="${cls.split(' ').filter((c) => c && c !== 'is-rejected').sort().join(' ')}"`);
+        .replace(/ class="([^"]*)"/g, (m, cls) => ` class="${cls.split(' ').filter((c) => c && c !== 'is-rejected' && c !== 'is-replay').sort().join(' ')}"`);
       const out = { steps: 0, mismatches: [], tabStops: [], replaced: [], kept: 0, influence: null, ended: false, stuck: null };
       const check = (label) => {
         const fresh = document.createElement('div');

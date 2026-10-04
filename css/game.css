@@ -177,7 +177,14 @@
 .chain-meter[data-chain='4'] { background: #ee8f58; }
 .chain-meter[data-chain='5'] { color: var(--paper-hi); background: var(--red-deep); }
 .chain-meter.is-bumped { animation: chain-bump 420ms var(--ease-pop); }
+/* Replays (js/ui/replay.js): the same keyframes under a second name restart the animation without
+   a forced layout. :where() keeps the specificity of the rule above. */
+.chain-meter.is-bumped:where(.is-replay) { animation-name: chain-bump-replay; }
 @keyframes chain-bump {
+  0% { transform: translateX(-50%) scale(.8) rotate(-3deg); opacity: .3; }
+  65% { transform: translateX(-50%) scale(1.08) rotate(1deg); }
+}
+@keyframes chain-bump-replay {
   0% { transform: translateX(-50%) scale(.8) rotate(-3deg); opacity: .3; }
   65% { transform: translateX(-50%) scale(1.08) rotate(1deg); }
 }
@@ -195,6 +202,7 @@
   background: var(--paper-hi);
 }
 .economy-summary.is-showing { animation: economy-to-hud 2600ms ease-out forwards; }
+.economy-summary.is-showing:where(.is-replay) { animation-name: economy-to-hud-replay; }
 .economy-summary.is-warn { background: #f7d9cf; }
 .economy-summary__net.is-negative { color: var(--red-deep); }
 .economy-summary__gross { font-family: var(--font-body, inherit); font-size: .85em; }
@@ -205,6 +213,11 @@
 .economy-summary[data-seat='2'].is-showing,
 .economy-summary[data-seat='3'].is-showing { --cash-destination: 24px; }
 @keyframes economy-to-hud {
+  0% { opacity: 0; transform: translate(-50%, 8px) scale(.92); }
+  12%, 68% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--cash-destination, 0px)), -18px) scale(.9); }
+}
+@keyframes economy-to-hud-replay {
   0% { opacity: 0; transform: translate(-50%, 8px) scale(.92); }
   12%, 68% { opacity: 1; transform: translate(-50%, 0) scale(1); }
   100% { opacity: 0; transform: translate(calc(-50% + var(--cash-destination, 0px)), -18px) scale(.9); }
@@ -235,11 +248,16 @@
 .board-frame[data-turn='green'] { --turn: var(--p-green); }
 .board-frame[data-turn='none'] { --turn: transparent; }
 .board-frame.is-capture { animation: frame-flash 650ms ease-out; }
+.board-frame.is-capture:where(.is-replay) { animation-name: frame-flash-replay; }
 .board-frame.is-city-complete { animation: city-complete 1100ms var(--ease-pop) both; }
 @keyframes city-complete {
   35% { transform: scale(1.018); box-shadow: inset 0 0 0 5px var(--gold), 0 0 0 8px rgba(226, 175, 47, .45), var(--drop); }
 }
 @keyframes frame-flash {
+  0% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--paper-edge), 0 0 0 4px var(--turn), 0 0 0 4px var(--turn), var(--drop); }
+  35% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--gold), 0 0 0 4px var(--turn), 0 0 0 16px color-mix(in srgb, var(--turn) 45%, transparent), var(--drop); }
+}
+@keyframes frame-flash-replay {
   0% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--paper-edge), 0 0 0 4px var(--turn), 0 0 0 4px var(--turn), var(--drop); }
   35% { box-shadow: inset 0 0 0 3px var(--paper-hi), inset 0 0 0 5px var(--gold), 0 0 0 4px var(--turn), 0 0 0 16px color-mix(in srgb, var(--turn) 45%, transparent), var(--drop); }
 }
@@ -373,7 +391,12 @@
 @keyframes last-pulse { 50% { opacity: 0.35; } }
 
 .road.is-rejected { animation: nope 320ms ease; }
+.road.is-rejected:where(.is-replay) { animation-name: nope-replay; }
 @keyframes nope {
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
+}
+@keyframes nope-replay {
   20%, 60% { transform: translateX(-3px); }
   40%, 80% { transform: translateX(3px); }
 }

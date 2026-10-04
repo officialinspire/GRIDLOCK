@@ -1,5 +1,6 @@
 /** Game screen controller: wires core game state to board, HUD and actions. */
 import { $, h } from './dom.js';
+import { replayAnimation } from './replay.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
@@ -436,10 +437,7 @@ function handleRoadArmed() {
 }
 
 function flashFrame() {
-  const frame = $('#board-frame');
-  frame.classList.remove('is-capture');
-  void frame.offsetWidth;
-  frame.classList.add('is-capture');
+  replayAnimation($('#board-frame'), 'is-capture');
 }
 
 function chainLabel(count) {
@@ -455,11 +453,7 @@ function renderChain() {
   meter.hidden = chain < 1;
   meter.textContent = chainLabel(chain);
   meter.dataset.chain = Math.min(chain, 5);
-  if (chain) {
-    meter.classList.remove('is-bumped');
-    void meter.offsetWidth;
-    meter.classList.add('is-bumped');
-  }
+  if (chain) replayAnimation(meter, 'is-bumped');
 }
 
 /**
@@ -493,9 +487,7 @@ function showTurnSummary({ turnIncome, turnUpkeep, turnRepair, note = null }) {
   if (note) nodes.push(h('span', { class: 'economy-summary__note' }, note));
   summary.replaceChildren(...nodes);
   summary.hidden = false;
-  summary.classList.remove('is-showing');
-  void summary.offsetWidth;
-  summary.classList.add('is-showing');
+  replayAnimation(summary, 'is-showing');
   clearTimeout(showTurnSummary.timer);
   showTurnSummary.timer = setTimeout(() => { summary.hidden = true; }, 2600);
 }

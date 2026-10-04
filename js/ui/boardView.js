@@ -7,6 +7,7 @@
  * Road slots are buttons: tapping one paves the road between its two intersections.
  */
 import { $, h } from './dom.js';
+import { replayAnimation } from './replay.js';
 import { createSprite } from '../assets.js';
 import { ART, blockScene } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
@@ -339,12 +340,9 @@ export function renderBoard(game, { full = false } = {}) {
   if (focusTarget && document.activeElement !== focusTarget) focusTarget.focus({ preventScroll: true });
 }
 
+/** A refused road shakes (again, if it is tapped again). */
 export function rejectRoad(id) {
-  const btn = document.querySelector(`#board [data-road="${id}"]`);
-  if (!btn) return;
-  btn.classList.remove('is-rejected');
-  void btn.offsetWidth;
-  btn.classList.add('is-rejected');
+  replayAnimation(document.querySelector(`#board [data-road="${id}"]`), 'is-rejected');
 }
 
 export function selectBlock(id) {
