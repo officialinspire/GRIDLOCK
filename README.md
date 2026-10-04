@@ -655,7 +655,7 @@ Notes:
 - Board art starts downloading on the New Game setup screen, while players type names.
 - The 9-sliced UI frames are small (about 170 KB for all of them).
 - The offline precache is about **5.7 MB** (69 files) and downloads in the background after the first page load; the 23 MB of original PNGs are never installed.
-- The board re-renders only on game actions; no animation loops run while idle.
+- The board re-renders only on game actions; no animation loops run while idle. Every redraw asked for during one action is drawn once, at the end of that action; while one CPU mayor plays a run of quick steps (Skip, Instant playback), at most once per animation frame (`js/ui/renderScheduler.js`).
 - Animations use transforms, opacity and filters only, and turn off with reduced motion.
 - **Timing (development only):** open the game with `?perf` (or run Node tools with `DEBUG_PERF=1`) to time `render` (and `renderBoard`, `renderHud`, `renderInspector`, `applyCityView`), `autosave` (`saveActiveGame` + `loadActiveGame`), CPU planning (`cpuPlan`, `chooseRoad`, `chooseCityAction`, `cpuBids`), `forecastDevelopment`, `influenceMap` and turn resolution (`placeRoad`, `endTurn`, `endCityTurn`). Any call of 8 ms or more is logged as it happens; `__GRIDLOCK_PERF__.report()` in the console prints a table per label (calls, total, mean, max) and `.reset()` starts again. Off by default, and then it only calls through (`js/core/perf.js`).
 
@@ -723,6 +723,7 @@ js/
     music.js               Recorded music: two streamed themes, crossfades, seamless loops, tab visibility
     cpuDriver.js           Runs CPU turns: thinking pause + intent line, Pause/Speed up/Skip, waits for dialogs/pause, stale-step guard
     autosave.js            Debounced autosave scheduling: one write per quick run of moves, flush / save now / cancel
+    renderScheduler.js     Coalesces redraw requests: one draw per action, or per animation frame during a bot's quick steps
     setupView.js           New game form: seats, Human/CPU presets + difficulty, rules, city seed
     boardView.js           Board renderer (intersections, road slots, blocks)
     hud.js                 Player cards, round & turn banner
@@ -767,6 +768,7 @@ tests/
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
   unit/autosave.test.mjs   Debounced autosave on a fake clock: one write per burst, max wait, flush, save now, cancel
+  unit/render-scheduler.test.mjs  Render scheduling: one draw per action, one per frame for bursts, flush, cancel, no render loops
   unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds (per building type and event), chain escalation, volumes/fades, ambience scenes, music by scene/switch/volume/mute/hidden tab, settings
   unit/intro.test.mjs      INSPIRE intro: plays on demand, Skip guard, ends on refusal/error/stall/time cap/hidden tab
   unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions

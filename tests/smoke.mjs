@@ -1676,17 +1676,20 @@ const recordVibration = () => {
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
     await newGame('Classic', 2);
     await page.evaluate(async () => {
+      // Each tap in its own task, as a player's are: the screen is redrawn at the end of each action.
+      const nextTap = () => new Promise((r) => setTimeout(r, 0));
       for (let i = 0; i < 400; i++) {
         // The City era card: skipped as a player would; its close (and the final capture's choice) follows.
         const intro = document.querySelector('#city-intro-dialog[open] #city-intro-go');
         if (intro) { intro.click(); await new Promise((r) => setTimeout(r, 30)); continue; }
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
-        if (vacant) { vacant.click(); continue; }
+        if (vacant) { vacant.click(); await nextTap(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
         const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)'); // CITY era
         if (road) road.click();
         else if (endTurn) endTurn.click();
         else break;
+        await nextTap();
       }
     });
     await page.locator('#results-dialog').waitFor({ state: 'visible' });

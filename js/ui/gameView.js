@@ -45,9 +45,10 @@ import {
 import { initAuctionView, startAuction, cancelAuction } from './auctionView.js';
 import { initCityIntro, showCityIntro, cancelCityIntro } from './cityIntro.js';
 import { takeoverBlock, influenceMap } from '../core/takeover.js';
-import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
+import { initCpuDriver, kickCpu, stopCpu, isCpuTurn, cpuStepSeat } from './cpuDriver.js';
 import { measure } from '../core/perf.js';
 import { createAutosave } from './autosave.js';
+import { createRenderScheduler } from './renderScheduler.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -238,7 +239,13 @@ function renderActions() {
   endTurn.classList.toggle('is-ready', managing && city && game.city.actionsLeft === 0);
 }
 
-function render() {
+/**
+ * Draws the whole game screen now: board, HUD, prompt, inspector, event strip, actions, City
+ * view and tips; then lets a CPU mayor plan (kickCpu also re-marks its target on the new board).
+ * Only the render scheduler calls this; everything else asks with render().
+ */
+function drawGame() {
+  if (!game) return;
   // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
   const botTurn = isCpuTurn(game);
   measure('render', () => {
@@ -254,6 +261,26 @@ function render() {
   });
   kickCpu(); // may plan the CPU's next step: timed as cpuPlan, not as part of render
   if (botTurn) tutorialMoment('cpu');
+}
+
+const renderer = createRenderScheduler(drawGame);
+
+/**
+ * Asks for a redraw (js/ui/renderScheduler.js). Every request during one action becomes a single
+ * draw at the end of that action, before the browser paints or handles the next event. A CPU step
+ * after which the same bot is still on turn draws at the next animation frame instead, so a burst
+ * of quick bot steps (Skip, Instant playback) is one visual update per frame; a step that hands
+ * the turn on (to a person or another bot) is drawn at once, like a person's action.
+ */
+function render() {
+  const bot = cpuStepSeat();
+  renderer.request({ frame: bot != null && isCpuTurn(game) && currentPlayer(game).seat === bot });
+}
+
+/** A tutorial moment whose tip may point at the board or HUD: drawn first, so it points at this turn's screen. */
+function tipOnScreen(id) {
+  renderer.flush();
+  tutorialMoment(id);
 }
 
 /* ---------------- CITY VIEW (influence overlay) ---------------- */
@@ -594,7 +621,7 @@ function passTurn(result, mover) {
     if (paid > 0 && !result.event?.started) play('coins');
     showTurnSummary({ turnIncome: result.turnIncome, turnUpkeep: result.turnUpkeep, turnRepair: result.turnRepair, note });
     const payee = result.turnIncome && getPlayer(game, result.turnIncome.seat);
-    if (payee && !isCpu(payee) && (paid > 0 || (result.turnUpkeep?.amount ?? 0) > 0)) tutorialMoment('income');
+    if (payee && !isCpu(payee) && (paid > 0 || (result.turnUpkeep?.amount ?? 0) > 0)) tipOnScreen('income');
     checkDistress();
     bus.emit('game:move', result);
   };
@@ -845,6 +872,7 @@ function startGame(setup) {
 
 function leaveForTitle() {
   autosaver.cancel(); // Save & Quit has already saved; Abandon and the end of a match clear the save
+  renderer.cancel(); // nothing left to draw
   stopCpu();
   cancelAuction();
   cancelCityIntro();
@@ -967,7 +995,7 @@ export function initGameView() {
       render();
       // A person just went bankrupt: explain recovery (once).
       const me = game && currentPlayer(game);
-      if (me && !isCpu(me) && game.lastBankruptcy?.seat === me.seat) tutorialMoment('recovery');
+      if (me && !isCpu(me) && game.lastBankruptcy?.seat === me.seat) tipOnScreen('recovery');
     },
   });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));

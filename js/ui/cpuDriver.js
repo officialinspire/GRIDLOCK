@@ -29,6 +29,7 @@ let plannedFor = null;
 let plan = null; // { text, target, run } for the step being thought about
 let skipping = false;
 let stuck = 0; // steps in a row that changed nothing (see STUCK_LIMIT)
+let stepping = null; // seat of the CPU whose planned step is being played right now
 
 /**
  * Safety net: a step that changes nothing would be planned again and again. After this many in
@@ -89,6 +90,9 @@ function showStatus(player) {
   bar.hidden = false;
 }
 
+/** The seat whose CPU step the driver is playing right now, or null (see the game view's render()). */
+export const cpuStepSeat = () => stepping;
+
 /** True while it's a CPU seat's turn in a game in progress. */
 export function isCpuTurn(game = hooks?.getGame()) {
   return Boolean(game && game.phase === PHASES.PLAYING && isCpu(currentPlayer(game)));
@@ -133,7 +137,12 @@ export function kickCpu() {
     showIntent(null);
     // The plan was made for exactly this state (same key), so it is still the right move.
     if (fresh) {
-      planned.run();
+      stepping = currentPlayer(now).seat;
+      try {
+        planned.run();
+      } finally {
+        stepping = null;
+      }
       stuck = hooks.getGame() === now && stateKey(now) === key ? stuck + 1 : 0;
     }
     kickCpu();
