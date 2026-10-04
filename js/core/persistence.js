@@ -8,6 +8,7 @@ import { MAX_LEVEL, levelStats } from './development.js';
 import { refreshBonuses } from './bonuses.js';
 import { getMode, resolveRules } from './modes.js';
 import { controllerOf } from './seats.js';
+import { measure } from './perf.js';
 
 export const SAVE_KEY = 'gridlock.active-game';
 /**
@@ -224,8 +225,16 @@ function setupFrom(game, setup) {
   };
 }
 
+/**
+ * Writes the active game. True only when a valid game was written to storage: such a save is
+ * one loadActiveGame() accepts, so the UI may offer Continue without reading it back.
+ */
 export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
-  if (!validGame(game)) return false;
+  return measure('saveActiveGame', () => writeSave(game, setup, storage));
+}
+
+function writeSave(game, setup, storage) {
+  if (!storage || !validGame(game)) return false;
   try {
     const snapshot = {
       ...game,
@@ -238,7 +247,7 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
       turnStartRepair: null,
     };
     delete snapshot.eventPool;
-    storage?.setItem(SAVE_KEY, JSON.stringify({
+    storage.setItem(SAVE_KEY, JSON.stringify({
       version: SAVE_VERSION,
       appVersion: APP_VERSION,
       savedAt: Date.now(),
@@ -252,6 +261,10 @@ export function saveActiveGame(game, setup, storage = globalThis.localStorage) {
 }
 
 export function loadActiveGame(storage = globalThis.localStorage) {
+  return measure('loadActiveGame', () => readSave(storage));
+}
+
+function readSave(storage) {
   try {
     const migrated = migrateSave(JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null'));
     if (!migrated || !validGame(migrated.game)) return null;

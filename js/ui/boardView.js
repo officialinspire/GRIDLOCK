@@ -7,6 +7,7 @@
  * Road slots are buttons: tapping one paves the road between its two intersections.
  */
 import { $, h } from './dom.js';
+import { replayAnimation } from './replay.js';
 import { createSprite } from '../assets.js';
 import { ART, blockScene } from '../art.js';
 import { PLAYER_PRESETS } from '../config.js';
@@ -50,14 +51,25 @@ function roadLabel(dir, r, c) {
     : `road from ${nodeLabel(r, c)} to ${nodeLabel(r + 1, c)}`;
 }
 
+/** An intersection shows a junction tile once any road touching it is paved. */
+function nodePaved(board, r, c) {
+  return [roadId('h', r, c - 1), roadId('h', r, c), roadId('v', r - 1, c), roadId('v', r, c)].some((id) => hasRoad(board, id));
+}
+
 function nodeCell(board, r, c) {
-  const touching = [roadId('h', r, c - 1), roadId('h', r, c), roadId('v', r - 1, c), roadId('v', r, c)];
-  const paved = touching.some((id) => hasRoad(board, id));
+  const paved = nodePaved(board, r, c);
   return h('span', { class: `node${paved ? ' is-paved' : ''}`, 'aria-hidden': 'true' },
     paved && createSprite(ART.road.junction, { className: 'node__tile' }));
 }
 
-function roadCell(game, dir, r, c) {
+/** What locks every open road this render: not a paving moment (closed), or the mayor's debt (distress). */
+function roadLocks(game) {
+  const playing = game.phase === PHASES.PLAYING;
+  const phaseAllowsRoad = [TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
+  return { closed: !playing || !phaseAllowsRoad, distress: playing && isInDistress(currentPlayer(game)) };
+}
+
+function roadCell(game, dir, r, c, locks) {
   const id = roadId(dir, r, c);
   const builder = game.board.roads[id];
   const built = builder != null;
@@ -70,9 +82,8 @@ function roadCell(game, dir, r, c) {
 
   const who = built ? getPlayer(game, builder)?.name : null;
   const owner = built ? PLAYER_PRESETS[builder - 1] : null;
-  const phaseAllowsRoad = [TURN_PHASES.MANAGE_CITY, TURN_PHASES.PAVE_ROAD, TURN_PHASES.BONUS_ROAD].includes(game.turnPhase);
-  const disabled = built || game.phase !== PHASES.PLAYING || !phaseAllowsRoad;
-  const distress = game.phase === PHASES.PLAYING && isInDistress(currentPlayer(game));
+  const disabled = built || locks.closed;
+  const distress = locks.distress;
   return h('button', {
     type: 'button',
     class: cls.join(' '),
@@ -135,6 +146,8 @@ function blockCell(game, block) {
     .flatMap((impact) => (ART.event[impact.def.id] ?? []).map((sprite, index) => ({ sprite, id: impact.def.id, index })));
   for (const id of new Set(eventVfx.map((item) => item.id))) cls.push(`has-event-${id}`);
   if (ev.state) cls.push(`is-event-${ev.state}`);
+  // The one cut-out kept with Reduce effects (css/effects.css): the lead event's, as in the marker.
+  const mainVfx = eventVfx.find((item) => item.id === ev.lead?.def.id && item.index === 0) ?? eventVfx[0];
 
   return h('button', {
     type: 'button',
@@ -159,19 +172,107 @@ function blockCell(game, block) {
     color && !art && createSprite(ART.owner.seal(block.ownerSeat), { className: 'block__seal' }),
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
-    ...eventVfx.map(({ sprite, id, index }) => createSprite(sprite, {
-      className: `block__event-vfx block__event-vfx--${id} block__event-vfx--${index + 1}`,
+    ...eventVfx.map((item) => createSprite(item.sprite, {
+      className: `block__event-vfx block__event-vfx--${item.id} block__event-vfx--${item.index + 1}${item === mainVfx ? ' block__event-vfx--main' : ''}`,
     })),
     color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
     justBuilt && h('span', { class: 'block__foundation', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__owner-mark', 'aria-hidden': 'true' }, PLAYER_PRESETS[block.ownerSeat - 1].mark),
-    fresh && createSprite(ART.fx.capture, { className: 'block__fx' }),
-    justBuilt && createSprite(ART.fx.build, { className: 'block__fx' }),
+    fresh && createSprite(ART.fx.capture, { className: 'block__fx block__fx--capture' }),
+    justBuilt && createSprite(ART.fx.build, { className: 'block__fx block__fx--build' }),
     h('span', { class: 'block__coord', 'aria-hidden': 'true' }, block.label),
   );
 }
 
-export function renderBoard(game) {
+/* ---------------- incremental drawing ----------------
+ * The board keeps one element per grid cell between draws. Each cell has a key: everything its
+ * markup depends on except the parts patched in place (block selection; a road's disabled /
+ * aria-disabled lock). A cell whose key is unchanged keeps its element (and its focus, running
+ * animations and DOM state); one whose key changed is rebuilt with the same builder a full draw
+ * uses and swapped in. Fresh capture / build / paving animations carry a counter in the key, so
+ * each new one rebuilds its cell and plays from the start, exactly as after a full draw.
+ */
+let cells = []; // [{ el, key }] in grid order: #board's children
+let cellsGame = null; // the game `cells` were drawn for (a new game is drawn in full)
+let moveCount = 0; // bumped for each new move…
+let developmentCount = 0; // …and development
+
+function nodeKey(board, r, c) {
+  return nodePaved(board, r, c) ? 'paved' : '';
+}
+
+function roadKey(game, dir, r, c) {
+  const id = roadId(dir, r, c);
+  const builder = game.board.roads[id];
+  const last = game.lastMove?.road === id;
+  return [builder ?? '', builder != null ? getPlayer(game, builder)?.name : '', last ? 'last' : '',
+    last && fx.move ? moveCount : '', id === armedId && builder == null ? 'armed' : ''].join('|');
+}
+
+function blockKey(game, block) {
+  const ev = blockEventState(game, block);
+  const vfx = blockImpacts(game, block).filter((impact) => !impact.mitigated).map((impact) => impact.def.id).join(',');
+  const fresh = fx.move && game.lastMove?.captured.includes(block.id);
+  const justBuilt = fx.development && game.lastDevelopment?.block === block.id;
+  return [blockDescription(game, block), block.ownerSeat ?? '', block.abandoned ? 'abandoned' : '', block.type, block.level,
+    block.bonusIncome, ev.state ?? '', ev.lead?.def.id ?? '', vfx, fresh ? moveCount : '',
+    justBuilt ? `${developmentCount}${game.lastDevelopment.fromLevel > 0 ? 'up' : ''}` : ''].join('|');
+}
+
+/** The grid is (2n+1)²: even/even an intersection, even/odd and odd/even road slots, odd/odd a block. */
+function cellKey(game, R, C) {
+  const { board } = game;
+  if (R % 2 === 0 && C % 2 === 0) return nodeKey(board, R >> 1, C >> 1);
+  if (R % 2 === 0) return roadKey(game, 'h', R >> 1, C >> 1);
+  if (C % 2 === 0) return roadKey(game, 'v', R >> 1, C >> 1);
+  return blockKey(game, board.blocks[(R >> 1) * board.cols + (C >> 1)]);
+}
+
+function buildCell(game, locks, R, C) {
+  const { board } = game;
+  if (R % 2 === 0 && C % 2 === 0) return nodeCell(board, R >> 1, C >> 1);
+  if (R % 2 === 0) return roadCell(game, 'h', R >> 1, C >> 1, locks);
+  if (C % 2 === 0) return roadCell(game, 'v', R >> 1, C >> 1, locks);
+  return blockCell(game, board.blocks[(R >> 1) * board.cols + (C >> 1)]);
+}
+
+/** A kept cell's in-place state: a block's selection, a road's lock. Writes only what changed. */
+function patchCell(game, locks, el, R, C) {
+  if (R % 2 === 1 && C % 2 === 1) {
+    const on = el.dataset.block === selectedId;
+    if (el.classList.contains('is-selected') !== on) el.classList.toggle('is-selected', on);
+    if (el.getAttribute('aria-pressed') !== String(on)) el.setAttribute('aria-pressed', String(on));
+  } else if (R % 2 !== C % 2) {
+    const disabled = game.board.roads[el.dataset.road] != null || locks.closed;
+    if (el.disabled !== disabled) el.disabled = disabled;
+    if (disabled && el.hasAttribute('tabindex')) el.removeAttribute('tabindex'); // not a tab stop, as when built
+    const aria = disabled || locks.distress ? 'true' : null;
+    if (el.getAttribute('aria-disabled') !== aria) {
+      if (aria) el.setAttribute('aria-disabled', aria);
+      else el.removeAttribute('aria-disabled');
+    }
+  }
+}
+
+/**
+ * Every cell of the board as a full draw makes it right now, in grid order (detached elements).
+ * renderBoard uses it for full draws; tests compare it with the incrementally drawn board.
+ */
+export function buildBoardCells(game) {
+  const { board } = game;
+  const locks = roadLocks(game);
+  const out = [];
+  for (let R = 0; R <= board.rows * 2; R++) {
+    for (let C = 0; C <= board.cols * 2; C++) out.push(buildCell(game, locks, R, C));
+  }
+  return out;
+}
+
+/**
+ * Draws the board. Only cells whose state changed are rebuilt (see above); `full` (and a new game,
+ * a new board size, or a board someone else emptied) rebuilds every cell.
+ */
+export function renderBoard(game, { full = false } = {}) {
   const { board } = game;
   const el = $('#board');
   const frame = $('#board-frame');
@@ -180,7 +281,11 @@ export function renderBoard(game) {
     : focused?.dataset.block ? `[data-block="${focused.dataset.block}"]` : null;
 
   fx = { move: game.lastMove !== seenMove, development: game.lastDevelopment !== seenDevelopment };
-  if (fx.move) armedId = null;
+  if (fx.move) {
+    armedId = null;
+    moveCount += 1;
+  }
+  if (fx.development) developmentCount += 1;
   seenMove = game.lastMove;
   seenDevelopment = game.lastDevelopment;
 
@@ -192,18 +297,29 @@ export function renderBoard(game) {
   // Locked: no road previews or taps to arm (game over, debt to settle, or a CPU mayor's turn).
   el.classList.toggle('is-locked', !playing || isInDistress(currentPlayer(game)) || isCpu(currentPlayer(game)));
 
-  const cells = [];
-  for (let R = 0; R <= board.rows * 2; R++) {
-    for (let C = 0; C <= board.cols * 2; C++) {
-      const r = R >> 1;
-      const c = C >> 1;
-      if (R % 2 === 0 && C % 2 === 0) cells.push(nodeCell(board, r, c));
-      else if (R % 2 === 0) cells.push(roadCell(game, 'h', r, c));
-      else if (C % 2 === 0) cells.push(roadCell(game, 'v', r, c));
-      else cells.push(blockCell(game, board.blocks[r * board.cols + c]));
+  const size = (board.rows * 2 + 1) * (board.cols * 2 + 1);
+  const locks = roadLocks(game);
+  if (full || game !== cellsGame || cells.length !== size || el.children.length !== size || cells[0]?.el.parentNode !== el) {
+    const built = buildBoardCells(game);
+    cells = built.map((cell, i) => ({ el: cell, key: cellKey(game, Math.floor(i / (board.cols * 2 + 1)), i % (board.cols * 2 + 1)) }));
+    el.replaceChildren(...built);
+    cellsGame = game;
+  } else {
+    let i = 0;
+    for (let R = 0; R <= board.rows * 2; R++) {
+      for (let C = 0; C <= board.cols * 2; C++, i++) {
+        const key = cellKey(game, R, C);
+        const cell = cells[i];
+        if (key === cell.key) {
+          patchCell(game, locks, cell.el, R, C);
+          continue;
+        }
+        const next = buildCell(game, locks, R, C);
+        cell.el.replaceWith(next);
+        cells[i] = { el: next, key };
+      }
     }
   }
-  el.replaceChildren(...cells);
 
   const focusedMatch = focusKey ? el.querySelector(focusKey) : null;
   const focusTarget = focusedMatch?.matches('.block, .road:not(:disabled)') ? focusedMatch : null;
@@ -213,21 +329,22 @@ export function renderBoard(game) {
   const remembered = rovingKey ? el.querySelector(rovingKey) : null;
   const rememberedCandidate = remembered?.matches('.block, .road:not(:disabled)') ? remembered : null;
   const roving = focusTarget ?? rememberedCandidate ?? candidates[0] ?? null;
-  candidates.forEach((cell) => { cell.tabIndex = cell === roving ? 0 : -1; });
+  for (const cell of candidates) {
+    const tabIndex = cell === roving ? '0' : '-1';
+    if (cell.getAttribute('tabindex') !== tabIndex) cell.setAttribute('tabindex', tabIndex);
+  }
   if (roving) {
     rovingKey = roving.dataset.road ? `[data-road="${roving.dataset.road}"]` : `[data-block="${roving.dataset.block}"]`;
   } else {
     rovingKey = null;
   }
-  if (focusTarget) focusTarget.focus({ preventScroll: true });
+  // Focus stays put on a kept cell; a rebuilt one gets it back.
+  if (focusTarget && document.activeElement !== focusTarget) focusTarget.focus({ preventScroll: true });
 }
 
+/** A refused road shakes (again, if it is tapped again). */
 export function rejectRoad(id) {
-  const btn = document.querySelector(`#board [data-road="${id}"]`);
-  if (!btn) return;
-  btn.classList.remove('is-rejected');
-  void btn.offsetWidth;
-  btn.classList.add('is-rejected');
+  replayAnimation(document.querySelector(`#board [data-road="${id}"]`), 'is-rejected');
 }
 
 export function selectBlock(id) {

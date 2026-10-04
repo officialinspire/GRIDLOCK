@@ -16,17 +16,54 @@ import { scorePlayer } from './scoring.js';
 import { blockPrestige, controlStrength } from './strategy.js';
 import { usesCityAction } from './game.js';
 import { quoteTakeover, shieldStatus } from './takeover.js';
+import { measure } from './perf.js';
+import { remember, plannerOptimizations } from './memo.js';
+import { readCached } from './passCache.js';
+
+/*
+ * Inside a CPU decision (core/memo.js) the readings below are remembered per game view: a player's
+ * stats, bonuses and score, a block's details and the "before" side of every forecast are the same
+ * for all the options the planner prices on that view. Outside one they are simply computed.
+ */
+export const scoreOf = (game, player) => remember(game, `score|${player.seat}`, () => scorePlayer(game, player));
+export const statsOf = (game, player) => remember(game, `stats|${player.seat}`, () => playerStats(game, player));
+const detailsOf = (game, blockId) => remember(game, `details|${blockId}`, () => blockDetails(game, blockId));
+
+/**
+ * A throwaway copy of `game` to run one real transaction on (a forecast, a CPU what-if). Every
+ * transaction it is used for (build, upgrade, sale, downgrade, redevelopment auction, takeover)
+ * only assigns: cash and ownership, a block's development and shields, every block's bonuses
+ * (refreshBonuses rewrites them all, with new arrays), the city's action counts, the ledger and
+ * the log. So those are copied (players, city, each block, fresh empty history) and the rest is
+ * shared, never written: roads, events, event definitions, rules. Much cheaper than a deep copy
+ * of the whole game; with the planner optimizations off (tests), a full structuredClone.
+ */
+export function simulationCopy(game) {
+  if (!plannerOptimizations()) return structuredClone({ ...game, ledger: [], log: [] });
+  return {
+    ...game,
+    ledger: [],
+    log: [],
+    players: game.players.map((player) => ({ ...player })),
+    city: { ...game.city },
+    board: { ...game.board, blocks: game.board.blocks.map((block) => ({ ...block })) },
+  };
+}
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
   const block = getBlockById(game.board, blockId);
   const owner = block?.ownerSeat != null ? getPlayer(game, block.ownerSeat) : null;
   if (!owner) return null;
-  return scorePlayer(game, owner).cityValue - scorePlayer(game, owner, { exclude: blockId }).cityValue;
+  return scoreOf(game, owner).cityValue - scorePlayer(game, owner, { exclude: blockId }).cityValue;
 }
 
 /** Everything the inspector shows about one block right now. */
 export function blockDetails(game, blockId) {
+  return measure('blockDetails', () => readCached(game, `details|${blockId}`, () => readBlock(game, blockId)));
+}
+
+function readBlock(game, blockId) {
   const block = getBlockById(game.board, blockId);
   if (!block) return null;
   const income = effectiveBlockIncome(game, block);
@@ -55,13 +92,16 @@ export function blockDetails(game, blockId) {
 /** A player's per-turn position and City Value, read with the game's own functions. */
 function position(game, seat, blockId) {
   const player = getPlayer(game, seat);
-  const stats = playerStats(game, player);
-  const bonuses = [];
-  for (const b of game.board.blocks) {
-    if (b.ownerSeat !== seat) continue;
-    for (const bonus of b.bonuses ?? []) bonuses.push({ block: b.id, blockLabel: b.label, ...bonus });
-  }
-  const score = scorePlayer(game, player);
+  const stats = statsOf(game, player);
+  const bonuses = remember(game, `bonuses|${seat}`, () => {
+    const out = [];
+    for (const b of game.board.blocks) {
+      if (b.ownerSeat !== seat) continue;
+      for (const bonus of b.bonuses ?? []) out.push({ block: b.id, blockLabel: b.label, ...bonus });
+    }
+    return out;
+  });
+  const score = scoreOf(game, player);
   return {
     cash: player.cash,
     income: stats.income,
@@ -69,7 +109,7 @@ function position(game, seat, blockId) {
     net: stats.income - stats.upkeep,
     cityValue: score.cityValue,
     prestige: score.prestige,
-    block: blockDetails(game, blockId),
+    block: detailsOf(game, blockId),
     bonuses,
   };
 }
@@ -90,26 +130,28 @@ const bonusKey = (b) => `${b.block}:${b.id}`;
  * depend on cash) and cash/City Value after are null.
  */
 export function forecastDevelopment(game, blockId, type) {
+  return measure('forecastDevelopment', () => forecast(game, blockId, type));
+}
+
+function forecast(game, blockId, type) {
   const upgrade = type == null;
-  const requote = () => (upgrade ? quoteUpgrade(game, blockId) : quoteBuild(game, blockId, type));
-  let quote = requote();
+  const requote = (g) => (upgrade ? quoteUpgrade(g, blockId) : quoteBuild(g, blockId, type));
+  let quote = requote(game);
   const usesAction = usesCityAction(game);
-  // Out of actions: price it as if this Manage City still had one (it's shown, not done).
+  // Out of actions: price it as if this Manage City still had one (it's shown, not done), on a
+  // view with one more action, so the game itself is never touched.
   const actionAvailable = quote.error !== DEV_ERRORS.NO_ACTIONS;
-  if (!actionAvailable) {
-    game.city.actionsLeft += 1;
-    try { quote = requote(); } finally { game.city.actionsLeft -= 1; }
-  }
+  if (!actionAvailable) quote = requote({ ...game, city: { ...game.city, actionsLeft: game.city.actionsLeft + 1 } });
   if (!quote.ok && quote.error !== DEV_ERRORS.INSUFFICIENT_FUNDS) return { ok: false, error: quote.error, quote };
 
   const seat = currentPlayer(game).seat;
-  const sim = structuredClone(game);
+  const sim = simulationCopy(game);
   if (!actionAvailable) sim.city.actionsLeft += 1;
   if (!quote.ok) getPlayer(sim, seat).cash += quote.shortfall; // forecast the build itself, not the budget
   const result = upgrade ? upgradeBlock(sim, blockId) : buildOnBlock(sim, blockId, type);
   if (!result.ok) return { ok: false, error: result.error, quote };
 
-  const before = position(game, seat, blockId);
+  const before = remember(game, `position|${seat}|${blockId}`, () => position(game, seat, blockId));
   const after = position(sim, seat, blockId);
   if (!quote.ok) {
     after.cash = null;

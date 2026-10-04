@@ -12,21 +12,34 @@
  *   handoff, an auction people are bidding in…), another screen, or no game.
  * - Every scheduled step is tied to the exact game state it was planned for. If anything has
  *   changed when it fires (a reload, a new game, a move by someone else) it is dropped and
- *   re-planned, so a step can never run twice. The game autosaves after every step, so a
- *   reload mid-turn resumes from the last completed step.
+ *   re-planned, so a step can never run twice. Every step is autosaved (a quick run of steps
+ *   in one write; a reload or hidden page writes it first), so a reload mid-turn resumes from
+ *   the last completed step.
  * - Ended games, leaving for the title screen and new games stop all timers.
+ * - Cooperative (js/ui/cooperative.js): planning a step and playing it are tasks of their own,
+ *   never part of the move, redraw or click that came before. Planning that took more than a
+ *   slice of a frame last time (a phone, Hard's City decisions) starts only once the browser
+ *   has painted, so each move is on screen and a tap on Pause handled before the bot thinks
+ *   again; quick planning (a fast desktop) may follow at once within the slice. Even with no
+ *   pause between steps (Skip, Instant), bot steps can't pile up into one long block.
  */
 import { $ } from './dom.js';
 import { CPU } from '../config.js';
 import { PHASES, currentPlayer, roadsBuilt } from '../core/game.js';
 import { isCpu } from '../core/seats.js';
+import { measure } from '../core/perf.js';
+import { createCooperativeScheduler, SLICE_MS } from './cooperative.js';
 
 let hooks = null;
-let timer = null;
+let timer = null; // the thinking pause before a planned step
+let pending = null; // cancels the planning or the step waiting for its turn (cooperative scheduling)
+const { soon, nextTask } = createCooperativeScheduler();
+let lastPlanMs = Infinity; // how long the last planning took (cheap planning may share a frame)
 let plannedFor = null;
 let plan = null; // { text, target, run } for the step being thought about
 let skipping = false;
 let stuck = 0; // steps in a row that changed nothing (see STUCK_LIMIT)
+let stepping = null; // seat of the CPU whose planned step is being played right now
 
 /**
  * Safety net: a step that changes nothing would be planned again and again. After this many in
@@ -61,6 +74,8 @@ function stateKey(game) {
 function cancel() {
   if (timer) clearTimeout(timer);
   timer = null;
+  pending?.();
+  pending = null;
   plannedFor = null;
   plan = null;
   showIntent(null);
@@ -87,6 +102,9 @@ function showStatus(player) {
   bar.hidden = false;
 }
 
+/** The seat whose CPU step the driver is playing right now, or null (see the game view's render()). */
+export const cpuStepSeat = () => stepping;
+
 /** True while it's a CPU seat's turn in a game in progress. */
 export function isCpuTurn(game = hooks?.getGame()) {
   return Boolean(game && game.phase === PHASES.PLAYING && isCpu(currentPlayer(game)));
@@ -111,31 +129,67 @@ export function kickCpu() {
     return;
   }
   const key = stateKey(game);
-  if (timer && plannedFor === key) {
-    if (shows(hooks.getSettings(), plan)) showIntent(plan); // a re-render may have replaced the highlighted element
+  if (plannedFor === key && (timer || pending)) {
+    // A re-render may have replaced the highlighted element.
+    if (plan && shows(hooks.getSettings(), plan)) showIntent(plan);
     return;
   }
   cancel();
   plannedFor = key;
-  plan = (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game);
+  const kickedAt = performance.now();
+  // Planned in a task of its own: after a paint, unless planning has been quick (see above).
+  pending = soon(() => {
+    pending = null;
+    planStep(game, key, kickedAt);
+  }, { cheap: lastPlanMs < SLICE_MS });
+}
+
+/** True while `game` is still the game, in exactly the state `key` describes, and the CPU may act. */
+const stillFor = (game, key) => {
+  const now = hooks.getGame();
+  return now === game && isCpuTurn(now) && stateKey(now) === key && hooks.canAct();
+};
+
+function planStep(game, key, kickedAt) {
+  if (!stillFor(game, key)) {
+    plannedFor = null;
+    kickCpu(); // the table changed while the planning waited: look again
+    return;
+  }
+  const started = performance.now();
+  plan = measure('cpuPlan', () => (stuck >= STUCK_LIMIT && hooks.fallback?.(game)) || hooks.plan(game));
+  lastPlanMs = performance.now() - started;
   const planned = plan;
-  const delay = skipping ? 0 : stepDelay(hooks.getSettings(), planned);
+  // The thinking pause counts from the previous step, so its length is the setting's.
+  const wait = skipping ? 0 : Math.max(0, stepDelay(hooks.getSettings(), planned) - (performance.now() - kickedAt));
   // Brief/Instant: only major steps get the "what it's doing" line and highlight.
   showIntent(shows(hooks.getSettings(), planned) ? planned : null);
-  timer = setTimeout(() => {
+  const play = () => {
     timer = null;
+    pending = null;
+    playStep(game, key, planned);
+  };
+  if (wait > 0) timer = setTimeout(play, wait);
+  else pending = nextTask(play); // a task of its own, straight after the planning
+}
+
+function playStep(game, key, planned) {
+  const fresh = stillFor(game, key);
+  plannedFor = null;
+  plan = null;
+  showIntent(null);
+  // The plan was made for exactly this state (same key), so it is still the right move.
+  if (fresh) {
     const now = hooks.getGame();
-    const fresh = now === game && isCpuTurn(now) && stateKey(now) === key && hooks.canAct();
-    plannedFor = null;
-    plan = null;
-    showIntent(null);
-    // The plan was made for exactly this state (same key), so it is still the right move.
-    if (fresh) {
+    stepping = currentPlayer(now).seat;
+    try {
       planned.run();
-      stuck = hooks.getGame() === now && stateKey(now) === key ? stuck + 1 : 0;
+    } finally {
+      stepping = null;
     }
-    kickCpu();
-  }, delay);
+    stuck = hooks.getGame() === now && stateKey(now) === key ? stuck + 1 : 0;
+  }
+  kickCpu();
 }
 
 /** Stops everything (game over, leaving the game, starting another). */

@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createGame, placeRoad, startPaving, TURN_PHASES } from '../../js/core/game.js';
+import { createGame, placeRoad, startPaving, TURN_PHASES, PHASES } from '../../js/core/game.js';
+import { chooseRoad } from '../../js/core/cpu/roads.js';
+import { chooseCityAction, applyCityAction } from '../../js/core/cpu/city.js';
 import { getBlock } from '../../js/core/board.js';
 import { applyDevelopment } from '../../js/core/development.js';
 import { startEvent, EVENT_POOL } from '../../js/core/events.js';
@@ -157,4 +159,49 @@ test('saves from before eras, Prestige, takeovers and recovery migrate safely an
   }
   storage.setItem(KEY, JSON.stringify({ ...raw, version: 99 }));
   assert.equal(load(storage), null, 'a save from a newer version is ignored');
+});
+
+// The game screen trusts saveActiveGame(): after a successful autosave it offers Continue without
+// reading the save back, so every successful save must be one loadActiveGame() accepts.
+test('a save that succeeds always loads back, at every step of real games', () => {
+  const tables = [['standard', ['normal', 'hard', 'easy', 'normal'], 21], ['chaos', ['hard', 'normal', 'easy'], 22]];
+  for (const [mode, levels, seed] of tables) {
+    const game = createGame({ mode, seed, seats: levels.map((difficulty, i) => ({ seat: i + 1, controller: 'cpu', difficulty })) });
+    const storage = memoryStorage();
+    const eras = new Set();
+    let steps = 0;
+    while (game.phase === PHASES.PLAYING) {
+      assert.ok(++steps < 5000, `${mode}: runaway game`);
+      if (game.turnPhase === TURN_PHASES.PAVE_ROAD || game.turnPhase === TURN_PHASES.BONUS_ROAD) {
+        const d = chooseRoad(game);
+        if (d.road) placeRoad(game, d.road);
+      } else {
+        const d = chooseCityAction(game);
+        if (d.action) applyCityAction(game, d);
+      }
+      if (game.phase !== PHASES.PLAYING) break;
+      eras.add(game.era);
+      assert.equal(saveActiveGame(game, null, storage), true, `${mode} step ${steps}: saved`);
+      const back = loadActiveGame(storage);
+      assert.ok(back, `${mode} step ${steps}: the save it just wrote loads`);
+      assert.deepEqual(
+        [back.game.round, back.game.turnIndex, back.game.turnPhase, back.game.log.length, back.game.players.map((pl) => pl.cash)],
+        [game.round, game.turnIndex, game.turnPhase, game.log.length, game.players.map((pl) => pl.cash)],
+      );
+    }
+    assert.deepEqual([...eras].sort(), ['city', 'expansion'], `${mode}: both eras saved`);
+  }
+});
+
+test('a refused or impossible save returns false and leaves the last good save in place', () => {
+  const storage = memoryStorage();
+  const game = createGame({ ...setup, seed: 5 });
+  assert.equal(saveActiveGame(game, setup, storage), true);
+  const good = storage.getItem(SAVE_KEY);
+  const broken = structuredClone(game);
+  broken.round = -1;
+  assert.equal(saveActiveGame(broken, setup, storage), false, 'an invalid game is refused');
+  assert.equal(storage.getItem(SAVE_KEY), good, 'nothing was overwritten');
+  assert.ok(loadActiveGame(storage), 'the last good save still loads');
+  assert.equal(saveActiveGame(game, setup, null), false, 'no storage: nothing was saved');
 });

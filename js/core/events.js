@@ -17,6 +17,7 @@ import { eventRules } from './modes.js';
 import { isProtected } from './bonuses.js';
 import { blockIncome } from './economy.js';
 import { nextRandom } from './rng.js';
+import { readCached } from './passCache.js';
 
 const POOL = CITY_EVENTS.POOL;
 const BY_ID = new Map(POOL.map((e) => [e.id, e]));
@@ -144,6 +145,10 @@ function matches(match, block, instance) {
  * [{ instance, def, multiplier, mitigated }]. Mitigated entries don't apply.
  */
 export function blockImpacts(game, block) {
+  return readCached(game, `impacts|${block.id}`, () => impactsOn(game, block));
+}
+
+function impactsOn(game, block) {
   const out = [];
   if (!developed(block)) return out;
   for (const instance of game.events.active) {

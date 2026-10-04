@@ -103,8 +103,19 @@
   .setup__footer .btn { min-height: 52px; }
 
   /* ---------- Settings: two columns ---------- */
-  .settings-panel { width: min(1040px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: 26px; }
-  .settings-panel .settings-sound { grid-row: span 3; }
+  /* Sound and Help on the left, Controls, Display and the note on the right: two columns of about
+     the same height (the page order, and so the tab order, stays Sound → Controls → Display → Help). */
+  .settings-panel {
+    width: min(1040px, 100%); grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: 26px;
+    grid-template-areas: 'sound controls' 'sound display' 'help note';
+  }
+  .settings-panel .settings-sound { grid-area: sound; }
+  .settings-panel .settings-controls { grid-area: controls; }
+  .settings-panel .settings-display { grid-area: display; }
+  .settings-panel .settings-help { grid-area: help; }
+  /* Its one row ("First-game tips · Replay Tutorial") says it all: the heading stays for screen readers. */
+  .settings-panel .settings-help legend { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .settings-panel .settings-panel__note { grid-area: note; align-self: end; }
 
   /* ---------- How To Play: icon beside the title, tighter cards ---------- */
   .howto-grid { gap: 14px; }

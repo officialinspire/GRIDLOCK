@@ -66,10 +66,13 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await browserType.launch(launchOpts);
 // Most runs start as a player already past the start screen and INSPIRE intro this session
 // (as after a reload). `freshStart: true` opens a context on the start screen instead.
+// No service worker: offline play, the precache and updates are tests/pwa.mjs's job (in every
+// browser). Here a worker only adds a 6 MB precache per context, and in WebKit it could surface the
+// update banner over the board mid-test.
 {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
-    const context = await newContext(options);
+    const context = await newContext({ serviceWorkers: 'block', ...options });
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };
@@ -127,6 +130,10 @@ function watchForBrowserErrors(page) {
     if (optionalFont(url)) return;
     const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
     if (aborted && (navigations > (startedAt.get(request) ?? navigations) || loaded.has(url))) return;
+    // An image the page stopped needing (its element replaced mid-load) is cancelled by the browser
+    // (Firefox: NS_BINDING_ABORTED) and may be served from memory later without a new response.
+    // A missing image is still caught: it answers HTTP 404 (below).
+    if (aborted && request.resourceType() === 'image') return;
     // <audio>/<video> cancel their own streaming range requests when they pause, seek or loop.
     if (aborted && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(url)) return;
     const entry = `requestfailed: ${url} (${request.failure()?.errorText ?? 'unknown'})`;
@@ -307,9 +314,15 @@ for (const vp of VIEWPORTS) {
     await pave(page, road('h-0-0'));
     assert.match(await banner(), /<b>Bo<\/b>'s turn/);
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('road--red')));
-    const toastBeforeLockedRoad = await page.textContent('#toasts');
+    // No new toast from clicking it (an earlier one may fade out meanwhile on a slow browser).
+    await page.evaluate(() => {
+      window.__toastsAdded = 0;
+      new MutationObserver((records) => { for (const r of records) window.__toastsAdded += r.addedNodes.length; })
+        .observe(document.querySelector('#toasts'), { childList: true });
+    });
     await road('h-0-0').dispatchEvent('click');
-    assert.equal(await page.textContent('#toasts'), toastBeforeLockedRoad, 'built road inert');
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => window.__toastsAdded), 0, 'built road inert');
     assert.equal(await road('h-0-0').getAttribute('data-owner-symbol'), 'triangle');
 
     await pave(page, road('v-0-0'));
@@ -717,6 +730,205 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Reduce effects on a phone (motion allowed): off by default whatever the screen size, and it
+// persists. On a busy late-game board nothing loops, one event cut-out per block, no blurred
+// shadows or blend modes; buildings, ownership, roads, event markers and capture feedback stay.
+{
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: browserName !== 'firefox', hasTouch: true });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('gl-test-init')) return; // a reload keeps what the test chose
+    sessionStorage.setItem('gl-test-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true, sound: false }));
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const loops = () => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).map((a) => a.animationName));
+  const effects = () => page.evaluate(() => document.documentElement.dataset.effects);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    assert.equal(await effects(), 'full', 'never switched on by screen size');
+    assert.ok((await loops()).length > 0, 'the title traffic drives with full effects');
+    await page.click('[data-screen="title"] [data-nav="settings"]');
+    assert.equal(await page.isChecked('[name="reducedEffects"]'), false);
+    await page.locator('label.setting-row', { hasText: 'Reduce effects' }).click();
+    assert.equal(await effects(), 'reduced');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.motion), 'full', 'separate from Reduce motion');
+    await page.click('[data-screen="settings"] [data-nav="back"]');
+    assert.deepEqual(await loops(), [], 'title: the traffic is parked, the start pulse still');
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await effects(), 'reduced', 'the setting persists');
+
+    // A busy late-game board: every block owned and built (some abandoned), seven events at once.
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    await page.evaluate(async () => {
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { startEvent } = await import('/js/core/events.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const types = ['residential', 'commercial', 'industrial', 'park', 'civic', 'landmark'];
+      g.board.blocks.forEach((b, i) => {
+        if (b.id === 'r0c0') return; // left open for a capture
+        if (i % 9 === 4) { b.abandoned = true; b.abandonedBy = 1; return; }
+        b.ownerSeat = (i % g.players.length) + 1;
+        applyDevelopment(b, types[i % types.length], (i % 3) + 1);
+      });
+      for (const id of ['heavy-rain', 'fire', 'power-outage', 'city-festival', 'economic-boom', 'recession', 'snowstorm']) startEvent(g, id);
+    });
+    await pave(page, page.locator('[data-road="h-3-3"]')); // a move redraws the board
+    await page.waitForTimeout(300);
+    assert.deepEqual(await loops(), [], 'nothing loops on the board or HUD');
+    const board = await page.evaluate(() => {
+      const shown = (el) => {
+        const s = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0 && r.width > 0 && r.height > 0;
+      };
+      const blocks = [...document.querySelectorAll('#board .block')];
+      const owned = blocks.filter((b) => b.classList.contains('block--owned'));
+      const developed = blocks.filter((b) => b.classList.contains('block--developed'));
+      const withVfx = blocks.filter((b) => b.querySelector('.block__event-vfx'));
+      const all = [...document.querySelectorAll('#board *')];
+      return {
+        owned: owned.length,
+        developed: developed.length,
+        buildings: developed.filter((b) => shown(b.querySelector('.block__building'))).length,
+        ownership: owned.filter((b) => ['.block__tint', '.block__frame', '.block__flag', '.block__owner-mark'].every((s) => shown(b.querySelector(s)))).length,
+        abandoned: blocks.filter((b) => b.classList.contains('block--abandoned') && shown(b.querySelector('.block__abandoned'))).length,
+        vfxBlocks: withVfx.length,
+        vfxShown: withVfx.map((b) => [...b.querySelectorAll('.block__event-vfx')].filter(shown).map((el) => el.classList.contains('block__event-vfx--main'))),
+        affected: blocks.filter((b) => /\bis-event-(hurt|boost|shielded)\b/.test(b.className)).length,
+        markers: blocks.filter((b) => /\bis-event-(hurt|boost|shielded)\b/.test(b.className) && shown(b.querySelector('.block__event'))).length,
+        rings: blocks.filter((b) => b.classList.contains('is-event-hurt')).every((b) => getComputedStyle(b, '::before').boxShadow.includes('inset')),
+        paved: shown(document.querySelector('[data-road="h-3-3"] .road__tile')),
+        lastRing: getComputedStyle(document.querySelector('.road.is-last'), '::after').borderTopWidth,
+        blurred: all.filter((el) => [...getComputedStyle(el).filter.matchAll(/drop-shadow\(([^)]|\([^)]*\))*\)/g)]
+          .some((m) => (m[0].match(/-?[\d.]+px/g) ?? []).length > 2 && Number.parseFloat(m[0].match(/-?[\d.]+px/g)[2]) > 0)).length,
+        blends: all.filter((el) => getComputedStyle(el).mixBlendMode !== 'normal').length,
+        grain: getComputedStyle(document.querySelector('.tabletop'), '::after').display,
+      };
+    });
+    assert.ok(board.owned > 20 && board.developed > 20, `a busy board (${board.owned} owned)`);
+    assert.equal(board.buildings, board.developed, 'every building is drawn');
+    assert.equal(board.ownership, board.owned, 'every owned block keeps its tint, frame, flag and mark');
+    assert.ok(board.abandoned > 0, 'abandoned lots are still marked');
+    assert.ok(board.vfxBlocks > 10, 'events hit many blocks');
+    assert.deepEqual(board.vfxShown, board.vfxShown.map(() => [true]), 'one event cut-out per block: the lead event’s');
+    assert.ok(board.affected > 10 && board.markers === board.affected, 'every affected block keeps its event marker');
+    assert.ok(board.rings, 'hurt blocks keep their ring');
+    assert.equal(board.paved, true, 'the paved road is drawn');
+    assert.equal(board.lastRing, '3px', 'the last move keeps its ring');
+    assert.equal(board.blurred, 0, 'no blurred shadows on the board');
+    assert.equal(board.blends, 0, 'no blend modes on the board');
+    assert.equal(board.grain, 'none');
+
+    // Capture feedback is all there: the block pops, the burst, the frame flash, the chain meter.
+    // Animations are recorded as they start (on a slow browser they may be over before we look).
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
+    await page.evaluate(() => {
+      window.__started = [];
+      document.addEventListener('animationstart', (e) => {
+        const t = e.target;
+        const who = t.id || t.dataset?.block || (t.classList.contains('block__fx--capture') ? 'burst' : t.className);
+        window.__started.push([who, e.animationName]);
+      }, true);
+    });
+    await pave(page, page.locator('[data-road="v-0-1"]')); // closes r0c0
+    await page.waitForFunction(() => window.__started.some(([who]) => who === 'r0c0'), null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const capture = await page.evaluate(() => {
+      const names = (who) => window.__started.filter(([w]) => w === who).map(([, n]) => n);
+      return {
+        pop: names('r0c0'),
+        burst: names('burst'),
+        frame: names('board-frame'),
+        chain: document.querySelector('#chain-meter').hidden ? '' : document.querySelector('#chain-meter').textContent,
+      };
+    });
+    assert.ok(capture.pop.includes('capture-pop'), `the block pops (${capture.pop})`);
+    assert.ok(capture.burst.includes('fx-burst'), 'the capture burst plays');
+    assert.ok(capture.frame.some((n) => n.startsWith('frame-flash')), 'the frame flashes');
+    assert.match(capture.chain, /CAPTURE ×1/);
+
+    // Switched off during play, the board's effects come straight back.
+    await page.evaluate(async () => (await import('/js/ui/settingsView.js')).updateSettings({ reducedEffects: false }));
+    assert.equal(await effects(), 'full');
+    assert.ok((await loops()).length > 10, 'event art animates again');
+    assert.deepEqual(errors, []);
+    console.log('✔ reduce effects (phone): off by default, persists; nothing loops, one event cut-out per block, sharp shadows; buildings, ownership, roads, markers, capture feedback kept');
+  } catch (err) {
+    failures++;
+    console.error(`✘ reduce effects: ${err.message}`);
+    await page.screenshot({ path: 'test-results/reduce-effects-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
+// End Turn double tap (touch, hot-seat, Quick Handoff): one press ends one turn, never the next
+// mayor's too; a deliberate press afterwards still works.
+{
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: browserName !== 'firefox', hasTouch: true, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('gl-test-init')) return;
+    sessionStorage.setItem('gl-test-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ quickHandoff: true, sound: false }));
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const mayor = () => page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); return g.players[g.turnIndex].name; });
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    // A City-era table of three people, continued from a save.
+    await page.evaluate(async () => {
+      const { allRoadIds } = await import('/js/core/board.js');
+      const { createGame, enterCityEra } = await import('/js/core/game.js');
+      const { saveActiveGame } = await import('/js/core/persistence.js');
+      const seats = [1, 2, 3].map((seat) => ({ seat, name: `P${seat}`, controller: 'human' }));
+      const g = createGame({ mode: 'classic', seed: 3, seats });
+      for (const id of allRoadIds(g.board)) g.board.roads[id] = 1;
+      g.board.blocks.forEach((b, i) => { b.ownerSeat = (i % 3) + 1; });
+      enterCityEra(g);
+      saveActiveGame(g, { gameType: 'custom', mode: 'classic', seed: 3, seats });
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await mayor(), 'P1');
+    // Taps dispatched in the page at exact gaps, as the tap-through check does: driving two real
+    // taps can take longer than the repeat window on a slow CI runner.
+    const taps = (gaps) => page.evaluate(async (list) => {
+      const btn = document.querySelector('#action-end-turn');
+      const tap = () => {
+        btn.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+      };
+      const t0 = performance.now();
+      tap();
+      for (const ms of list) { await new Promise((done) => setTimeout(done, ms)); tap(); }
+      return performance.now() - t0;
+    }, gaps);
+    const gap = await taps([100]); // the same press, a double tap
+    assert.ok(gap < 450, `taps ${Math.round(gap)}ms apart form a double tap`);
+    await page.waitForTimeout(200);
+    assert.equal(await mayor(), 'P2', 'a double tap ends one turn');
+    await page.waitForTimeout(600);
+    await taps([]);
+    await page.waitForTimeout(200);
+    assert.equal(await mayor(), 'P3', 'a deliberate press ends the next');
+    assert.deepEqual(errors, []);
+    console.log('✔ End Turn double tap (touch, Quick Handoff): one turn per press');
+  } catch (err) {
+    failures++;
+    console.error(`✘ End Turn double tap: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 // Touch/handoff/resize flow.
 {
   const context = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce' });
@@ -919,6 +1131,213 @@ for (const vp of VIEWPORTS) {
   } catch (err) {
     failures++;
     console.error(`✘ persistence: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+// Autosave is debounced: a burst of moves is one write, reloading or hiding the page writes a
+// pending save first, and the end of a match clears the save even while a save is pending.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  // Counts writes of the active-game save.
+  await context.addInitScript(() => {
+    const write = Storage.prototype.setItem;
+    window.__saveWrites = 0;
+    Storage.prototype.setItem = function setItem(key, value) {
+      if (key === 'gridlock.active-game') window.__saveWrites++;
+      return write.call(this, key, value);
+    };
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const savedRoads = () => page.evaluate(() => {
+    const save = JSON.parse(localStorage.getItem('gridlock.active-game') ?? 'null');
+    return save && Object.keys(save.game.board.roads).length;
+  });
+  const writes = () => page.evaluate(() => window.__saveWrites);
+  const paveAll = (ids) => page.evaluate((list) => {
+    for (const id of list) document.querySelector(`#board [data-road="${id}"]`).click();
+  }, ids);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    assert.equal(await savedRoads(), 0, 'a new game is saved at once');
+
+    // Three moves in one burst: nothing written mid-burst, then exactly one write with all three.
+    const before = await writes();
+    await paveAll(['h-0-0', 'h-0-1', 'h-0-2']);
+    assert.equal(await writes(), before, 'no write mid-burst');
+    await page.waitForFunction((n) => window.__saveWrites > n, before);
+    await page.waitForTimeout(600);
+    assert.equal(await writes(), before + 1, 'one write for the burst');
+    assert.equal(await savedRoads(), 3);
+
+    // A move and an immediate reload: the pending save is written on the way out.
+    await paveAll(['h-0-3']);
+    assert.equal(await savedRoads(), 3, 'still pending');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await page.textContent('#hud-roads'), '4/84', 'the last move survived the reload');
+    await dismissEvent(page);
+
+    // Hiding the page (switching apps, a tab the browser may discard) writes a pending save too.
+    await paveAll(['h-0-4']);
+    assert.equal(await savedRoads(), 4, 'still pending');
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      delete document.visibilityState;
+    });
+    assert.equal(await savedRoads(), 5, 'written when the page was hidden');
+
+    // The end of a match clears the save, even with a save still pending from the move before.
+    const lastTwo = await page.evaluate(async () => {
+      const { allRoadIds } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      g.city.rounds = 0; // the final road ends the match
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -2).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.slice(-2);
+    });
+    await paveAll(lastTwo);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.waitForTimeout(600);
+    assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null, 'no save after the match');
+    assert.equal(await page.evaluate(() => document.querySelector('#continue-game').hidden), true, 'no Continue offered');
+    assert.deepEqual(errors, []);
+    console.log('✔ autosave: a burst of moves is one write; reload and hiding write it first; game over clears it');
+  } catch (err) {
+    failures++;
+    console.error(`✘ autosave: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
+// The board draws incrementally: after every action of a whole match the live board matches a
+// fresh full build, unchanged cells keep their DOM, there is one tab stop, and City view marks
+// are cleared from kept cells it no longer lists.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?seed=7&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    const report = await page.evaluate(async () => {
+      const { buildBoardCells } = await import('/js/ui/boardView.js');
+      const board = document.querySelector('#board');
+      const game = () => window.__GRIDLOCK__.getGame();
+      const nextTap = () => new Promise((r) => setTimeout(r, 0)); // a player's taps are separate tasks
+      // Compared as markup, ignoring what only the live board carries (the roving tab stop, City
+      // view marks, a refused road's shake and its replay) and class order (selection is toggled in place).
+      const normal = (html) => html.replace(/ tabindex="-?\d+"/g, '').replace(/ data-influence="[^"]*"| aria-description="[^"]*"/g, '')
+        .replace(/ class="([^"]*)"/g, (m, cls) => ` class="${cls.split(' ').filter((c) => c && c !== 'is-rejected' && c !== 'is-replay').sort().join(' ')}"`);
+      const out = { steps: 0, mismatches: [], tabStops: [], replaced: [], kept: 0, influence: null, ended: false, stuck: null };
+      const check = (label) => {
+        const fresh = document.createElement('div');
+        fresh.append(...buildBoardCells(game()));
+        if (normal(board.innerHTML) !== normal(fresh.innerHTML) && out.mismatches.length < 3) {
+          const k = [...board.children].findIndex((c, j) => normal(c.outerHTML) !== normal(fresh.children[j]?.outerHTML ?? ''));
+          out.mismatches.push(`${label}: cell ${k}`);
+        }
+        const stops = board.querySelectorAll('[tabindex="0"]');
+        if (stops.length !== 1 || stops[0].disabled) out.tabStops.push(`${label}: ${stops.length}`);
+      };
+      let added = 0;
+      new MutationObserver((records) => { for (const r of records) added += r.addedNodes.length; }).observe(board, { childList: true });
+      let triedBuild = false;
+      let idle = 0;
+      check('start');
+      for (let i = 0; i < 800 && game().phase === 'playing'; i++) {
+        const round = game().round;
+        const panel = document.querySelector('#build-dialog[open]');
+        const debt = document.querySelector('#finance-dialog[open]')?.querySelector('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]');
+        const dialogButton = document.querySelector('#city-intro-dialog[open] #city-intro-go, #event-dialog[open] #event-continue');
+        const develop = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="develop"]');
+        const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
+        let label;
+        if (debt) { debt.click(); label = 'debt'; } else if (dialogButton) { dialogButton.click(); label = 'dialog'; } else if (panel) {
+          // One build attempt per panel, then leave it the way a player does (Close, or the backdrop).
+          const build = !triedBuild && panel.querySelector('[data-build="residential"]:not(:disabled):not([aria-disabled="true"])');
+          triedBuild = Boolean(build);
+          if (build) { build.click(); label = 'build'; } else { (panel.querySelector('[data-action="close"]') ?? panel).click(); label = 'close panel'; }
+        } else if (develop && i % 3 === 0) { develop.click(); label = 'develop'; } else if (vacant) { vacant.click(); label = 'vacant'; } else {
+          // Every few moves, select a block first (selection is patched in place).
+          if (i % 5 === 0) board.querySelector(`[data-block="r${i % 6}c${(i * 7) % 6}"]`)?.click();
+          if (document.querySelector('#build-dialog[open]')) continue; // selecting an own block opened its panel
+          const road = board.querySelector('.road:not(.is-built):not(:disabled)');
+          const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)');
+          if (!road && !endTurn) {
+            // A dialog's close event (and what it opens next, e.g. the final capture's choice) comes a task later.
+            if (++idle < 40) { await new Promise((r) => setTimeout(r, 25)); continue; }
+            out.stuck = { phase: game().turnPhase, era: game().era, dialogs: [...document.querySelectorAll('dialog[open]')].map((d) => d.id) };
+            break;
+          }
+          idle = 0;
+          // Once: City view marks a shielded block; when the shield runs out, the kept cell loses its mark.
+          let shield = null;
+          if (road && !out.influence && out.steps >= 30) {
+            const owned = game().board.blocks.find((b) => b.ownerSeat != null && !b.abandoned);
+            if (owned) {
+              owned.shieldedUntil = round;
+              document.querySelector('#city-view-btn').click();
+              await nextTap();
+              shield = { block: owned, cell: board.querySelector(`[data-block="${owned.id}"]`) };
+              shield.marked = shield.cell.dataset.influence ?? null;
+              owned.shieldedUntil = null; // runs out
+            }
+          }
+          const far = board.querySelector('[data-block="r5c5"]');
+          const before = added;
+          if (road) { road.click(); label = `road ${road.dataset.road}`; } else { endTurn.click(); label = 'end turn'; }
+          await nextTap();
+          if (road) {
+            out.replaced.push(added - before);
+            if (board.querySelector('[data-block="r5c5"]') === far) out.kept += 1;
+          }
+          if (shield) {
+            const cell = board.querySelector(`[data-block="${shield.block.id}"]`);
+            out.influence = { marked: shield.marked, kept: cell === shield.cell, stale: cell.hasAttribute('data-influence') || cell.hasAttribute('aria-description') };
+            document.querySelector('#city-view-btn').click();
+            await nextTap();
+            out.influence.offMarks = board.querySelectorAll('[data-influence], [aria-description]').length;
+          }
+          out.steps += 1;
+          check(`${label} (round ${round})`);
+          continue;
+        }
+        await nextTap();
+        out.steps += 1;
+        check(`${label} (round ${round})`);
+      }
+      out.ended = game().phase === 'ended';
+      return out;
+    });
+    assert.ok(report.ended, `the match was played to the end (${report.steps} steps; ${JSON.stringify(report.stuck)})`);
+    assert.deepEqual(report.mismatches, [], 'the incrementally drawn board always matches a full build');
+    assert.deepEqual(report.tabStops, [], 'exactly one enabled tab stop after every action');
+    const roads = report.replaced.length;
+    const avg = report.replaced.reduce((a, b) => a + b, 0) / roads;
+    assert.ok(avg < 20, `a road redraws a handful of cells, not the board (${avg.toFixed(1)} of 169 on average)`);
+    assert.ok(report.kept >= roads * 0.8, `a far corner block keeps its element across moves (${report.kept}/${roads})`);
+    assert.equal(report.influence?.marked, 'shield', `City view marked the shielded block (${JSON.stringify(report.influence)})`);
+    assert.equal(report.influence.stale, false, 'its mark went when the shield ran out');
+    assert.equal(report.influence.offMarks, 0, 'no marks left with City view off');
+    assert.deepEqual(errors, []);
+    console.log(`✔ board: incremental drawing matches a full build over a whole match (${report.steps} actions, ${avg.toFixed(1)} cells per road), one tab stop, City view marks cleared`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ board incremental: ${err.message}`);
   } finally {
     await context.close();
   }
@@ -1592,17 +2011,20 @@ const recordVibration = () => {
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
     await newGame('Classic', 2);
     await page.evaluate(async () => {
+      // Each tap in its own task, as a player's are: the screen is redrawn at the end of each action.
+      const nextTap = () => new Promise((r) => setTimeout(r, 0));
       for (let i = 0; i < 400; i++) {
         // The City era card: skipped as a player would; its close (and the final capture's choice) follows.
         const intro = document.querySelector('#city-intro-dialog[open] #city-intro-go');
         if (intro) { intro.click(); await new Promise((r) => setTimeout(r, 30)); continue; }
         const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
-        if (vacant) { vacant.click(); continue; }
+        if (vacant) { vacant.click(); await nextTap(); continue; }
         const road = document.querySelector('#board .road:not(.is-built):not(:disabled)');
         const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)'); // CITY era
         if (road) road.click();
         else if (endTurn) endTurn.click();
         else break;
+        await nextTap();
       }
     });
     await page.locator('#results-dialog').waitFor({ state: 'visible' });

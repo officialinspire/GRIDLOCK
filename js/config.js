@@ -28,6 +28,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   confirmTaps: true, // touch screens: first tap previews a road, second tap paves it
   haptics: true, // vibration feedback on touch devices that support it (no effect elsewhere)
   reducedMotion: false,
+  // Lighter presentation for lower-powered devices (css/effects.css): event cut-outs hold still,
+  // softer shadows, no decorative loops. Gameplay information is unchanged. Only ever turned on
+  // by the player, never from screen size.
+  reducedEffects: false,
   showCoords: false,
   quickHandoff: false,
   cpuSpeed: 'normal', // how long CPU mayors pause before each move: relaxed | normal | fast

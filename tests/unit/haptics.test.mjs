@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHaptics, PATTERNS } from '../../js/ui/haptics.js';
-import { isTapThrough, GUARD_MS } from '../../js/ui/touchGuard.js';
+import { isTapThrough, GUARD_MS, isRepeatPress, REPEAT_MS } from '../../js/ui/touchGuard.js';
 import { normalizeSettings } from '../../js/core/settings.js';
 import { DEFAULT_SETTINGS } from '../../js/config.js';
 
@@ -94,4 +94,14 @@ test('tap-through guard: only fast touch taps on a fresh dialog, or on the board
     assert.equal(isTapThrough({ ...base, ...other, dialogOpenedAt: 1000 }), false);
     assert.equal(isTapThrough({ ...base, ...other, onBoard: true, lastDialogClosedAt: 999 }), false);
   }
+});
+
+test('repeat guard: a quick second tap or a double click on End Turn is the same press; separate clicks and keys are not', () => {
+  const base = { pointerType: 'touch', keyboard: false, detail: 1, now: 1000, lastPressAt: -Infinity };
+  assert.equal(isRepeatPress(base), false, 'the first press is taken');
+  assert.equal(isRepeatPress({ ...base, lastPressAt: 1000 - 120 }), true, 'a double tap');
+  assert.equal(isRepeatPress({ ...base, lastPressAt: 1000 - REPEAT_MS - 1 }), false, 'a deliberate second press');
+  assert.equal(isRepeatPress({ ...base, pointerType: 'mouse', detail: 2, lastPressAt: 1000 - 120 }), true, 'the second click of a double-click');
+  assert.equal(isRepeatPress({ ...base, pointerType: 'mouse', lastPressAt: 1000 - 120 }), false, 'separate mouse clicks (tests, quick players)');
+  assert.equal(isRepeatPress({ ...base, keyboard: true, detail: 0, lastPressAt: 1000 - 10 }), false, 'the keyboard');
 });

@@ -1,5 +1,6 @@
 /** Game screen controller: wires core game state to board, HUD and actions. */
 import { $, h } from './dom.js';
+import { replayAnimation } from './replay.js';
 import { createSprite, preloadSheets } from '../assets.js';
 import { ART } from '../art.js';
 import { bus } from '../core/bus.js';
@@ -45,7 +46,11 @@ import {
 import { initAuctionView, startAuction, cancelAuction } from './auctionView.js';
 import { initCityIntro, showCityIntro, cancelCityIntro } from './cityIntro.js';
 import { takeoverBlock, influenceMap } from '../core/takeover.js';
-import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
+import { initCpuDriver, kickCpu, stopCpu, isCpuTurn, cpuStepSeat } from './cpuDriver.js';
+import { measure } from '../core/perf.js';
+import { createAutosave } from './autosave.js';
+import { createRenderScheduler } from './renderScheduler.js';
+import { readPass } from '../core/passCache.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -59,21 +64,51 @@ let lastHuman = null; // seat of the last person to have the device (for handoff
 
 export const getGame = () => game;
 
+/** Title screen: Continue and Discard show only while there is a saved game to offer. */
+function showSavedGameControls(available) {
+  $('#continue-game').hidden = !available;
+  $('#discard-save').hidden = !available;
+}
+
+/** Reads (migrates and validates) the stored save, shows the controls to match and returns it. */
 function refreshSavedGameControls() {
   const saved = loadActiveGame();
-  $('#continue-game').hidden = !saved;
-  $('#discard-save').hidden = !saved;
+  showSavedGameControls(Boolean(saved));
   return saved;
 }
 
+/** Writes the game in progress to storage now and shows Continue / Discard to match. */
+function writeSave() {
+  measure('autosave', () => {
+    // saveActiveGame() validates the game before writing it, so a save that succeeded is one
+    // loadActiveGame() accepts: show the controls without reading it straight back. Anything
+    // else (game over, a refused or failed save) asks storage what is really there.
+    if (game?.phase === PHASES.PLAYING && saveActiveGame(game, lastSetup)) showSavedGameControls(true);
+    else refreshSavedGameControls();
+  });
+}
+
+/**
+ * Autosave (js/ui/autosave.js): a quick run of moves (a capture chain, CPU steps) is written
+ * once, shortly after the last of them. Hiding, reloading or leaving the page writes a pending
+ * save first (initGameView); quitting, an app update, a new game, the City era and a settled
+ * auction save at once (saveNow); the end of a match or an abandon drops it and clears the save.
+ */
+const autosaver = createAutosave(writeSave);
+
+/** A durable change during play: saved shortly (debounced). */
 function autosave() {
-  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
-  refreshSavedGameControls();
+  autosaver.schedule();
+}
+
+/** Saves right away, replacing any pending save. */
+function saveNow() {
+  autosaver.saveNow();
 }
 
 /** Saves the game in progress right now (e.g. before an app update reloads the page). */
 export function saveGameNow() {
-  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+  saveNow();
 }
 
 function renderInspector(blockId, panel = $('#inspector')) {
@@ -206,20 +241,50 @@ function renderActions() {
   endTurn.classList.toggle('is-ready', managing && city && game.city.actionsLeft === 0);
 }
 
-function render() {
-  renderBoard(game);
-  renderHud(game);
-  renderPrompt();
-  renderInspector(getSelectedBlock());
-  renderEventStrip(game);
-  renderActions();
+/**
+ * Draws the whole game screen now: board, HUD, prompt, inspector, event strip, actions, City
+ * view and tips; then lets a CPU mayor plan (kickCpu also re-marks its target on the new board).
+ * Only the render scheduler calls this; everything else asks with render().
+ */
+function drawGame() {
+  if (!game) return;
   // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
   const botTurn = isCpuTurn(game);
-  $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
-  applyCityView();
-  updateTutorial();
-  kickCpu();
+  // One read-only pass: readings several parts ask for (a block's event impacts, a player's
+  // stats, the takeover candidates…) are computed once (core/passCache.js).
+  measure('render', () => readPass(game, () => {
+    measure('renderBoard', () => renderBoard(game));
+    measure('renderHud', () => renderHud(game));
+    renderPrompt();
+    measure('renderInspector', () => renderInspector(getSelectedBlock()));
+    renderEventStrip(game);
+    renderActions();
+    $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
+    measure('applyCityView', applyCityView);
+    updateTutorial();
+  }));
+  kickCpu(); // may plan the CPU's next step: timed as cpuPlan, not as part of render
   if (botTurn) tutorialMoment('cpu');
+}
+
+const renderer = createRenderScheduler(drawGame);
+
+/**
+ * Asks for a redraw (js/ui/renderScheduler.js). Every request during one action becomes a single
+ * draw at the end of that action, before the browser paints or handles the next event. A CPU step
+ * after which the same bot is still on turn draws at the next animation frame instead, so a burst
+ * of quick bot steps (Skip, Instant playback) is one visual update per frame; a step that hands
+ * the turn on (to a person or another bot) is drawn at once, like a person's action.
+ */
+function render() {
+  const bot = cpuStepSeat();
+  renderer.request({ frame: bot != null && isCpuTurn(game) && currentPlayer(game).seat === bot });
+}
+
+/** A tutorial moment whose tip may point at the board or HUD: drawn first, so it points at this turn's screen. */
+function tipOnScreen(id) {
+  renderer.flush();
+  tutorialMoment(id);
 }
 
 /* ---------------- CITY VIEW (influence overlay) ---------------- */
@@ -250,18 +315,33 @@ function applyCityView() {
   $('#board-frame').classList.toggle('is-city-view', on);
   const legend = $('#influence-legend');
   legend.hidden = !on;
+  const map = on ? influenceMap(game, viewerSeat()) : null;
+  markInfluence(map);
   if (!on) return;
-  const map = influenceMap(game, viewerSeat());
-  for (const [list, kind, , note] of INFLUENCE) {
-    for (const id of map[list]) {
-      const cell = document.querySelector(`#board [data-block="${id}"]`);
-      if (!cell) continue;
-      cell.dataset.influence = kind;
-      cell.setAttribute('aria-description', `City view: ${note}`);
-    }
-  }
   legend.replaceChildren(...INFLUENCE.map(([list, kind, label]) => h('li', { class: 'influence-legend__item', dataset: { influence: kind } },
     h('span', { class: 'influence-legend__swatch', 'aria-hidden': 'true' }), `${label} ${map[list].length}`)));
+}
+
+/**
+ * Marks the blocks the City view lists (none when `map` is null). The board keeps unchanged cells
+ * between draws, so marks from before that no longer apply are cleared here; only changes are written.
+ */
+function markInfluence(map) {
+  const marks = new Map();
+  for (const [list, kind, , note] of map ? INFLUENCE : []) {
+    for (const id of map[list]) marks.set(id, [kind, `City view: ${note}`]);
+  }
+  for (const cell of document.querySelectorAll('#board [data-influence]')) {
+    if (marks.has(cell.dataset.block)) continue;
+    delete cell.dataset.influence;
+    cell.removeAttribute('aria-description');
+  }
+  for (const [id, [kind, description]] of marks) {
+    const cell = document.querySelector(`#board [data-block="${id}"]`);
+    if (!cell) continue;
+    if (cell.dataset.influence !== kind) cell.dataset.influence = kind;
+    if (cell.getAttribute('aria-description') !== description) cell.setAttribute('aria-description', description);
+  }
 }
 
 function toggleCityView() {
@@ -334,8 +414,10 @@ function leaveCapturedBlock(blockId) {
 }
 
 function handleBlockSelect(id) {
-  renderInspector(id);
-  renderActions();
+  readPass(game, () => {
+    renderInspector(id);
+    renderActions();
+  });
   if (!id || !game) return;
   if (!isCpuTurn() && openBuildPanel(game, id)) return;
   // Compact (portrait) layouts hide the side inspector: show the same details in a bottom sheet.
@@ -355,10 +437,7 @@ function handleRoadArmed() {
 }
 
 function flashFrame() {
-  const frame = $('#board-frame');
-  frame.classList.remove('is-capture');
-  void frame.offsetWidth;
-  frame.classList.add('is-capture');
+  replayAnimation($('#board-frame'), 'is-capture');
 }
 
 function chainLabel(count) {
@@ -374,11 +453,7 @@ function renderChain() {
   meter.hidden = chain < 1;
   meter.textContent = chainLabel(chain);
   meter.dataset.chain = Math.min(chain, 5);
-  if (chain) {
-    meter.classList.remove('is-bumped');
-    void meter.offsetWidth;
-    meter.classList.add('is-bumped');
-  }
+  if (chain) replayAnimation(meter, 'is-bumped');
 }
 
 /**
@@ -412,9 +487,7 @@ function showTurnSummary({ turnIncome, turnUpkeep, turnRepair, note = null }) {
   if (note) nodes.push(h('span', { class: 'economy-summary__note' }, note));
   summary.replaceChildren(...nodes);
   summary.hidden = false;
-  summary.classList.remove('is-showing');
-  void summary.offsetWidth;
-  summary.classList.add('is-showing');
+  replayAnimation(summary, 'is-showing');
   clearTimeout(showTurnSummary.timer);
   showTurnSummary.timer = setTimeout(() => { summary.hidden = true; }, 2600);
 }
@@ -478,7 +551,9 @@ function handleRoad(id, { cpu = false } = {}) {
     bus.emit('game:move', result);
     return;
   }
-  autosave();
+  // The final road (the City era begins) is saved at once; other moves shortly after.
+  if (result.cityEra) saveNow();
+  else autosave();
   // The City era card first; the final capture's Develop Now choice when it closes.
   if (result.cityEra) announceCityEra(mover, () => { if (n > 0) showCaptureChoice(); });
   else if (n > 0) showCaptureChoice();
@@ -491,6 +566,7 @@ function finishMatch(delay) {
   $('#board-frame').classList.add('is-city-complete');
   // Career stats/achievements: counted only if this match was genuinely played to the end.
   recordFinishedMatch(game);
+  autosaver.cancel(); // a pending save must not bring the finished match back
   clearActiveGame();
   refreshSavedGameControls();
   setTimeout(() => {
@@ -557,7 +633,7 @@ function passTurn(result, mover) {
     if (paid > 0 && !result.event?.started) play('coins');
     showTurnSummary({ turnIncome: result.turnIncome, turnUpkeep: result.turnUpkeep, turnRepair: result.turnRepair, note });
     const payee = result.turnIncome && getPlayer(game, result.turnIncome.seat);
-    if (payee && !isCpu(payee) && (paid > 0 || (result.turnUpkeep?.amount ?? 0) > 0)) tutorialMoment('income');
+    if (payee && !isCpu(payee) && (paid > 0 || (result.turnUpkeep?.amount ?? 0) > 0)) tipOnScreen('income');
     checkDistress();
     bus.emit('game:move', result);
   };
@@ -602,13 +678,16 @@ function runAuction(blockId, mode) {
   });
 }
 
-/** Right after an auction resolves: save, redraw and sound off (the dialog shows the details). */
+/**
+ * Right after an auction resolves: save, redraw and sound off (the dialog shows the details).
+ * Saved at once: the sealed bids are now revealed, so a reload must never replay the auction.
+ */
 function auctionSettled(result) {
   if (result.ok) {
     play('coins');
     clearSelection();
   }
-  autosave();
+  saveNow();
   render();
 }
 
@@ -799,11 +878,13 @@ function startGame(setup) {
   clearSelection();
   render();
   resetTo('game');
-  autosave();
+  saveNow(); // the new game replaces the cleared save at once
   toast(`${currentPlayer(game).name} goes first`);
 }
 
 function leaveForTitle() {
+  autosaver.cancel(); // Save & Quit has already saved; Abandon and the end of a match clear the save
+  renderer.cancel(); // nothing left to draw
   stopCpu();
   cancelAuction();
   cancelCityIntro();
@@ -817,11 +898,12 @@ function leaveForTitle() {
 }
 
 function saveAndQuit() {
-  autosave();
+  saveNow();
   leaveForTitle();
 }
 
 function abandonGame() {
+  autosaver.cancel();
   clearActiveGame();
   leaveForTitle();
 }
@@ -925,7 +1007,7 @@ export function initGameView() {
       render();
       // A person just went bankrupt: explain recovery (once).
       const me = game && currentPlayer(game);
-      if (me && !isCpu(me) && game.lastBankruptcy?.seat === me.seat) tutorialMoment('recovery');
+      if (me && !isCpu(me) && game.lastBankruptcy?.seat === me.seat) tipOnScreen('recovery');
     },
   });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
@@ -981,7 +1063,15 @@ export function initGameView() {
     clearActiveGame();
     refreshSavedGameControls();
   });
-  bus.on('screen:shown', ({ name }) => { if (name === 'title') refreshSavedGameControls(); });
+  bus.on('screen:shown', ({ name }) => {
+    if (name !== 'title') return;
+    autosaver.flush();
+    refreshSavedGameControls();
+  });
+  // Hiding, reloading or leaving the page (switching apps, closing the tab) writes a pending save
+  // first, so a reload or a killed background tab resumes from the latest move.
+  window.addEventListener('pagehide', () => autosaver.flush());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosaver.flush(); });
   refreshSavedGameControls();
   renderInspector(null);
 }
