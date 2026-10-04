@@ -12,8 +12,9 @@
  *   handoff, an auction people are bidding in…), another screen, or no game.
  * - Every scheduled step is tied to the exact game state it was planned for. If anything has
  *   changed when it fires (a reload, a new game, a move by someone else) it is dropped and
- *   re-planned, so a step can never run twice. The game autosaves after every step, so a
- *   reload mid-turn resumes from the last completed step.
+ *   re-planned, so a step can never run twice. Every step is autosaved (a quick run of steps
+ *   in one write; a reload or hidden page writes it first), so a reload mid-turn resumes from
+ *   the last completed step.
  * - Ended games, leaving for the title screen and new games stop all timers.
  */
 import { $ } from './dom.js';

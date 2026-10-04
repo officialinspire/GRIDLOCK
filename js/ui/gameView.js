@@ -47,6 +47,7 @@ import { initCityIntro, showCityIntro, cancelCityIntro } from './cityIntro.js';
 import { takeoverBlock, influenceMap } from '../core/takeover.js';
 import { initCpuDriver, kickCpu, stopCpu, isCpuTurn } from './cpuDriver.js';
 import { measure } from '../core/perf.js';
+import { createAutosave } from './autosave.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -73,7 +74,8 @@ function refreshSavedGameControls() {
   return saved;
 }
 
-function autosave() {
+/** Writes the game in progress to storage now and shows Continue / Discard to match. */
+function writeSave() {
   measure('autosave', () => {
     // saveActiveGame() validates the game before writing it, so a save that succeeded is one
     // loadActiveGame() accepts: show the controls without reading it straight back. Anything
@@ -83,9 +85,27 @@ function autosave() {
   });
 }
 
+/**
+ * Autosave (js/ui/autosave.js): a quick run of moves (a capture chain, CPU steps) is written
+ * once, shortly after the last of them. Hiding, reloading or leaving the page writes a pending
+ * save first (initGameView); quitting, an app update, a new game, the City era and a settled
+ * auction save at once (saveNow); the end of a match or an abandon drops it and clears the save.
+ */
+const autosaver = createAutosave(writeSave);
+
+/** A durable change during play: saved shortly (debounced). */
+function autosave() {
+  autosaver.schedule();
+}
+
+/** Saves right away, replacing any pending save. */
+function saveNow() {
+  autosaver.saveNow();
+}
+
 /** Saves the game in progress right now (e.g. before an app update reloads the page). */
 export function saveGameNow() {
-  if (game?.phase === PHASES.PLAYING) saveActiveGame(game, lastSetup);
+  saveNow();
 }
 
 function renderInspector(blockId, panel = $('#inspector')) {
@@ -492,7 +512,9 @@ function handleRoad(id, { cpu = false } = {}) {
     bus.emit('game:move', result);
     return;
   }
-  autosave();
+  // The final road (the City era begins) is saved at once; other moves shortly after.
+  if (result.cityEra) saveNow();
+  else autosave();
   // The City era card first; the final capture's Develop Now choice when it closes.
   if (result.cityEra) announceCityEra(mover, () => { if (n > 0) showCaptureChoice(); });
   else if (n > 0) showCaptureChoice();
@@ -505,6 +527,7 @@ function finishMatch(delay) {
   $('#board-frame').classList.add('is-city-complete');
   // Career stats/achievements: counted only if this match was genuinely played to the end.
   recordFinishedMatch(game);
+  autosaver.cancel(); // a pending save must not bring the finished match back
   clearActiveGame();
   refreshSavedGameControls();
   setTimeout(() => {
@@ -616,13 +639,16 @@ function runAuction(blockId, mode) {
   });
 }
 
-/** Right after an auction resolves: save, redraw and sound off (the dialog shows the details). */
+/**
+ * Right after an auction resolves: save, redraw and sound off (the dialog shows the details).
+ * Saved at once: the sealed bids are now revealed, so a reload must never replay the auction.
+ */
 function auctionSettled(result) {
   if (result.ok) {
     play('coins');
     clearSelection();
   }
-  autosave();
+  saveNow();
   render();
 }
 
@@ -813,11 +839,12 @@ function startGame(setup) {
   clearSelection();
   render();
   resetTo('game');
-  autosave();
+  saveNow(); // the new game replaces the cleared save at once
   toast(`${currentPlayer(game).name} goes first`);
 }
 
 function leaveForTitle() {
+  autosaver.cancel(); // Save & Quit has already saved; Abandon and the end of a match clear the save
   stopCpu();
   cancelAuction();
   cancelCityIntro();
@@ -831,11 +858,12 @@ function leaveForTitle() {
 }
 
 function saveAndQuit() {
-  autosave();
+  saveNow();
   leaveForTitle();
 }
 
 function abandonGame() {
+  autosaver.cancel();
   clearActiveGame();
   leaveForTitle();
 }
@@ -995,7 +1023,15 @@ export function initGameView() {
     clearActiveGame();
     refreshSavedGameControls();
   });
-  bus.on('screen:shown', ({ name }) => { if (name === 'title') refreshSavedGameControls(); });
+  bus.on('screen:shown', ({ name }) => {
+    if (name !== 'title') return;
+    autosaver.flush();
+    refreshSavedGameControls();
+  });
+  // Hiding, reloading or leaving the page (switching apps, closing the tab) writes a pending save
+  // first, so a reload or a killed background tab resumes from the latest move.
+  window.addEventListener('pagehide', () => autosaver.flush());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autosaver.flush(); });
   refreshSavedGameControls();
   renderInspector(null);
 }

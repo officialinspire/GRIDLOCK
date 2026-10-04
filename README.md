@@ -337,7 +337,7 @@ Sound effects and ambience are synthesised in the browser with Web Audio (no sou
 
 ### Saving a local game
 
-Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely. Saves carry a schema version (`SAVE_VERSION`, now 2) and older versions are migrated one step at a time (`migrateSave` in `js/core/persistence.js`).
+Active matches autosave to versioned local storage after every durable action: phase changes, roads, capture decisions, construction, sales, bankruptcy and redevelopment. A quick run of actions (a capture chain, a stretch of CPU steps) is written once, about 0.3 s after the last of them and never more than a second late (`js/ui/autosave.js`). Hiding, reloading or leaving the page writes a pending save first; Save & Quit, an app update, a new game, the start of the City era and a settled auction save at once. The title screen shows **Continue Game** only when the saved state passes validation. **Save & Quit** keeps it; **Abandon Game** asks for confirmation and deletes it. A completed match, explicit discard, or rematch also clears the old active save. Reloading never restores transient dialogs, selection, road previews, animations or sound state. Corrupt and unsupported saves are ignored safely. Saves carry a schema version (`SAVE_VERSION`, now 2) and older versions are migrated one step at a time (`migrateSave` in `js/core/persistence.js`).
 
 ## Install & play offline
 
@@ -722,6 +722,7 @@ js/
     intro.js               The INSPIRE intro video: Skip, and every way it can end without trapping anyone
     music.js               Recorded music: two streamed themes, crossfades, seamless loops, tab visibility
     cpuDriver.js           Runs CPU turns: thinking pause + intent line, Pause/Speed up/Skip, waits for dialogs/pause, stale-step guard
+    autosave.js            Debounced autosave scheduling: one write per quick run of moves, flush / save now / cancel
     setupView.js           New game form: seats, Human/CPU presets + difficulty, rules, city seed
     boardView.js           Board renderer (intersections, road slots, blocks)
     hud.js                 Player cards, round & turn banner
@@ -765,6 +766,7 @@ tests/
   unit/finance.test.mjs    Upkeep, distress blocking, sell/downgrade refunds, bankruptcy rules, capped fresh start, restore/rebuild, 60-game fuzz
   unit/events.test.mjs     Pool data, weighted/seeded draws, trigger timing, duration/expiry, no stacking, mitigation, fire, costs, full games
   unit/persistence.test.mjs Save/load fidelity, migration, corruption and storage-failure safety
+  unit/autosave.test.mjs   Debounced autosave on a fake clock: one write per burst, max wait, flush, save now, cancel
   unit/audio.test.mjs      Audio manager on a fake Web Audio: no autoplay, silent failure, distinct sounds (per building type and event), chain escalation, volumes/fades, ambience scenes, music by scene/switch/volume/mute/hidden tab, settings
   unit/intro.test.mjs      INSPIRE intro: plays on demand, Skip guard, ends on refusal/error/stall/time cap/hidden tab
   unit/haptics.test.mjs    Haptic patterns, support/setting/activation rules, tap-through guard decisions

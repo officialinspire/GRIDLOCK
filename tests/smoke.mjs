@@ -924,6 +924,90 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Autosave is debounced: a burst of moves is one write, reloading or hiding the page writes a
+// pending save first, and the end of a match clears the save even while a save is pending.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  // Counts writes of the active-game save.
+  await context.addInitScript(() => {
+    const write = Storage.prototype.setItem;
+    window.__saveWrites = 0;
+    Storage.prototype.setItem = function setItem(key, value) {
+      if (key === 'gridlock.active-game') window.__saveWrites++;
+      return write.call(this, key, value);
+    };
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const savedRoads = () => page.evaluate(() => {
+    const save = JSON.parse(localStorage.getItem('gridlock.active-game') ?? 'null');
+    return save && Object.keys(save.game.board.roads).length;
+  });
+  const writes = () => page.evaluate(() => window.__saveWrites);
+  const paveAll = (ids) => page.evaluate((list) => {
+    for (const id of list) document.querySelector(`#board [data-road="${id}"]`).click();
+  }, ids);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    assert.equal(await savedRoads(), 0, 'a new game is saved at once');
+
+    // Three moves in one burst: nothing written mid-burst, then exactly one write with all three.
+    const before = await writes();
+    await paveAll(['h-0-0', 'h-0-1', 'h-0-2']);
+    assert.equal(await writes(), before, 'no write mid-burst');
+    await page.waitForFunction((n) => window.__saveWrites > n, before);
+    await page.waitForTimeout(600);
+    assert.equal(await writes(), before + 1, 'one write for the burst');
+    assert.equal(await savedRoads(), 3);
+
+    // A move and an immediate reload: the pending save is written on the way out.
+    await paveAll(['h-0-3']);
+    assert.equal(await savedRoads(), 3, 'still pending');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    assert.equal(await page.textContent('#hud-roads'), '4/84', 'the last move survived the reload');
+    await dismissEvent(page);
+
+    // Hiding the page (switching apps, a tab the browser may discard) writes a pending save too.
+    await paveAll(['h-0-4']);
+    assert.equal(await savedRoads(), 4, 'still pending');
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      delete document.visibilityState;
+    });
+    assert.equal(await savedRoads(), 5, 'written when the page was hidden');
+
+    // The end of a match clears the save, even with a save still pending from the move before.
+    const lastTwo = await page.evaluate(async () => {
+      const { allRoadIds } = await import('/js/core/board.js');
+      const g = window.__GRIDLOCK__.getGame();
+      g.eventPool = [];
+      g.city.rounds = 0; // the final road ends the match
+      const ids = allRoadIds(g.board).filter((id) => g.board.roads[id] == null);
+      ids.slice(0, -2).forEach((id) => { g.board.roads[id] = 1; });
+      for (const b of g.board.blocks) if (b.ownerSeat == null) { b.abandoned = true; b.abandonedBy = 1; }
+      return ids.slice(-2);
+    });
+    await paveAll(lastTwo);
+    await page.locator('#results-dialog').waitFor({ state: 'visible' });
+    await page.waitForTimeout(600);
+    assert.equal(await page.evaluate(() => localStorage.getItem('gridlock.active-game')), null, 'no save after the match');
+    assert.equal(await page.evaluate(() => document.querySelector('#continue-game').hidden), true, 'no Continue offered');
+    assert.deepEqual(errors, []);
+    console.log('✔ autosave: a burst of moves is one write; reload and hiding write it first; game over clears it');
+  } catch (err) {
+    failures++;
+    console.error(`✘ autosave: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 // Money/capture/build feedback with motion enabled.
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
