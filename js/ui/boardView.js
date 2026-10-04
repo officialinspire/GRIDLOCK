@@ -146,6 +146,8 @@ function blockCell(game, block) {
     .flatMap((impact) => (ART.event[impact.def.id] ?? []).map((sprite, index) => ({ sprite, id: impact.def.id, index })));
   for (const id of new Set(eventVfx.map((item) => item.id))) cls.push(`has-event-${id}`);
   if (ev.state) cls.push(`is-event-${ev.state}`);
+  // The one cut-out kept with Reduce effects (css/effects.css): the lead event's, as in the marker.
+  const mainVfx = eventVfx.find((item) => item.id === ev.lead?.def.id && item.index === 0) ?? eventVfx[0];
 
   return h('button', {
     type: 'button',
@@ -170,14 +172,14 @@ function blockCell(game, block) {
     color && !art && createSprite(ART.owner.seal(block.ownerSeat), { className: 'block__seal' }),
     developed && levelBadge(block),
     ev.state && createSprite(ev.state === 'shielded' ? 'title:shield' : ev.lead.def.sprite, { className: 'block__event' }),
-    ...eventVfx.map(({ sprite, id, index }) => createSprite(sprite, {
-      className: `block__event-vfx block__event-vfx--${id} block__event-vfx--${index + 1}`,
+    ...eventVfx.map((item) => createSprite(item.sprite, {
+      className: `block__event-vfx block__event-vfx--${item.id} block__event-vfx--${item.index + 1}${item === mainVfx ? ' block__event-vfx--main' : ''}`,
     })),
     color && createSprite(ART.owner.flag(block.ownerSeat), { className: 'block__flag' }),
     justBuilt && h('span', { class: 'block__foundation', 'aria-hidden': 'true' }),
     color && h('span', { class: 'block__owner-mark', 'aria-hidden': 'true' }, PLAYER_PRESETS[block.ownerSeat - 1].mark),
-    fresh && createSprite(ART.fx.capture, { className: 'block__fx' }),
-    justBuilt && createSprite(ART.fx.build, { className: 'block__fx' }),
+    fresh && createSprite(ART.fx.capture, { className: 'block__fx block__fx--capture' }),
+    justBuilt && createSprite(ART.fx.build, { className: 'block__fx block__fx--build' }),
     h('span', { class: 'block__coord', 'aria-hidden': 'true' }, block.label),
   );
 }
@@ -213,7 +215,7 @@ function blockKey(game, block) {
   const fresh = fx.move && game.lastMove?.captured.includes(block.id);
   const justBuilt = fx.development && game.lastDevelopment?.block === block.id;
   return [blockDescription(game, block), block.ownerSeat ?? '', block.abandoned ? 'abandoned' : '', block.type, block.level,
-    block.bonusIncome, ev.state ?? '', ev.lead?.def.sprite ?? '', vfx, fresh ? moveCount : '',
+    block.bonusIncome, ev.state ?? '', ev.lead?.def.id ?? '', vfx, fresh ? moveCount : '',
     justBuilt ? `${developmentCount}${game.lastDevelopment.fromLevel > 0 ? 'up' : ''}` : ''].join('|');
 }
 

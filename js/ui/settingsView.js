@@ -14,6 +14,7 @@ export function getSettings() {
 export function applySettingsToDocument(s = settings) {
   const root = document.documentElement;
   root.dataset.motion = s.reducedMotion ? 'reduced' : 'full';
+  root.dataset.effects = s.reducedEffects ? 'reduced' : 'full';
   root.dataset.coords = s.showCoords ? 'on' : 'off';
   audio.configure(s);
   haptics.configure(s);

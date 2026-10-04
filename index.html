@@ -39,6 +39,7 @@
   <link rel="stylesheet" href="css/art.css">
   <link rel="stylesheet" href="css/mobile.css">
   <link rel="stylesheet" href="css/desktop.css">
+  <link rel="stylesheet" href="css/effects.css">
 
   <script type="module" src="js/main.js"></script>
 </head>
@@ -287,7 +288,7 @@
           </label>
         </fieldset>
 
-        <fieldset>
+        <fieldset class="settings-controls">
           <legend>Controls</legend>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:road"></span>Tap twice to pave (touch screens)</span>
@@ -321,11 +322,16 @@
           </div>
         </fieldset>
 
-        <fieldset>
+        <fieldset class="settings-display">
           <legend>Display</legend>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:star"></span>Reduce motion</span>
             <input type="checkbox" class="toggle" name="reducedMotion">
+          </label>
+          <label class="setting-row" title="Calmer event art, lighter shadows and no decorative loops. Nothing in play is hidden.">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:building"></span>
+              <span>Reduce effects<small class="setting-row__hint" id="reduced-effects-hint">Lighter art for slower devices</small></span></span>
+            <input type="checkbox" class="toggle" name="reducedEffects" aria-label="Reduce effects" aria-describedby="reduced-effects-hint">
           </label>
           <label class="setting-row">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:map"></span>Show block coordinates</span>
@@ -333,7 +339,7 @@
           </label>
         </fieldset>
 
-        <fieldset>
+        <fieldset class="settings-help">
           <legend>Help</legend>
           <div class="setting-row setting-row--action">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:info"></span>First-game tips</span>

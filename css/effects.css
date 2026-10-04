@@ -1,0 +1,75 @@
+/*
+ * Reduce effects (Settings › Display), for lower-powered devices: html[data-effects='reduced'].
+ * Loaded last. Every rule here lowers the cost of presentation only:
+ *  - event cut-outs: one per block (the lead event's), held still
+ *  - decorative loops (pulses, glows, the title traffic) hold still
+ *  - blurred and stacked shadows become one sharp shadow or none; no blend modes, no backdrop blur
+ *  - the build burst and the tabletop grain are left out
+ * Kept as they are: buildings, ownership (tint, frame, flag, seal, mark), road state, capture
+ * feedback (pop, burst, frame flash, chain meter), event markers and rings, and every number.
+ * Never switched on automatically (screen size says nothing about a device's power).
+ *
+ * Several rules copy a game.css rule under the same prefix so that the cascade between them stays
+ * as it was (City view dimming, abandoned and power-outage greying still win over the plain lot).
+ * Reduce motion (css/base.css) still turns off every animation on top of this.
+ */
+
+/* ---------- Tabletop and dialogs ---------- */
+html[data-effects='reduced'] .tabletop::after { display: none; } /* full-screen grain, blended */
+html[data-effects='reduced'] .modal::backdrop { background: rgba(15, 11, 8, 0.72); backdrop-filter: none; }
+
+/* ---------- Layers ---------- */
+/* One layer for the board grid and one per player card. Then a repaint next to the board (the
+   frame's turn colour or capture flash, a cash figure counting up) doesn't re-raster the board
+   itself. With full effects, the looping event art already splits the board into ~200 layers. */
+html[data-effects='reduced'] .board,
+html[data-effects='reduced'] .player-card { will-change: transform; }
+
+/* ---------- Board: lots and buildings (one sharp shadow, no blur) ---------- */
+html[data-effects='reduced'] .block__lot {
+  filter: drop-shadow(0 calc(2px + var(--lift) * 2px) 0 color-mix(in srgb, var(--card) 55%, #3c2d1e));
+}
+html[data-effects='reduced'] .block:not(.block--owned):not(.block--abandoned) .block__lot {
+  filter: saturate(0.7) brightness(0.98) drop-shadow(0 2px 0 color-mix(in srgb, var(--card) 55%, #3c2d1e));
+}
+html[data-effects='reduced'] .block__tint { mix-blend-mode: normal; }
+html[data-effects='reduced'] .block__building { filter: drop-shadow(2px 3px 0 rgba(60, 45, 30, 0.35)); }
+html[data-effects='reduced'] .block.is-event-hurt .block__building { filter: grayscale(0.6) brightness(0.85) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.35)); }
+html[data-effects='reduced'] .block.has-event-power-outage .block__building,
+html[data-effects='reduced'] .block.has-event-power-outage .block__lot { filter: grayscale(.75) brightness(.55) drop-shadow(0 2px 0 rgba(0, 0, 0, .35)); }
+html[data-effects='reduced'] .block--abandoned .block__lot { filter: grayscale(1) brightness(0.8); }
+html[data-effects='reduced'] .block--abandoned .block__building { filter: grayscale(1) brightness(0.7) contrast(0.9); }
+html[data-effects='reduced'] .board-frame.is-city-view .block:not([data-influence]) .block__building,
+html[data-effects='reduced'] .board-frame.is-city-view .block:not([data-influence]) .block__lot { filter: saturate(0.45) opacity(0.7); }
+
+/* Small cut-outs: no shadow of their own (the event marker keeps a sharp one to stand out). */
+html[data-effects='reduced'] .block__prop,
+html[data-effects='reduced'] .block__seal,
+html[data-effects='reduced'] .block__flag { filter: none; }
+html[data-effects='reduced'] .block__prop--annex { filter: saturate(0.85); }
+html[data-effects='reduced'] .block__event { filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5)); }
+
+/* ---------- Board: city events ---------- */
+/* One cut-out per block, still: the lead event's (the one its marker shows, js/ui/boardView.js).
+   The others (a second event, the puddle, the fire engine…) are left out; the marker, the ring
+   and the inspector still name every event. */
+html[data-effects='reduced'] .block__event-vfx { animation: none; filter: none; }
+html[data-effects='reduced'] .block__event-vfx:not(.block__event-vfx--main) { display: none; }
+/* Hurt / boosted / shielded rings stay; the blurred inner glow goes. */
+html[data-effects='reduced'] .block.is-event-hurt::before { box-shadow: inset 0 0 0 3px var(--red); }
+html[data-effects='reduced'] .block.is-event-boost::before { box-shadow: inset 0 0 0 3px var(--green); }
+
+/* ---------- Board: decorative loops and particles ---------- */
+html[data-effects='reduced'] .road.is-last::after { box-shadow: none; animation: none; } /* the ring stays */
+html[data-effects='reduced'] .road.is-armed .road__surface { box-shadow: 0 0 0 2px var(--ink); animation: none; }
+html[data-effects='reduced'] .block__fx--build { display: none; } /* the building still unfolds */
+
+/* ---------- HUD and CPU turns ---------- */
+html[data-effects='reduced'] .player-card.is-thinking { animation: none; }
+html[data-effects='reduced'] .cpu-status__dots span { animation: none; opacity: 0.7; }
+html[data-effects='reduced'] .player-card__debt,
+html[data-effects='reduced'] #action-finance { animation: none; }
+
+/* ---------- Title screen ---------- */
+html[data-effects='reduced'] .downtown__car { left: var(--at); animation: none; } /* parked */
+html[data-effects='reduced'] .start-button { animation: none; } /* the pulse repaints a glow every frame */

@@ -717,6 +717,133 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// Reduce effects on a phone (motion allowed): off by default whatever the screen size, and it
+// persists. On a busy late-game board nothing loops, one event cut-out per block, no blurred
+// shadows or blend modes; buildings, ownership, roads, event markers and capture feedback stay.
+{
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: browserName !== 'firefox', hasTouch: true });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('gl-test-init')) return; // a reload keeps what the test chose
+    sessionStorage.setItem('gl-test-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true, sound: false }));
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const loops = () => page.evaluate(() => document.getAnimations()
+    .filter((a) => a.playState === 'running' && a.effect?.getTiming().iterations === Infinity).map((a) => a.animationName));
+  const effects = () => page.evaluate(() => document.documentElement.dataset.effects);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    assert.equal(await effects(), 'full', 'never switched on by screen size');
+    assert.ok((await loops()).length > 0, 'the title traffic drives with full effects');
+    await page.click('[data-screen="title"] [data-nav="settings"]');
+    assert.equal(await page.isChecked('[name="reducedEffects"]'), false);
+    await page.locator('label.setting-row', { hasText: 'Reduce effects' }).click();
+    assert.equal(await effects(), 'reduced');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.motion), 'full', 'separate from Reduce motion');
+    await page.click('[data-screen="settings"] [data-nav="back"]');
+    assert.deepEqual(await loops(), [], 'title: the traffic is parked, the start pulse still');
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await effects(), 'reduced', 'the setting persists');
+
+    // A busy late-game board: every block owned and built (some abandoned), seven events at once.
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    await page.evaluate(async () => {
+      const { applyDevelopment } = await import('/js/core/development.js');
+      const { startEvent } = await import('/js/core/events.js');
+      const g = window.__GRIDLOCK__.getGame();
+      const types = ['residential', 'commercial', 'industrial', 'park', 'civic', 'landmark'];
+      g.board.blocks.forEach((b, i) => {
+        if (b.id === 'r0c0') return; // left open for a capture
+        if (i % 9 === 4) { b.abandoned = true; b.abandonedBy = 1; return; }
+        b.ownerSeat = (i % g.players.length) + 1;
+        applyDevelopment(b, types[i % types.length], (i % 3) + 1);
+      });
+      for (const id of ['heavy-rain', 'fire', 'power-outage', 'city-festival', 'economic-boom', 'recession', 'snowstorm']) startEvent(g, id);
+    });
+    await pave(page, page.locator('[data-road="h-3-3"]')); // a move redraws the board
+    await page.waitForTimeout(300);
+    assert.deepEqual(await loops(), [], 'nothing loops on the board or HUD');
+    const board = await page.evaluate(() => {
+      const shown = (el) => {
+        const s = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0 && r.width > 0 && r.height > 0;
+      };
+      const blocks = [...document.querySelectorAll('#board .block')];
+      const owned = blocks.filter((b) => b.classList.contains('block--owned'));
+      const developed = blocks.filter((b) => b.classList.contains('block--developed'));
+      const withVfx = blocks.filter((b) => b.querySelector('.block__event-vfx'));
+      const all = [...document.querySelectorAll('#board *')];
+      return {
+        owned: owned.length,
+        developed: developed.length,
+        buildings: developed.filter((b) => shown(b.querySelector('.block__building'))).length,
+        ownership: owned.filter((b) => ['.block__tint', '.block__frame', '.block__flag', '.block__owner-mark'].every((s) => shown(b.querySelector(s)))).length,
+        abandoned: blocks.filter((b) => b.classList.contains('block--abandoned') && shown(b.querySelector('.block__abandoned'))).length,
+        vfxBlocks: withVfx.length,
+        vfxShown: withVfx.map((b) => [...b.querySelectorAll('.block__event-vfx')].filter(shown).map((el) => el.classList.contains('block__event-vfx--main'))),
+        affected: blocks.filter((b) => /\bis-event-(hurt|boost|shielded)\b/.test(b.className)).length,
+        markers: blocks.filter((b) => /\bis-event-(hurt|boost|shielded)\b/.test(b.className) && shown(b.querySelector('.block__event'))).length,
+        rings: blocks.filter((b) => b.classList.contains('is-event-hurt')).every((b) => getComputedStyle(b, '::before').boxShadow.includes('inset')),
+        paved: shown(document.querySelector('[data-road="h-3-3"] .road__tile')),
+        lastRing: getComputedStyle(document.querySelector('.road.is-last'), '::after').borderTopWidth,
+        blurred: all.filter((el) => [...getComputedStyle(el).filter.matchAll(/drop-shadow\(([^)]|\([^)]*\))*\)/g)]
+          .some((m) => (m[0].match(/-?[\d.]+px/g) ?? []).length > 2 && Number.parseFloat(m[0].match(/-?[\d.]+px/g)[2]) > 0)).length,
+        blends: all.filter((el) => getComputedStyle(el).mixBlendMode !== 'normal').length,
+        grain: getComputedStyle(document.querySelector('.tabletop'), '::after').display,
+      };
+    });
+    assert.ok(board.owned > 20 && board.developed > 20, `a busy board (${board.owned} owned)`);
+    assert.equal(board.buildings, board.developed, 'every building is drawn');
+    assert.equal(board.ownership, board.owned, 'every owned block keeps its tint, frame, flag and mark');
+    assert.ok(board.abandoned > 0, 'abandoned lots are still marked');
+    assert.ok(board.vfxBlocks > 10, 'events hit many blocks');
+    assert.deepEqual(board.vfxShown, board.vfxShown.map(() => [true]), 'one event cut-out per block: the lead event’s');
+    assert.ok(board.affected > 10 && board.markers === board.affected, 'every affected block keeps its event marker');
+    assert.ok(board.rings, 'hurt blocks keep their ring');
+    assert.equal(board.paved, true, 'the paved road is drawn');
+    assert.equal(board.lastRing, '3px', 'the last move keeps its ring');
+    assert.equal(board.blurred, 0, 'no blurred shadows on the board');
+    assert.equal(board.blends, 0, 'no blend modes on the board');
+    assert.equal(board.grain, 'none');
+
+    // Capture feedback is all there: the block pops, the burst, the frame flash, the chain meter.
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
+    await pave(page, page.locator('[data-road="v-0-1"]')); // closes r0c0
+    const capture = await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => {
+      const names = (el) => (el ? el.getAnimations().map((a) => a.animationName ?? a.transitionProperty) : []);
+      const block = document.querySelector('[data-block="r0c0"]');
+      resolve({
+        pop: names(block),
+        burst: names(block.querySelector('.block__fx--capture')),
+        frame: names(document.querySelector('#board-frame')),
+        chain: document.querySelector('#chain-meter').hidden ? '' : document.querySelector('#chain-meter').textContent,
+      });
+    })));
+    assert.ok(capture.pop.includes('capture-pop'), `the block pops (${capture.pop})`);
+    assert.ok(capture.burst.includes('fx-burst'), 'the capture burst plays');
+    assert.ok(capture.frame.some((n) => n.startsWith('frame-flash')), 'the frame flashes');
+    assert.match(capture.chain, /CAPTURE ×1/);
+
+    // Switched off during play, the board's effects come straight back.
+    await page.evaluate(async () => (await import('/js/ui/settingsView.js')).updateSettings({ reducedEffects: false }));
+    assert.equal(await effects(), 'full');
+    assert.ok((await loops()).length > 10, 'event art animates again');
+    assert.deepEqual(errors, []);
+    console.log('✔ reduce effects (phone): off by default, persists; nothing loops, one event cut-out per block, sharp shadows; buildings, ownership, roads, markers, capture feedback kept');
+  } catch (err) {
+    failures++;
+    console.error(`✘ reduce effects: ${err.message}`);
+    await page.screenshot({ path: 'test-results/reduce-effects-FAIL.png' }).catch(() => {});
+  } finally {
+    await context.close();
+  }
+}
+
 // Touch/handoff/resize flow.
 {
   const context = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce' });
