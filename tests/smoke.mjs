@@ -66,10 +66,13 @@ const base = `http://127.0.0.1:${server.address().port}/`;
 const browser = await browserType.launch(launchOpts);
 // Most runs start as a player already past the start screen and INSPIRE intro this session
 // (as after a reload). `freshStart: true` opens a context on the start screen instead.
+// No service worker: offline play, the precache and updates are tests/pwa.mjs's job (in every
+// browser). Here a worker only adds a 6 MB precache per context, and in WebKit it could surface the
+// update banner over the board mid-test.
 {
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
-    const context = await newContext(options);
+    const context = await newContext({ serviceWorkers: 'block', ...options });
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };
@@ -127,6 +130,10 @@ function watchForBrowserErrors(page) {
     if (optionalFont(url)) return;
     const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
     if (aborted && (navigations > (startedAt.get(request) ?? navigations) || loaded.has(url))) return;
+    // An image the page stopped needing (its element replaced mid-load) is cancelled by the browser
+    // (Firefox: NS_BINDING_ABORTED) and may be served from memory later without a new response.
+    // A missing image is still caught: it answers HTTP 404 (below).
+    if (aborted && request.resourceType() === 'image') return;
     // <audio>/<video> cancel their own streaming range requests when they pause, seek or loop.
     if (aborted && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(url)) return;
     const entry = `requestfailed: ${url} (${request.failure()?.errorText ?? 'unknown'})`;
@@ -307,9 +314,15 @@ for (const vp of VIEWPORTS) {
     await pave(page, road('h-0-0'));
     assert.match(await banner(), /<b>Bo<\/b>'s turn/);
     assert.ok(await road('h-0-0').evaluate((el) => el.classList.contains('road--red')));
-    const toastBeforeLockedRoad = await page.textContent('#toasts');
+    // No new toast from clicking it (an earlier one may fade out meanwhile on a slow browser).
+    await page.evaluate(() => {
+      window.__toastsAdded = 0;
+      new MutationObserver((records) => { for (const r of records) window.__toastsAdded += r.addedNodes.length; })
+        .observe(document.querySelector('#toasts'), { childList: true });
+    });
     await road('h-0-0').dispatchEvent('click');
-    assert.equal(await page.textContent('#toasts'), toastBeforeLockedRoad, 'built road inert');
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(() => window.__toastsAdded), 0, 'built road inert');
     assert.equal(await road('h-0-0').getAttribute('data-owner-symbol'), 'triangle');
 
     await pave(page, road('v-0-0'));
@@ -812,18 +825,28 @@ for (const vp of VIEWPORTS) {
     assert.equal(board.grain, 'none');
 
     // Capture feedback is all there: the block pops, the burst, the frame flash, the chain meter.
+    // Animations are recorded as they start (on a slow browser they may be over before we look).
     for (const id of ['h-0-0', 'v-0-0', 'h-1-0']) await pave(page, page.locator(`[data-road="${id}"]`));
+    await page.evaluate(() => {
+      window.__started = [];
+      document.addEventListener('animationstart', (e) => {
+        const t = e.target;
+        const who = t.id || t.dataset?.block || (t.classList.contains('block__fx--capture') ? 'burst' : t.className);
+        window.__started.push([who, e.animationName]);
+      }, true);
+    });
     await pave(page, page.locator('[data-road="v-0-1"]')); // closes r0c0
-    const capture = await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => {
-      const names = (el) => (el ? el.getAnimations().map((a) => a.animationName ?? a.transitionProperty) : []);
-      const block = document.querySelector('[data-block="r0c0"]');
-      resolve({
-        pop: names(block),
-        burst: names(block.querySelector('.block__fx--capture')),
-        frame: names(document.querySelector('#board-frame')),
+    await page.waitForFunction(() => window.__started.some(([who]) => who === 'r0c0'), null, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const capture = await page.evaluate(() => {
+      const names = (who) => window.__started.filter(([w]) => w === who).map(([, n]) => n);
+      return {
+        pop: names('r0c0'),
+        burst: names('burst'),
+        frame: names('board-frame'),
         chain: document.querySelector('#chain-meter').hidden ? '' : document.querySelector('#chain-meter').textContent,
-      });
-    })));
+      };
+    });
     assert.ok(capture.pop.includes('capture-pop'), `the block pops (${capture.pop})`);
     assert.ok(capture.burst.includes('fx-burst'), 'the capture burst plays');
     assert.ok(capture.frame.some((n) => n.startsWith('frame-flash')), 'the frame flashes');
