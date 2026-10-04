@@ -897,15 +897,26 @@ for (const vp of VIEWPORTS) {
     });
     await page.reload({ waitUntil: 'networkidle' });
     await page.click('#continue-game');
-    const endTurn = page.locator('#action-end-turn');
     assert.equal(await mayor(), 'P1');
-    await endTurn.tap();
-    await page.waitForTimeout(100);
-    await endTurn.tap(); // the same press, a double tap
-    await page.waitForTimeout(300);
+    // Taps dispatched in the page at exact gaps, as the tap-through check does: driving two real
+    // taps can take longer than the repeat window on a slow CI runner.
+    const taps = (gaps) => page.evaluate(async (list) => {
+      const btn = document.querySelector('#action-end-turn');
+      const tap = () => {
+        btn.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+      };
+      const t0 = performance.now();
+      tap();
+      for (const ms of list) { await new Promise((done) => setTimeout(done, ms)); tap(); }
+      return performance.now() - t0;
+    }, gaps);
+    const gap = await taps([100]); // the same press, a double tap
+    assert.ok(gap < 450, `taps ${Math.round(gap)}ms apart form a double tap`);
+    await page.waitForTimeout(200);
     assert.equal(await mayor(), 'P2', 'a double tap ends one turn');
     await page.waitForTimeout(600);
-    await endTurn.tap();
+    await taps([]);
     await page.waitForTimeout(200);
     assert.equal(await mayor(), 'P3', 'a deliberate press ends the next');
     assert.deepEqual(errors, []);
