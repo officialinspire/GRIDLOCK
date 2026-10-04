@@ -717,6 +717,7 @@ js/
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
     memo.js                Per-decision memo for the CPU planner: each forecast/reading once per decision, nothing kept after
+    passCache.js           Read-pass cache for the live game (a screen draw): each derived reading once per pass, state-version checked
     bus.js                 Pub/sub between core and UI
     perf.js                Development-only timing behind DEBUG_PERF (?perf): measure(), per-label stats, report
   ui/                      DOM rendering and input
@@ -787,6 +788,7 @@ tests/
   unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/cpu-simulate.test.mjs  All-CPU sweep: deterministic, no illegal actions/stalls/unfinished games; debt shock → bankruptcy → redevelopment; runaway detection
   unit/cpu-memo.test.mjs   Planner memo lives one decision; optimized decisions equal the plain planner's at every step (all difficulties, personalities, debt shock)
+  unit/pass-cache.test.mjs  Read-pass cache: reuse within a pass, actions mid-pass and direct edits between passes invalidate, copies never cached, whole games match fresh readings
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker

@@ -18,6 +18,7 @@ import { usesCityAction } from './game.js';
 import { quoteTakeover, shieldStatus } from './takeover.js';
 import { measure } from './perf.js';
 import { remember, plannerOptimizations } from './memo.js';
+import { readCached } from './passCache.js';
 
 /*
  * Inside a CPU decision (core/memo.js) the readings below are remembered per game view: a player's
@@ -59,7 +60,7 @@ export function blockContribution(game, blockId) {
 
 /** Everything the inspector shows about one block right now. */
 export function blockDetails(game, blockId) {
-  return measure('blockDetails', () => readBlock(game, blockId));
+  return measure('blockDetails', () => readCached(game, `details|${blockId}`, () => readBlock(game, blockId)));
 }
 
 function readBlock(game, blockId) {

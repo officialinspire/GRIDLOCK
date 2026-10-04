@@ -20,6 +20,7 @@ import { ECONOMY } from '../config.js';
 import { getCategory, levelArt } from './buildings.js';
 import { calculateIncome, investedIn, bankruptcyPenalty } from './economy.js';
 import { prestigeFor } from './strategy.js';
+import { readCached } from './passCache.js';
 
 const isDev = (b) => b.level > 0 && b.type !== 'vacant';
 
@@ -45,6 +46,11 @@ function highestDevelopment(blocks) {
  *                      contribution to City Value with the same formula)
  */
 export function scorePlayer(game, player, { exclude = null } = {}) {
+  if (exclude == null) return readCached(game, `score|${player.seat}`, () => scoreFor(game, player, null));
+  return scoreFor(game, player, exclude);
+}
+
+function scoreFor(game, player, exclude) {
   const owned = blocksOwnedBy(game.board, player.seat).filter((b) => b.id !== exclude);
   const developed = owned.filter(isDev);
   const landValue = owned.reduce((s, b) => s + b.price, 0);

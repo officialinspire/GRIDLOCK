@@ -29,6 +29,7 @@ import { createEventState, onRoundStart, effectiveIncome, takeRepairExpenses, EV
 import { randomSeed } from './rng.js';
 import { computeResults } from './scoring.js';
 import { measure } from './perf.js';
+import { readCached } from './passCache.js';
 
 export const PHASES = Object.freeze({ PLAYING: 'playing', ENDED: 'ended' });
 /** Gameplay eras: road/capture play, then (once every road is paved) city management only. */
@@ -178,6 +179,10 @@ export function getPlayer(game, seat) {
 
 /** Everything the HUD shows for a player. `income` is paid at the start of their next turn. */
 export function playerStats(game, player) {
+  return readCached(game, `stats|${player.seat}`, () => statsFor(game, player));
+}
+
+function statsFor(game, player) {
   const property = propertyValue(game.board, player.seat);
   const owned = blocksOwnedBy(game.board, player.seat);
   const normal = calculateIncome(game.board, player.seat); // base + bonuses

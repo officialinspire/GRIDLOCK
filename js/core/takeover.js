@@ -29,6 +29,7 @@ import {
 } from './game.js';
 import { controlStrength, developmentPressure } from './strategy.js';
 import { measure } from './perf.js';
+import { readCached } from './passCache.js';
 
 const T = ECONOMY.TAKEOVER;
 
@@ -107,6 +108,10 @@ export const takeoversThisTurn = (game) => game.city?.takeovers ?? 0;
  * for any rival block, so the UI can show them next to the reason.
  */
 export function quoteTakeover(game, blockId) {
+  return readCached(game, `takeover|${blockId}`, () => quoteFor(game, blockId));
+}
+
+function quoteFor(game, blockId) {
   const block = getBlockById(game.board, blockId);
   const quote = {
     ok: false, blockId, owner: null, marketValue: 0, premium: 0, cost: 0,
@@ -172,6 +177,10 @@ export function takeoverBlock(game, blockId) {
 
 /** Rival blocks the current player's pressure beats right now, with their quotes (any may still be refused). */
 export function takeoverCandidates(game) {
+  return readCached(game, 'takeover-candidates', () => candidatesFor(game));
+}
+
+function candidatesFor(game) {
   const me = currentPlayer(game);
   return game.board.blocks
     .filter((b) => b.ownerSeat != null && !b.abandoned && b.ownerSeat !== me.seat)
@@ -189,7 +198,7 @@ export function takeoverCandidates(game) {
  *   atRisk     CITY era: this mayor's own blocks some rival's pressure beats
  */
 export function influenceMap(game, seat = currentPlayer(game)?.seat) {
-  return measure('influenceMap', () => mapInfluence(game, seat));
+  return measure('influenceMap', () => readCached(game, `influence|${seat}`, () => mapInfluence(game, seat)));
 }
 
 function mapInfluence(game, seat) {

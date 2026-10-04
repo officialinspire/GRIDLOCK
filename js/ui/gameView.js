@@ -49,6 +49,7 @@ import { initCpuDriver, kickCpu, stopCpu, isCpuTurn, cpuStepSeat } from './cpuDr
 import { measure } from '../core/perf.js';
 import { createAutosave } from './autosave.js';
 import { createRenderScheduler } from './renderScheduler.js';
+import { readPass } from '../core/passCache.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -248,7 +249,9 @@ function drawGame() {
   if (!game) return;
   // A bot's turn: the board waits (clicks are politely refused) and the first time, a tip explains.
   const botTurn = isCpuTurn(game);
-  measure('render', () => {
+  // One read-only pass: readings several parts ask for (a block's event impacts, a player's
+  // stats, the takeover candidates…) are computed once (core/passCache.js).
+  measure('render', () => readPass(game, () => {
     measure('renderBoard', () => renderBoard(game));
     measure('renderHud', () => renderHud(game));
     renderPrompt();
@@ -258,7 +261,7 @@ function drawGame() {
     $('#board-frame').classList.toggle('is-cpu-turn', botTurn);
     measure('applyCityView', applyCityView);
     updateTutorial();
-  });
+  }));
   kickCpu(); // may plan the CPU's next step: timed as cpuPlan, not as part of render
   if (botTurn) tutorialMoment('cpu');
 }
@@ -410,8 +413,10 @@ function leaveCapturedBlock(blockId) {
 }
 
 function handleBlockSelect(id) {
-  renderInspector(id);
-  renderActions();
+  readPass(game, () => {
+    renderInspector(id);
+    renderActions();
+  });
   if (!id || !game) return;
   if (!isCpuTurn() && openBuildPanel(game, id)) return;
   // Compact (portrait) layouts hide the side inspector: show the same details in a bottom sheet.
