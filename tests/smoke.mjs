@@ -844,6 +844,57 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// End Turn double tap (touch, hot-seat, Quick Handoff): one press ends one turn, never the next
+// mayor's too; a deliberate press afterwards still works.
+{
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: browserName !== 'firefox', hasTouch: true, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('gl-test-init')) return;
+    sessionStorage.setItem('gl-test-init', '1');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
+    localStorage.setItem('gridlock.settings.v1', JSON.stringify({ quickHandoff: true, sound: false }));
+  });
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  const mayor = () => page.evaluate(() => { const g = window.__GRIDLOCK__.getGame(); return g.players[g.turnIndex].name; });
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'networkidle' });
+    // A City-era table of three people, continued from a save.
+    await page.evaluate(async () => {
+      const { allRoadIds } = await import('/js/core/board.js');
+      const { createGame, enterCityEra } = await import('/js/core/game.js');
+      const { saveActiveGame } = await import('/js/core/persistence.js');
+      const seats = [1, 2, 3].map((seat) => ({ seat, name: `P${seat}`, controller: 'human' }));
+      const g = createGame({ mode: 'classic', seed: 3, seats });
+      for (const id of allRoadIds(g.board)) g.board.roads[id] = 1;
+      g.board.blocks.forEach((b, i) => { b.ownerSeat = (i % 3) + 1; });
+      enterCityEra(g);
+      saveActiveGame(g, { gameType: 'custom', mode: 'classic', seed: 3, seats });
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.click('#continue-game');
+    const endTurn = page.locator('#action-end-turn');
+    assert.equal(await mayor(), 'P1');
+    await endTurn.tap();
+    await page.waitForTimeout(100);
+    await endTurn.tap(); // the same press, a double tap
+    await page.waitForTimeout(300);
+    assert.equal(await mayor(), 'P2', 'a double tap ends one turn');
+    await page.waitForTimeout(600);
+    await endTurn.tap();
+    await page.waitForTimeout(200);
+    assert.equal(await mayor(), 'P3', 'a deliberate press ends the next');
+    assert.deepEqual(errors, []);
+    console.log('✔ End Turn double tap (touch, Quick Handoff): one turn per press');
+  } catch (err) {
+    failures++;
+    console.error(`✘ End Turn double tap: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 // Touch/handoff/resize flow.
 {
   const context = await browser.newContext({ viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, ...(browserName === 'firefox' ? {} : { isMobile: true }), hasTouch: true, reducedMotion: 'reduce' });

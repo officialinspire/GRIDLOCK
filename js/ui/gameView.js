@@ -61,6 +61,14 @@ let game = null;
 let lastSetup = null;
 let chain = 0; // blocks claimed by the current player during this turn
 let lastHuman = null; // seat of the last person to have the device (for handoffs)
+/**
+ * A second End Turn this soon after the last one is the same press: a double tap or double click,
+ * or a held Enter key. Taken twice it would end the next mayor's turn before they have seen it.
+ * The handoff card would absorb it, but Quick Handoff skips the card. Nobody means to end a turn
+ * half a second after it began.
+ */
+const END_TURN_REPEAT_MS = 500;
+let lastEndTurnAt = -Infinity;
 
 export const getGame = () => game;
 
@@ -1012,7 +1020,12 @@ export function initGameView() {
   });
   $('#action-finance').addEventListener('click', () => openDistressPanel(game));
   $('#action-build').addEventListener('click', () => openBuildPanel(game, getSelectedBlock()));
-  $('#action-end-turn').addEventListener('click', () => handleEndTurn());
+  $('#action-end-turn').addEventListener('click', () => {
+    const now = performance.now();
+    if (now - lastEndTurnAt < END_TURN_REPEAT_MS) return;
+    lastEndTurnAt = now;
+    handleEndTurn();
+  });
   $('#action-pave').addEventListener('click', () => {
     if (startPaving(game)) {
       clearSelection();
