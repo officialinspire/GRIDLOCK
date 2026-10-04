@@ -586,6 +586,8 @@ Before the fix, Park and Civic Level 3 upgrades lost money every turn, and Level
 
 `npm run simulate:cpu -- [--games 600] [--seed 1] [--mode standard|classic|chaos|all] [--tables a,b] [--json]` (`tools/cpu-simulate.mjs`) plays all-CPU games through the real rules engine. It uses the same CPU decisions the game uses (`chooseRoad`, `chooseCityAction`, `applyCityAction`), one step at a time exactly as the turn loop plays them, with no DOM, timers or animation. It takes about 0.25 s per game, or about 0.6 s at an all-Hard four-player table. It is deterministic: the same arguments give the same report.
 
+**Planner speed.** Each CPU decision runs in a memo scope (`js/core/memo.js`): a forecast, a player's stats and score, a block's details or a redevelopment valuation asked for twice while one decision is made is computed once, and nothing outlives the decision. The planner also skips forecasting builds whose quote already rules them out (unaffordable, or no action left), and Hard's look past today's events reuses today's forecasts when no event is on. Decisions are unchanged: `tests/unit/cpu-memo.test.mjs` compares every decision with and without these optimizations, and the 104-games-per-mode sweep gives the same report as before them.
+
 Tables cycle through every seating order:
 - head-to-head (Easy v Normal, Normal v Hard, Easy v Hard, two of each at four seats);
 - a three-way Easy/Normal/Hard game;
@@ -714,6 +716,7 @@ js/
     cpu/random.js          The CPU's own seeded stream (never the game RNG)
     career.js              Career stats + achievements: genuine-match check, recording, versioned storage
     forecast.js            Build/upgrade forecasts (real transaction on a copy) + block details for the inspector
+    memo.js                Per-decision memo for the CPU planner: each forecast/reading once per decision, nothing kept after
     bus.js                 Pub/sub between core and UI
     perf.js                Development-only timing behind DEBUG_PERF (?perf): measure(), per-label stats, report
   ui/                      DOM rendering and input
@@ -783,6 +786,7 @@ tests/
   unit/cpu-strategy.test.mjs  Events (wait out a surcharge, grants, civic exposure, downturns), contested bids, restore vs rebuild, personalities (reserve, bids, Easy's picks, build mix), double-deal at two players but not three, difficulty > personality
   unit/simulate.test.mjs   Simulator determinism; every simulated game legal, complete and reconciled; seating rotation
   unit/cpu-simulate.test.mjs  All-CPU sweep: deterministic, no illegal actions/stalls/unfinished games; debt shock → bankruptcy → redevelopment; runaway detection
+  unit/cpu-memo.test.mjs   Planner memo lives one decision; optimized decisions equal the plain planner's at every step (all difficulties, personalities, debt shock)
   unit/_playthrough.mjs    Deterministic full-game driver used by the preset tests
   unit/tutorial.test.mjs   Tutorial start/skip/replay/completion, persistence (incl. broken storage), tips per game state
   unit/pwa.test.mjs        Manifest, icons, precache completeness/freshness, and sw.js run in a simulated worker

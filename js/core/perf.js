@@ -44,6 +44,11 @@ export function measure(label, fn) {
   }
 }
 
+/** Counts an event under `label` (a call of 0 ms) when DEBUG_PERF is on, e.g. a cache hit. */
+export function count(label) {
+  if (DEBUG_PERF) record(label, 0);
+}
+
 function record(label, ms) {
   let s = stats.get(label);
   if (!s) stats.set(label, (s = { label, calls: 0, totalMs: 0, maxMs: 0, lastMs: 0 }));

@@ -17,17 +17,30 @@ import { blockPrestige, controlStrength } from './strategy.js';
 import { usesCityAction } from './game.js';
 import { quoteTakeover, shieldStatus } from './takeover.js';
 import { measure } from './perf.js';
+import { remember } from './memo.js';
+
+/*
+ * Inside a CPU decision (core/memo.js) the readings below are remembered per game view: a player's
+ * stats, bonuses and score, a block's details and the "before" side of every forecast are the same
+ * for all the options the planner prices on that view. Outside one they are simply computed.
+ */
+const scoreOf = (game, player) => remember(game, `score|${player.seat}`, () => scorePlayer(game, player));
+const detailsOf = (game, blockId) => remember(game, `details|${blockId}`, () => blockDetails(game, blockId));
 
 /** How much a block adds to its owner's City Value (the scoring formula with and without it). */
 export function blockContribution(game, blockId) {
   const block = getBlockById(game.board, blockId);
   const owner = block?.ownerSeat != null ? getPlayer(game, block.ownerSeat) : null;
   if (!owner) return null;
-  return scorePlayer(game, owner).cityValue - scorePlayer(game, owner, { exclude: blockId }).cityValue;
+  return scoreOf(game, owner).cityValue - scorePlayer(game, owner, { exclude: blockId }).cityValue;
 }
 
 /** Everything the inspector shows about one block right now. */
 export function blockDetails(game, blockId) {
+  return measure('blockDetails', () => readBlock(game, blockId));
+}
+
+function readBlock(game, blockId) {
   const block = getBlockById(game.board, blockId);
   if (!block) return null;
   const income = effectiveBlockIncome(game, block);
@@ -56,13 +69,16 @@ export function blockDetails(game, blockId) {
 /** A player's per-turn position and City Value, read with the game's own functions. */
 function position(game, seat, blockId) {
   const player = getPlayer(game, seat);
-  const stats = playerStats(game, player);
-  const bonuses = [];
-  for (const b of game.board.blocks) {
-    if (b.ownerSeat !== seat) continue;
-    for (const bonus of b.bonuses ?? []) bonuses.push({ block: b.id, blockLabel: b.label, ...bonus });
-  }
-  const score = scorePlayer(game, player);
+  const stats = remember(game, `stats|${seat}`, () => playerStats(game, player));
+  const bonuses = remember(game, `bonuses|${seat}`, () => {
+    const out = [];
+    for (const b of game.board.blocks) {
+      if (b.ownerSeat !== seat) continue;
+      for (const bonus of b.bonuses ?? []) out.push({ block: b.id, blockLabel: b.label, ...bonus });
+    }
+    return out;
+  });
+  const score = scoreOf(game, player);
   return {
     cash: player.cash,
     income: stats.income,
@@ -70,7 +86,7 @@ function position(game, seat, blockId) {
     net: stats.income - stats.upkeep,
     cityValue: score.cityValue,
     prestige: score.prestige,
-    block: blockDetails(game, blockId),
+    block: detailsOf(game, blockId),
     bonuses,
   };
 }
@@ -114,7 +130,7 @@ function forecast(game, blockId, type) {
   const result = upgrade ? upgradeBlock(sim, blockId) : buildOnBlock(sim, blockId, type);
   if (!result.ok) return { ok: false, error: result.error, quote };
 
-  const before = position(game, seat, blockId);
+  const before = remember(game, `position|${seat}|${blockId}`, () => position(game, seat, blockId));
   const after = position(sim, seat, blockId);
   if (!quote.ok) {
     after.cash = null;
