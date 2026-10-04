@@ -68,7 +68,7 @@ import {
   quoteRedevelopment, eligibleRedevelopers, resolveRedevelopmentAuction, ACQUIRE_MODES,
 } from '../finance.js';
 import { quoteTakeover, takeoverBlock, takeoverCandidates } from '../takeover.js';
-import { forecastDevelopment, blockDetails } from '../forecast.js';
+import { forecastDevelopment, blockDetails, simulationCopy, statsOf, scoreOf } from '../forecast.js';
 import { scorePlayer } from '../scoring.js';
 import { eventRules } from '../modes.js';
 import { getEventDef } from '../events.js';
@@ -179,7 +179,7 @@ function cashFloor(game, level, reserve, f) {
 
 /** Income of this mayor's developed blocks that a build/upgrade newly shelters with civic protection. */
 function shelteredIncome(game, blockId, type) {
-  const sim = structuredClone(slim(game));
+  const sim = simulationCopy(game);
   const seat = currentPlayer(sim).seat;
   const covered = (g) => new Set(blocksOwnedBy(g.board, seat).filter((b) => isDeveloped(b) && b.protectedBy?.length).map((b) => b.id));
   const before = covered(sim);
@@ -196,7 +196,7 @@ function shelteredIncome(game, blockId, type) {
 function districtPotential(game, blockId, type, turns) {
   const rule = { residential: ECONOMY.BONUSES.RESIDENTIAL_DISTRICT, commercial: ECONOMY.BONUSES.COMMERCIAL_DISTRICT }[type];
   if (!rule || turns < 2) return 0;
-  const sim = structuredClone(slim(game));
+  const sim = simulationCopy(game);
   if (!buildOnBlock(sim, blockId, type).ok) return 0;
   const start = getBlockById(sim.board, blockId);
   const seen = new Set([start.id]);
@@ -362,7 +362,7 @@ function debtOptions(game) {
       const q = quote(game, block.id);
       if (!q.ok) continue;
       if (action === 'sell' && block.level === 1) continue; // same as a downgrade
-      const sim = structuredClone(slim(game));
+      const sim = simulationCopy(game);
       if (!run(sim, block.id).ok) continue;
       const after = currentPlayer(sim);
       const s = playerStats(sim, after);
@@ -411,10 +411,10 @@ function redevelopmentSurplus(game, seat, blockId, mode, turns, level = 'normal'
 function surplusOnCopy(game, seat, blockId, mode, turns, level) {
   const q = quoteRedevelopment(game, blockId, mode);
   if (!q.ok) return null;
-  const sim = structuredClone(slim(game));
-  const before = getPlayer(sim, seat);
-  const statsBefore = playerStats(sim, before);
-  const valueBefore = scorePlayer(sim, before).cityValue;
+  const sim = simulationCopy(game);
+  // Where the mayor stands now: the same for every lot and mode, so read once per decision.
+  const statsBefore = statsOf(slim(game), getPlayer(game, seat));
+  const valueBefore = scoreOf(slim(game), getPlayer(game, seat)).cityValue;
   if (!resolveRedevelopmentAuction(sim, blockId, mode, [{ seat, bid: q.reserve }]).ok) return null;
   const after = getPlayer(sim, seat);
   const statsAfter = playerStats(sim, after);
@@ -540,11 +540,11 @@ function chooseRedevelopment(game, level, reserve, profile) {
 function takeoverValue(game, blockId, turns) {
   const q = quoteTakeover(game, blockId);
   if (!q.ok) return null;
-  const sim = structuredClone(slim(game));
-  const seat = currentPlayer(sim).seat;
-  const before = getPlayer(sim, seat);
-  const statsBefore = playerStats(sim, before);
-  const valueBefore = scorePlayer(sim, before).cityValue;
+  const sim = simulationCopy(game);
+  const seat = currentPlayer(game).seat;
+  // Where the mayor stands now: the same for every candidate, so read once per decision.
+  const statsBefore = statsOf(slim(game), currentPlayer(game));
+  const valueBefore = scoreOf(slim(game), currentPlayer(game)).cityValue;
   if (!takeoverBlock(sim, blockId).ok) return null;
   const after = getPlayer(sim, seat);
   const statsAfter = playerStats(sim, after);
