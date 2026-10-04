@@ -311,18 +311,33 @@ function applyCityView() {
   $('#board-frame').classList.toggle('is-city-view', on);
   const legend = $('#influence-legend');
   legend.hidden = !on;
+  const map = on ? influenceMap(game, viewerSeat()) : null;
+  markInfluence(map);
   if (!on) return;
-  const map = influenceMap(game, viewerSeat());
-  for (const [list, kind, , note] of INFLUENCE) {
-    for (const id of map[list]) {
-      const cell = document.querySelector(`#board [data-block="${id}"]`);
-      if (!cell) continue;
-      cell.dataset.influence = kind;
-      cell.setAttribute('aria-description', `City view: ${note}`);
-    }
-  }
   legend.replaceChildren(...INFLUENCE.map(([list, kind, label]) => h('li', { class: 'influence-legend__item', dataset: { influence: kind } },
     h('span', { class: 'influence-legend__swatch', 'aria-hidden': 'true' }), `${label} ${map[list].length}`)));
+}
+
+/**
+ * Marks the blocks the City view lists (none when `map` is null). The board keeps unchanged cells
+ * between draws, so marks from before that no longer apply are cleared here; only changes are written.
+ */
+function markInfluence(map) {
+  const marks = new Map();
+  for (const [list, kind, , note] of map ? INFLUENCE : []) {
+    for (const id of map[list]) marks.set(id, [kind, `City view: ${note}`]);
+  }
+  for (const cell of document.querySelectorAll('#board [data-influence]')) {
+    if (marks.has(cell.dataset.block)) continue;
+    delete cell.dataset.influence;
+    cell.removeAttribute('aria-description');
+  }
+  for (const [id, [kind, description]] of marks) {
+    const cell = document.querySelector(`#board [data-block="${id}"]`);
+    if (!cell) continue;
+    if (cell.dataset.influence !== kind) cell.dataset.influence = kind;
+    if (cell.getAttribute('aria-description') !== description) cell.setAttribute('aria-description', description);
+  }
 }
 
 function toggleCityView() {

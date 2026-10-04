@@ -1008,6 +1008,129 @@ for (const vp of VIEWPORTS) {
   }
 }
 
+// The board draws incrementally: after every action of a whole match the live board matches a
+// fresh full build, unchanged cells keep their DOM, there is one tab stop, and City view marks
+// are cleared from kept cells it no longer lists.
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, reducedMotion: 'reduce' });
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await context.addInitScript(() => (localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}'), localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }))));
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?seed=7&debug`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    const report = await page.evaluate(async () => {
+      const { buildBoardCells } = await import('/js/ui/boardView.js');
+      const board = document.querySelector('#board');
+      const game = () => window.__GRIDLOCK__.getGame();
+      const nextTap = () => new Promise((r) => setTimeout(r, 0)); // a player's taps are separate tasks
+      // Compared as markup, ignoring what only the live board carries (the roving tab stop, City
+      // view marks, a refused road's shake) and class order (selection is toggled in place).
+      const normal = (html) => html.replace(/ tabindex="-?\d+"/g, '').replace(/ data-influence="[^"]*"| aria-description="[^"]*"/g, '')
+        .replace(/ class="([^"]*)"/g, (m, cls) => ` class="${cls.split(' ').filter((c) => c && c !== 'is-rejected').sort().join(' ')}"`);
+      const out = { steps: 0, mismatches: [], tabStops: [], replaced: [], kept: 0, influence: null, ended: false, stuck: null };
+      const check = (label) => {
+        const fresh = document.createElement('div');
+        fresh.append(...buildBoardCells(game()));
+        if (normal(board.innerHTML) !== normal(fresh.innerHTML) && out.mismatches.length < 3) {
+          const k = [...board.children].findIndex((c, j) => normal(c.outerHTML) !== normal(fresh.children[j]?.outerHTML ?? ''));
+          out.mismatches.push(`${label}: cell ${k}`);
+        }
+        const stops = board.querySelectorAll('[tabindex="0"]');
+        if (stops.length !== 1 || stops[0].disabled) out.tabStops.push(`${label}: ${stops.length}`);
+      };
+      let added = 0;
+      new MutationObserver((records) => { for (const r of records) added += r.addedNodes.length; }).observe(board, { childList: true });
+      let triedBuild = false;
+      let idle = 0;
+      check('start');
+      for (let i = 0; i < 800 && game().phase === 'playing'; i++) {
+        const round = game().round;
+        const panel = document.querySelector('#build-dialog[open]');
+        const debt = document.querySelector('#finance-dialog[open]')?.querySelector('[data-downgrade], [data-sell], #declare-bankruptcy, [data-action="close"]');
+        const dialogButton = document.querySelector('#city-intro-dialog[open] #city-intro-go, #event-dialog[open] #event-continue');
+        const develop = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="develop"]');
+        const vacant = document.querySelector('#capture-choice-dialog[open] [data-capture-choice="vacant"]');
+        let label;
+        if (debt) { debt.click(); label = 'debt'; } else if (dialogButton) { dialogButton.click(); label = 'dialog'; } else if (panel) {
+          // One build attempt per panel, then leave it the way a player does (Close, or the backdrop).
+          const build = !triedBuild && panel.querySelector('[data-build="residential"]:not(:disabled):not([aria-disabled="true"])');
+          triedBuild = Boolean(build);
+          if (build) { build.click(); label = 'build'; } else { (panel.querySelector('[data-action="close"]') ?? panel).click(); label = 'close panel'; }
+        } else if (develop && i % 3 === 0) { develop.click(); label = 'develop'; } else if (vacant) { vacant.click(); label = 'vacant'; } else {
+          // Every few moves, select a block first (selection is patched in place).
+          if (i % 5 === 0) board.querySelector(`[data-block="r${i % 6}c${(i * 7) % 6}"]`)?.click();
+          if (document.querySelector('#build-dialog[open]')) continue; // selecting an own block opened its panel
+          const road = board.querySelector('.road:not(.is-built):not(:disabled)');
+          const endTurn = document.querySelector('#action-end-turn:not([hidden]):not(:disabled)');
+          if (!road && !endTurn) {
+            // A dialog's close event (and what it opens next, e.g. the final capture's choice) comes a task later.
+            if (++idle < 40) { await new Promise((r) => setTimeout(r, 25)); continue; }
+            out.stuck = { phase: game().turnPhase, era: game().era, dialogs: [...document.querySelectorAll('dialog[open]')].map((d) => d.id) };
+            break;
+          }
+          idle = 0;
+          // Once: City view marks a shielded block; when the shield runs out, the kept cell loses its mark.
+          let shield = null;
+          if (road && !out.influence && out.steps >= 30) {
+            const owned = game().board.blocks.find((b) => b.ownerSeat != null && !b.abandoned);
+            if (owned) {
+              owned.shieldedUntil = round;
+              document.querySelector('#city-view-btn').click();
+              await nextTap();
+              shield = { block: owned, cell: board.querySelector(`[data-block="${owned.id}"]`) };
+              shield.marked = shield.cell.dataset.influence ?? null;
+              owned.shieldedUntil = null; // runs out
+            }
+          }
+          const far = board.querySelector('[data-block="r5c5"]');
+          const before = added;
+          if (road) { road.click(); label = `road ${road.dataset.road}`; } else { endTurn.click(); label = 'end turn'; }
+          await nextTap();
+          if (road) {
+            out.replaced.push(added - before);
+            if (board.querySelector('[data-block="r5c5"]') === far) out.kept += 1;
+          }
+          if (shield) {
+            const cell = board.querySelector(`[data-block="${shield.block.id}"]`);
+            out.influence = { marked: shield.marked, kept: cell === shield.cell, stale: cell.hasAttribute('data-influence') || cell.hasAttribute('aria-description') };
+            document.querySelector('#city-view-btn').click();
+            await nextTap();
+            out.influence.offMarks = board.querySelectorAll('[data-influence], [aria-description]').length;
+          }
+          out.steps += 1;
+          check(`${label} (round ${round})`);
+          continue;
+        }
+        await nextTap();
+        out.steps += 1;
+        check(`${label} (round ${round})`);
+      }
+      out.ended = game().phase === 'ended';
+      return out;
+    });
+    assert.ok(report.ended, `the match was played to the end (${report.steps} steps; ${JSON.stringify(report.stuck)})`);
+    assert.deepEqual(report.mismatches, [], 'the incrementally drawn board always matches a full build');
+    assert.deepEqual(report.tabStops, [], 'exactly one enabled tab stop after every action');
+    const roads = report.replaced.length;
+    const avg = report.replaced.reduce((a, b) => a + b, 0) / roads;
+    assert.ok(avg < 20, `a road redraws a handful of cells, not the board (${avg.toFixed(1)} of 169 on average)`);
+    assert.ok(report.kept >= roads * 0.8, `a far corner block keeps its element across moves (${report.kept}/${roads})`);
+    assert.equal(report.influence?.marked, 'shield', `City view marked the shielded block (${JSON.stringify(report.influence)})`);
+    assert.equal(report.influence.stale, false, 'its mark went when the shield ran out');
+    assert.equal(report.influence.offMarks, 0, 'no marks left with City view off');
+    assert.deepEqual(errors, []);
+    console.log(`✔ board: incremental drawing matches a full build over a whole match (${report.steps} actions, ${avg.toFixed(1)} cells per road), one tab stop, City view marks cleared`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ board incremental: ${err.message}`);
+  } finally {
+    await context.close();
+  }
+}
+
 // Money/capture/build feedback with motion enabled.
 {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
