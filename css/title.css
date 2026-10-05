@@ -240,27 +240,66 @@
   padding-bottom: calc(var(--street) * 0.72);
 }
 .screen--title > :not(.downtown) { position: relative; z-index: 1; }
-.title-head { display: grid; justify-items: center; }
+/* --logo-w: the title logo's width. The city sign below is sized and hung from it. */
+.title-head { --logo-w: min(460px, 84vw, 40vh); display: grid; justify-items: center; }
 .title-logo {
-  width: min(460px, 84vw, 40vh);
+  width: var(--logo-w);
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.5));
 }
+/* The city sign hangs from the logo by its two ropes. */
 .city-edition {
-  display: grid;
-  place-items: center;
-  width: min(250px, 58vw);
-  margin: clamp(-44px, -4.6vh, -24px) 0 0;
+  --sign-w: clamp(120px, calc(var(--logo-w) * 0.62), 240px);
+  position: relative;
+  width: var(--sign-w);
+  /* Pull it up so the rope pins (4% of the sign's height, ×0.72 of its width, below its top)
+     sit on the logo's bottom trim (5% of the logo's height, ×0.62 of its width, above its
+     bottom edge), never over the lettering. */
+  margin-top: calc(-0.03 * var(--logo-w) - 0.028 * var(--sign-w));
+  container-type: inline-size;
   filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.45));
 }
-.city-edition span {
-  padding: 14% 8% 5%;
+/* Lettered on the cream panel inside the frame, below the rope loops (the panel's centre is
+   at 49% of the sprite's width). */
+.city-edition__text {
+  position: absolute;
+  inset: 44% 9% 12% 7%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4cqi;
   font-family: var(--font-display);
-  font-size: clamp(0.85rem, 3.2vw, 1.15rem);
-  letter-spacing: 0.035em;
+  line-height: 1;
   text-align: center;
-  color: var(--paper-hi);
-  text-shadow: 0 2px 0 var(--ink);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
+.city-edition__city {
+  font-size: 9.8cqi;
+  letter-spacing: 0.02em;
+  color: var(--blue-deep);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+/* — VIRGINIA — between two short rules. */
+.city-edition__state {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  font-size: max(8px, 6.2cqi);
+  letter-spacing: 0.24em;
+  color: var(--red-deep);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.city-edition__state::before,
+.city-edition__state::after {
+  content: '';
+  width: 2em;
+  height: max(1.5px, 0.14em);
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.75;
+}
+/* letter-spacing also trails the last letter: the same space after the first rule keeps it centred */
+.city-edition__state::before { margin-right: 0.24em; }
 .inspire-byline--menu { margin-top: 4px; }
 .inspire-byline--menu .inspire-logo { width: clamp(84px, 16vw, 120px); }
 
@@ -346,8 +385,7 @@
 }
 /* Tablets in portrait: a smaller logo keeps the street clear of the menu. */
 @media (min-width: 601px) and (max-width: 900px) {
-  .title-logo { width: min(400px, 64vw, 28vh); }
-  .city-edition { width: 210px; }
+  .title-head { --logo-w: min(400px, 64vw, 28vh); }
 }
 
 /* Wide, shorter screens (laptops, tablets in landscape): logo left, menu right, street below. */
@@ -362,7 +400,7 @@
     padding-bottom: calc(var(--street) * 0.55);
   }
   .title-head { justify-self: end; }
-  .title-logo { width: min(460px, 36vw, 46vh); }
+  .title-head { --logo-w: min(460px, 36vw, 46vh); }
   .city-block { justify-self: start; }
 }
 @media (min-width: 901px) and (max-height: 760px) {
@@ -377,9 +415,7 @@
 @media (max-width: 600px) {
   .screen--start, .screen--title { --street: clamp(110px, 19vh, 160px); }
   .screen--title { padding-bottom: calc(var(--street) * 0.9); gap: 22px; }
-  .title-logo { width: min(270px, 70vw, 24vh); }
-  .city-edition { width: min(170px, 44vw); margin-top: -30px; }
-  .city-edition span { font-size: 0.78rem; }
+  .title-head { --logo-w: min(270px, 70vw, 24vh); }
   .inspire-byline--menu { margin-top: 0; font-size: 0.85rem; }
   .inspire-byline--menu .inspire-logo { width: 88px; }
   .screen--start .title-logo { width: min(340px, 84vw, 40vh); }
@@ -390,7 +426,7 @@
 }
 @media (max-width: 600px) and (max-height: 700px) {
   .screen--start, .screen--title { --street: 96px; }
-  .title-logo { width: min(260px, 70vw, 26vh); }
+  .title-head { --logo-w: min(260px, 70vw, 26vh); }
   .inspire-byline--menu { display: none; }
 }
 
@@ -404,9 +440,7 @@
     padding-top: max(30px, env(safe-area-inset-top));
     padding-bottom: calc(var(--street) * 0.45);
   }
-  .title-logo { width: min(300px, 36vw, 62vh); }
-  .city-edition { width: 150px; margin-top: -26px; }
-  .city-edition span { font-size: 0.72rem; }
+  .title-head { --logo-w: min(300px, 36vw, 62vh); }
   .street-sign { margin-top: -32px; font-size: 0.9rem; }
   .inspire-byline--menu .inspire-logo { width: 84px; }
   .city-block { gap: 8px; padding: 18px 14px 12px; }

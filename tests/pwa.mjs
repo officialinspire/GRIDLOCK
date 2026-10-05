@@ -5,7 +5,9 @@
  *   2. fully offline (server stopped *and* browser offline): the game reloads,
  *      continues the autosave, keeps playing, and autosaves again;
  *   3. safe update: a new sw.js installs and waits while the game keeps running
- *      on the old version; "Reload" saves, switches versions, drops old caches.
+ *      on the old version; "Reload" saves, switches versions, drops old caches;
+ *   4. Settings › Check for Updates: reports an up-to-date game, then downloads and
+ *      switches to a new version even where 'controllerchange' never arrives.
  * Screenshots land in test-results/.
  */
 import { createRequire } from 'node:module';
@@ -203,6 +205,34 @@ try {
   assert.equal(await roadsPaved(), savedRoads, 'the game in progress survived the update');
   assert.deepEqual(errors, []);
   console.log('✔ update: waits, Later, reload keeps old version, Reload saves + switches + cleans caches');
+
+  // --- 4. Check for Updates (Settings), where 'controllerchange' never arrives --------------
+  // iOS home-screen apps can miss controllerchange: the switch must not depend on it.
+  await context.addInitScript(() => {
+    const add = ServiceWorkerContainer.prototype.addEventListener;
+    ServiceWorkerContainer.prototype.addEventListener = function (type, ...rest) {
+      if (type !== 'controllerchange') add.call(this, type, ...rest);
+    };
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('html.is-ready');
+  await page.click('[data-screen="title"] [data-nav="settings"]');
+  assert.match(await page.textContent('#app-version'), /^v\d+\.\d+\.\d+$/, 'Settings shows the game version');
+  await page.click('#check-updates');
+  await page.locator('#toasts .toast', { hasText: 'latest version' }).waitFor();
+  assert.equal(await page.textContent('#check-updates'), 'Check for Updates');
+  assert.equal(await controllerVersion(), NEXT, 'nothing new: nothing changes');
+
+  const LATEST = `${VERSION}-latest`;
+  server.overrides.set('sw.js', (src) => src.replace(`const VERSION = '${VERSION}';`, `const VERSION = '${LATEST}';`));
+  await Promise.all([page.waitForEvent('load', { timeout: 60_000 }), page.click('#check-updates')]);
+  await page.waitForSelector('html.is-ready');
+  assert.equal(await controllerVersion(), LATEST, 'Check for Updates downloaded and switched to the new version');
+  assert.deepEqual(await gameCaches(), [`gridlock-precache-${LATEST}`], 'old caches removed');
+  await page.click('#continue-game');
+  assert.equal(await roadsPaved(), savedRoads, 'the game in progress survived the update');
+  assert.deepEqual(errors, []);
+  console.log('✔ check for updates: up to date, then downloads + switches without controllerchange');
 } catch (err) {
   failed = true;
   console.error(`✘ pwa: ${err.message}`);

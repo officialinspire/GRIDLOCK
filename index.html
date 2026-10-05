@@ -77,7 +77,10 @@
       <header class="title-head">
         <div class="title-logo" data-sprite="title:logo" data-label="Grid Lock City"></div>
         <div class="city-edition" data-sprite="title:hanging-sign" data-label="Fredericksburg, Virginia edition">
-          <span>Fredericksburg, Virginia</span>
+          <span class="city-edition__text">
+            <span class="city-edition__city">Fredericksburg</span>
+            <span class="city-edition__state">Virginia</span>
+          </span>
         </div>
         <p class="inspire-byline inspire-byline--menu"><span>by</span> <img class="inspire-logo" src="assets/media/inspire.png" alt="INSPIRE" width="600" height="181"></p>
       </header>
@@ -344,6 +347,12 @@
           <div class="setting-row setting-row--action">
             <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:info"></span>First-game tips</span>
             <button type="button" class="btn btn--sm" data-replay-tutorial>Replay Tutorial</button>
+          </div>
+          <!-- js/pwa.js: looks for a new version now and switches to it (the game is saved first). -->
+          <div class="setting-row setting-row--action">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:restart"></span>
+              <span>Game version<small class="setting-row__hint" id="app-version"></small></span></span>
+            <button type="button" class="btn btn--sm" id="check-updates">Check for Updates</button>
           </div>
         </fieldset>
 
@@ -627,8 +636,10 @@
   <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
   <div class="update-banner paper" id="update-banner" role="status" aria-live="polite" hidden>
     <span class="update-banner__text">A new version of Grid Lock City is ready.</span>
-    <button type="button" class="btn btn--sm btn--gold" id="update-reload">Reload</button>
-    <button type="button" class="btn btn--sm" id="update-later">Later</button>
+    <span class="update-banner__actions">
+      <button type="button" class="btn btn--sm" id="update-later">Later</button>
+      <button type="button" class="btn btn--sm btn--gold" id="update-reload">Reload</button>
+    </span>
   </div>
 
   <noscript>

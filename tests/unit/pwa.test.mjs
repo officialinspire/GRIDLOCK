@@ -115,6 +115,10 @@ test('the page registers sw.js relative to itself, with safe updates', async () 
   assert.match(pwa, /register\('sw\.js', \{ scope: '\.\/'/, 'relative script URL and scope (Pages subpath)');
   assert.match(pwa, /updateViaCache: 'none'/);
   assert.match(pwa, /beforeReload\(\);[\s\S]*SKIP_WAITING/, 'the game is saved before the new version takes over');
+  // Reload never hangs on 'controllerchange' alone (iOS home-screen apps can miss it).
+  assert.match(pwa, /worker\.state === 'activated'\) reload\(\)/, 'reloads once the new version is activated');
+  assert.match(pwa, /setTimeout\(reload, UPDATE_RELOAD_TIMEOUT_MS\)/, 'reloads after a timeout at the latest');
+  assert.match(pwa, /reloadButton\.onclick = \(\) => applyUpdate\(registration\?\.waiting/, 'Reload applies the newest waiting version');
   assert.match(await read('js/main.js'), /initPwa\(\{ beforeReload: saveGameNow \}\)/);
 });
 
