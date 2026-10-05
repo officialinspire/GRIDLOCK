@@ -861,11 +861,14 @@ npm run build:icons            # re-render app icons from the logo sprite (needs
 ```
 
 `npm run test:smoke` defaults to Chromium; set `BROWSER=chromium`, `webkit`, or
-`firefox` to select an engine. GitHub Actions runs unit tests on every push and
-pull request, then runs the complete smoke suite independently in all three
-engines. A browser job fails on an uncaught JavaScript error, console error,
-asset/request failure, assertion failure, or horizontal page overflow. Failure
-screenshots are uploaded as workflow artifacts.
+`firefox` to select an engine. GitHub Actions (`.github/workflows/ci.yml`) runs once
+per commit: on every pull request, on every push to `main`, and on demand from
+**Run workflow** on the Actions tab. A newer commit on the same pull request
+cancels the run it replaces. Each run has the unit tests, then the complete smoke
+suite independently in all three engines. A browser job fails on an uncaught
+JavaScript error, console error, asset/request failure, assertion failure, or
+horizontal page overflow. Failure screenshots are uploaded as workflow artifacts
+(kept for 14 days).
 
 **Offline/PWA checks.** `npm test` includes `tests/unit/pwa.test.mjs`: the manifest is installable and subpath-safe, icons have their declared sizes, the precache contains every file the page, stylesheets and module graph load (and is up to date with its content hash), no file loads anything from the network, and `sw.js` itself is run in a simulated worker scoped to `/GRIDLOCK/` to verify install, activation cleanup, offline routing and the update handshake. In the browser, `npm run test:pwa` (run by CI in all three engines) serves the site under `/GRIDLOCK/`, installs the service worker, then stops the server and goes offline. It reloads, continues the autosave, captures and builds, deep-links with a query string, and autosaves again. Finally it publishes a new `sw.js` and checks that the running game keeps the old version, that **Later** and a plain reload don't force the update, and that **Reload** keeps the saved game, switches version and removes the old caches. Then, in a browser that never delivers `controllerchange`, Settings → **Check for Updates** reports the game as up to date, and once a newer version is published it downloads it, switches and keeps the saved game.
 

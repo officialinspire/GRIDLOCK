@@ -1,8 +1,18 @@
 name: CI
 
+# One run per commit: pull requests are tested on their own event, and a push is tested only on
+# main (what GitHub Pages publishes). Pushing to a pull request's branch used to run everything
+# twice, so every failure was reported twice. "Run workflow" on the Actions tab runs it by hand.
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A newer commit on the same pull request or branch cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -12,8 +22,8 @@ jobs:
     name: Unit tests and Pages checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -31,8 +41,8 @@ jobs:
       matrix:
         browser: [chromium, webkit, firefox]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -48,8 +58,9 @@ jobs:
           BROWSER: ${{ matrix.browser }}
       - name: Upload failure screenshots
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ matrix.browser }}
           path: test-results/
           if-no-files-found: ignore
+          retention-days: 14
