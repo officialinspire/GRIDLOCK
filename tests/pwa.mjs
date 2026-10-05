@@ -65,10 +65,34 @@ const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+// A request the browser cancels because the page then navigated (a reload, or the switch to a new
+// version) isn't an asset failure, as in tests/smoke.mjs: Check for Updates, for one, shows the
+// disabled button's and the banner's frames just before it reloads. The cancellation may be
+// reported before or after the navigation, so it is excused on whichever comes second. Every
+// other failure, and an abort with no navigation after it, still fails the test.
+let navigations = 0;
+const startedAt = new WeakMap();
+const cancelled = new Map(); // error entry → navigation count when its request started
+page.on('request', (request) => startedAt.set(request, navigations));
+page.on('framenavigated', (frame) => {
+  if (frame !== page.mainFrame()) return;
+  navigations++;
+  for (const [entry, at] of cancelled) {
+    if (at < navigations) {
+      errors.splice(errors.indexOf(entry), 1);
+      cancelled.delete(entry);
+    }
+  }
+});
 page.on('requestfailed', (request) => {
+  const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
   // <audio>/<video> cancel their own streaming range requests when they pause, seek, loop or the page reloads.
-  if (/abort|cancel/i.test(request.failure()?.errorText ?? '') && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(request.url())) return;
-  errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`);
+  if (aborted && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(request.url())) return;
+  const at = startedAt.get(request) ?? navigations;
+  if (aborted && navigations > at) return;
+  const entry = `requestfailed: ${request.url()} (${request.failure()?.errorText})`;
+  errors.push(entry);
+  if (aborted) cancelled.set(entry, at);
 });
 page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`); });
 // Requests still loading (media streams aside, which stay open while they play).
@@ -76,7 +100,8 @@ const loading = new Set();
 page.on('request', (request) => { if (!/\/assets\/media\//.test(request.url())) loading.add(request); });
 page.on('requestfinished', (request) => loading.delete(request));
 page.on('requestfailed', (request) => loading.delete(request));
-/** Waits for the page's requests to finish: a reload cancels any still in flight (Firefox reports those as failures). */
+/** Waits for the page's requests to finish: a reload cancels any still in flight, and Firefox also logs
+ * those as service worker errors. */
 async function settle(timeout = 30_000) {
   const until = Date.now() + timeout;
   while (loading.size && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50));
