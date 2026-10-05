@@ -232,7 +232,11 @@ for (const vp of VIEWPORTS) {
     await page.goto(base, { waitUntil: 'networkidle' });
     await page.waitForSelector('html.is-ready');
     assert.ok(await page.isVisible('[data-screen="title"]'), 'title visible');
-    assert.match(await page.textContent('.city-edition'), /Fredericksburg, Virginia/);
+    assert.equal(await page.getAttribute('.city-edition', 'aria-label'), 'Fredericksburg, Virginia edition');
+    assert.match(await page.textContent('.city-edition'), /Fredericksburg\s+Virginia/);
+    // The lettering fits on the sign at every size.
+    await page.evaluate(() => document.fonts.ready);
+    assert.ok(await page.$eval('.city-edition__text', (el) => el.scrollWidth <= el.clientWidth + 1), 'city sign lettering fits');
     for (const label of ['Play Solo', 'Local Multiplayer', 'Custom / Mixed Game', 'How To Play', 'Statistics', 'Settings']) {
       assert.ok(await page.getByRole('button', { name: label }).isVisible(), `${label} button`);
     }

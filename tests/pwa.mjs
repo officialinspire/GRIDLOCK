@@ -5,7 +5,9 @@
  *   2. fully offline (server stopped *and* browser offline): the game reloads,
  *      continues the autosave, keeps playing, and autosaves again;
  *   3. safe update: a new sw.js installs and waits while the game keeps running
- *      on the old version; "Reload" saves, switches versions, drops old caches.
+ *      on the old version; "Reload" saves, switches versions, drops old caches;
+ *   4. Settings › Check for Updates: reports an up-to-date game, then downloads and
+ *      switches to a new version even where 'controllerchange' never arrives.
  * Screenshots land in test-results/.
  */
 import { createRequire } from 'node:module';
@@ -63,12 +65,47 @@ const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+// A request the browser cancels because the page then navigated (a reload, or the switch to a new
+// version) isn't an asset failure, as in tests/smoke.mjs: Check for Updates, for one, shows the
+// disabled button's and the banner's frames just before it reloads. The cancellation may be
+// reported before or after the navigation, so it is excused on whichever comes second. Every
+// other failure, and an abort with no navigation after it, still fails the test.
+let navigations = 0;
+const startedAt = new WeakMap();
+const cancelled = new Map(); // error entry → navigation count when its request started
+page.on('request', (request) => startedAt.set(request, navigations));
+page.on('framenavigated', (frame) => {
+  if (frame !== page.mainFrame()) return;
+  navigations++;
+  for (const [entry, at] of cancelled) {
+    if (at < navigations) {
+      errors.splice(errors.indexOf(entry), 1);
+      cancelled.delete(entry);
+    }
+  }
+});
 page.on('requestfailed', (request) => {
+  const aborted = /abort|cancel/i.test(request.failure()?.errorText ?? '');
   // <audio>/<video> cancel their own streaming range requests when they pause, seek, loop or the page reloads.
-  if (/abort|cancel/i.test(request.failure()?.errorText ?? '') && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(request.url())) return;
-  errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`);
+  if (aborted && /\/assets\/media\/[^/?]+\.(?:mp3|mp4)(?:\?|$)/.test(request.url())) return;
+  const at = startedAt.get(request) ?? navigations;
+  if (aborted && navigations > at) return;
+  const entry = `requestfailed: ${request.url()} (${request.failure()?.errorText})`;
+  errors.push(entry);
+  if (aborted) cancelled.set(entry, at);
 });
 page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`); });
+// Requests still loading (media streams aside, which stay open while they play).
+const loading = new Set();
+page.on('request', (request) => { if (!/\/assets\/media\//.test(request.url())) loading.add(request); });
+page.on('requestfinished', (request) => loading.delete(request));
+page.on('requestfailed', (request) => loading.delete(request));
+/** Waits for the page's requests to finish: a reload cancels any still in flight, and Firefox also logs
+ * those as service worker errors. */
+async function settle(timeout = 30_000) {
+  const until = Date.now() + timeout;
+  while (loading.size && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50));
+}
 
 const road = (id) => page.locator(`#board [data-road="${id}"]`);
 const roadsPaved = async () => (await page.textContent('#hud-roads')).split('/')[0];
@@ -203,6 +240,35 @@ try {
   assert.equal(await roadsPaved(), savedRoads, 'the game in progress survived the update');
   assert.deepEqual(errors, []);
   console.log('✔ update: waits, Later, reload keeps old version, Reload saves + switches + cleans caches');
+
+  // --- 4. Check for Updates (Settings), where 'controllerchange' never arrives --------------
+  // iOS home-screen apps can miss controllerchange: the switch must not depend on it.
+  await settle(); // Continue Game above is still loading the board art
+  await context.addInitScript(() => {
+    const add = ServiceWorkerContainer.prototype.addEventListener;
+    ServiceWorkerContainer.prototype.addEventListener = function (type, ...rest) {
+      if (type !== 'controllerchange') add.call(this, type, ...rest);
+    };
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('html.is-ready');
+  await page.click('[data-screen="title"] [data-nav="settings"]');
+  assert.match(await page.textContent('#app-version'), /^v\d+\.\d+\.\d+$/, 'Settings shows the game version');
+  await page.click('#check-updates');
+  await page.locator('#toasts .toast', { hasText: 'latest version' }).waitFor();
+  assert.equal(await page.textContent('#check-updates'), 'Check for Updates');
+  assert.equal(await controllerVersion(), NEXT, 'nothing new: nothing changes');
+
+  const LATEST = `${VERSION}-latest`;
+  server.overrides.set('sw.js', (src) => src.replace(`const VERSION = '${VERSION}';`, `const VERSION = '${LATEST}';`));
+  await Promise.all([page.waitForEvent('load', { timeout: 60_000 }), page.click('#check-updates')]);
+  await page.waitForSelector('html.is-ready');
+  assert.equal(await controllerVersion(), LATEST, 'Check for Updates downloaded and switched to the new version');
+  assert.deepEqual(await gameCaches(), [`gridlock-precache-${LATEST}`], 'old caches removed');
+  await page.click('#continue-game');
+  assert.equal(await roadsPaved(), savedRoads, 'the game in progress survived the update');
+  assert.deepEqual(errors, []);
+  console.log('✔ check for updates: up to date, then downloads + switches without controllerchange');
 } catch (err) {
   failed = true;
   console.error(`✘ pwa: ${err.message}`);
