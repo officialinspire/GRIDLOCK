@@ -71,6 +71,16 @@ page.on('requestfailed', (request) => {
   errors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText})`);
 });
 page.on('response', (response) => { if (response.status() >= 400) errors.push(`HTTP ${response.status()}: ${response.url()}`); });
+// Requests still loading (media streams aside, which stay open while they play).
+const loading = new Set();
+page.on('request', (request) => { if (!/\/assets\/media\//.test(request.url())) loading.add(request); });
+page.on('requestfinished', (request) => loading.delete(request));
+page.on('requestfailed', (request) => loading.delete(request));
+/** Waits for the page's requests to finish: a reload cancels any still in flight (Firefox reports those as failures). */
+async function settle(timeout = 30_000) {
+  const until = Date.now() + timeout;
+  while (loading.size && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 50));
+}
 
 const road = (id) => page.locator(`#board [data-road="${id}"]`);
 const roadsPaved = async () => (await page.textContent('#hud-roads')).split('/')[0];
@@ -208,6 +218,7 @@ try {
 
   // --- 4. Check for Updates (Settings), where 'controllerchange' never arrives --------------
   // iOS home-screen apps can miss controllerchange: the switch must not depend on it.
+  await settle(); // Continue Game above is still loading the board art
   await context.addInitScript(() => {
     const add = ServiceWorkerContainer.prototype.addEventListener;
     ServiceWorkerContainer.prototype.addEventListener = function (type, ...rest) {
