@@ -95,6 +95,7 @@
 .setting-row__hint { display: block; font-size: 0.78rem; font-weight: 600; line-height: 1.25; color: var(--ink-soft); }
 .setting-row .select { flex: 0 1 auto; min-width: 0; max-width: 55%; }
 .setting-row__icon { width: 30px; }
+.settings-footer { display: grid; gap: 10px; }
 .settings-panel__note { font-size: 0.9rem; color: var(--ink-soft); text-align: center; }
 
 /* Volume sliders: large touch target, themed with the gold accent. */
