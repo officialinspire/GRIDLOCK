@@ -4,6 +4,7 @@ import {
   ACHIEVEMENTS, CAREER_KEY, CAREER_BACKUP_KEY, CAREER_VERSION, emptyCareer, validateCareer, loadCareer, saveCareer,
   isGenuineMatch, summarizeMatch, recordMatch, favoriteCategory,
 } from '../../js/core/career.js';
+import { TIERS, GROUPS } from '../../js/core/achievements.js';
 import { SAVE_KEY } from '../../js/core/persistence.js';
 import { CATEGORY_ORDER } from '../../js/core/buildings.js';
 import { playthrough, loadApi } from './_playthrough.mjs';
@@ -27,12 +28,23 @@ function stagedFinish(seed) {
   return game;
 }
 
-test('twenty-four achievements, each with a name, a short description and a badge icon', () => {
-  assert.equal(ACHIEVEMENTS.length, 24);
-  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, 24);
+test('one hundred achievements, each with a name, a short description, a badge icon, a tier and a group', () => {
+  assert.equal(ACHIEVEMENTS.length, 100);
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.id)).size, 100);
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.name)).size, 100, 'names are unique too');
+  const groups = new Set(GROUPS.map((g) => g.id));
   for (const a of ACHIEVEMENTS) {
-    assert.ok(a.name && a.text.length < 60 && /^(icons|title):/.test(a.icon), a.id);
+    assert.ok(a.name && a.text.length < 64 && /^[a-z]+:[a-z0-9-]+$/.test(a.icon), a.id);
     assert.equal(typeof a.test, 'function');
+    assert.ok(TIERS[a.tier], `${a.id}: tier`);
+    assert.ok(groups.has(a.group), `${a.id}: group`);
+  }
+  for (const g of GROUPS) assert.ok(ACHIEVEMENTS.some((a) => a.group === g.id), `${g.id} has badges`);
+  // The 24 badges of V1.2–V1.4 keep their ids, so records earned before still count.
+  for (const id of ['first-ribbon', 'mayor-of-the-year', 'chain-reaction', 'land-baron', 'skyline', 'master-builder', 'big-city',
+    'comeback', 'storm-chaser', 'purist', 'photo-finish', 'veteran', 'hostile-bid', 'fortress', 'mixed-use', 'full-palette',
+    'heavy-industry', 'safe-streets', 'green-belt', 'district-boss', 'cash-machine', 'balanced-budget', 'toast-of-the-town', 'metropolis']) {
+    assert.ok(ACHIEVEMENTS.some((a) => a.id === id), id);
   }
 });
 
@@ -89,7 +101,11 @@ test('recording a match: totals, per-mayor records, favourite category', () => {
 
   for (const row of game.results.rows) {
     const m = career.mayors[row.name.toLowerCase()];
-    assert.deepEqual(m, { name: row.name, played: 1, won: game.results.winners.includes(row.seat) ? 1 : 0, best: row.cityValue });
+    const won = game.results.winners.includes(row.seat) ? 1 : 0;
+    assert.deepEqual(m, {
+      name: row.name, played: 1, won, best: row.cityValue, streak: won, bestStreak: won,
+      modeWins: { standard: won, classic: 0, chaos: 0 },
+    });
   }
   assert.equal(favoriteCategory(career), 'residential', 'the driver only builds homes');
   assert.equal(favoriteCategory(emptyCareer()), null);
@@ -117,8 +133,8 @@ test('achievements: earned once, credited to the right mayor, following each rul
     [13, 4, 'classic'], [14, 2, 'standard'], [15, 3, 'standard'], [16, 2, 'classic'], [17, 4, 'chaos']];
   for (const [seed, n, mode] of games) {
     const game = play(seed, n, mode);
-    const match = summarizeMatch(game);
     const result = recordMatch(career, game, seed);
+    const { match } = result; // the summary plus when it was played
     for (const u of result.unlocked) {
       assert.ok(!earned.has(u.id), `${u.id} earned only once`);
       earned.set(u.id, u);
@@ -131,6 +147,7 @@ test('achievements: earned once, credited to the right mayor, following each rul
   assert.equal(career.totals.matches, 10);
   for (const id of ['first-ribbon', 'mayor-of-the-year', 'storm-chaser', 'purist', 'veteran']) assert.ok(earned.has(id), `${id} earned`);
   assert.equal(career.achievements.veteran.at, 17, 'the 10th match unlocked Veteran');
+  assert.ok(earned.has('deja-vu') === false, 'every seed was new');
   if (career.totals.bankruptcies === 0) assert.ok(!earned.has('comeback'), 'Comeback Kid needs a bankruptcy');
 });
 
@@ -177,6 +194,10 @@ test('corrupt or unsupported data fails safely and is kept aside', () => {
     JSON.stringify({ ...good, mayors: { x: { name: 'X', played: 1, won: 2, best: 0 } } }),
     JSON.stringify({ ...good, categories: { ...good.categories, park: NaN } }),
     JSON.stringify({ ...good, recent: 'all' }),
+    JSON.stringify({ ...good, streaks: { ...good.streaks, day: { current: 3, best: 2, last: 1 } } }),
+    JSON.stringify({ ...good, today: { day: 'monday', matches: 1 } }),
+    JSON.stringify({ ...good, totals: { ...good.totals, takeovers: -2 } }),
+    JSON.stringify({ ...good, mayors: { 'mayor 1': { ...Object.values(good.mayors)[0], bestStreak: 5 } } }),
   ];
   for (const raw of variants) {
     const storage = memoryStorage({ [CAREER_KEY]: raw });

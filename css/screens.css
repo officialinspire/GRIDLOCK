@@ -272,9 +272,69 @@
 .career__mayors th:first-child, .career__mayors td:first-child { text-align: left; overflow-wrap: anywhere; }
 .career__mayors thead th { font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); }
 
-/* Achievement badges: a paper rosette with a pinked gold edge and two ribbon tails. */
+/* Achievement tiers: the rosette's pinked edge and the tier label's ink. */
+[data-tier='bronze'] { --edge: #dc955c; --edge-deep: #a6602c; --tier-ink: #73401b; }
+[data-tier='silver'] { --edge: #e2e6eb; --edge-deep: #9aa4b1; --tier-ink: #48525f; }
+[data-tier='gold'] { --edge: var(--gold); --edge-deep: var(--gold-deep); --tier-ink: #744f00; }
+[data-tier='platinum'] { --edge: #ccf0f5; --edge-deep: #63a9bf; --tier-ink: #165a6d; }
+
+/* Achievements summary: score, progress, tiers, latest unlocks and the filter. */
+.achievements-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; }
+.achievements-head .career__heading { margin-bottom: 0; }
+.achievements-head__score { margin: 0; font-family: var(--font-display); font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.achievements-head__score strong { font-weight: 400; }
+.achievements-progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 10px 0 10px;
+  overflow: hidden;
+  color: var(--gold-deep);
+  background: #efe4c8;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+.achievements-progress::-webkit-progress-bar { background: #efe4c8; }
+.achievements-progress::-webkit-progress-value { background: linear-gradient(90deg, var(--gold-deep), var(--gold)); }
+.achievements-progress::-moz-progress-bar { background: linear-gradient(90deg, var(--gold-deep), var(--gold)); }
+.tier-tally { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 8px; padding: 0; list-style: none; font-size: 0.88rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+.tier-tally__item { display: inline-flex; align-items: center; gap: 6px; }
+.tier-tally__dot { width: 14px; height: 14px; background: var(--edge); border: 2px solid var(--ink); border-radius: 50%; }
+.achievements-latest { margin: 0 0 10px; font-size: 0.9rem; font-weight: 700; overflow-wrap: anywhere; }
+.achievements-popups { margin: 2px 0 12px; }
+.achievement-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 16px; }
+.chip {
+  min-height: 38px;
+  padding: 4px 16px;
+  font: inherit;
+  font-weight: 900;
+  color: var(--ink);
+  cursor: pointer;
+  background: var(--paper-hi);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+}
+.chip[aria-pressed='true'] { background: var(--note); box-shadow: 0 3px 0 var(--ink); }
+.chip:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+@media (pointer: coarse) { .chip { min-height: 44px; } }
+
+/* One section per group, its earned count beside the title. */
+.badge-groups { display: grid; gap: 20px; }
+.badge-group__title {
+  margin: 0 0 10px;
+  padding-bottom: 4px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.15rem;
+  border-bottom: 2px dashed var(--paper-edge);
+}
+.badge-group__count { font-family: var(--font-body); font-size: 0.9rem; font-weight: 900; color: var(--ink-soft); }
+
+/* Achievement badges: a paper rosette with a pinked tier-coloured edge and two ribbon tails. */
 .badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px 12px; margin: 0; padding: 0; list-style: none; }
 .badge { display: flex; gap: 12px; align-items: center; min-width: 0; padding: 6px 4px 14px; }
+.badge[hidden] { display: none; }
 .badge__rosette {
   position: relative;
   display: grid;
@@ -286,7 +346,7 @@
   border-radius: 50%;
   background:
     radial-gradient(circle, #fbf1d6 0 55%, transparent 56%),
-    repeating-conic-gradient(var(--gold) 0 12deg, var(--gold-deep) 12deg 24deg);
+    repeating-conic-gradient(var(--edge, var(--gold)) 0 12deg, var(--edge-deep, var(--gold-deep)) 12deg 24deg);
   box-shadow: var(--drop-sm);
   transform: rotate(-4deg);
 }
@@ -304,11 +364,19 @@
 }
 .badge__rosette::before { left: 12px; background: var(--red); transform: rotate(14deg); }
 .badge__rosette::after { right: 12px; background: var(--blue, #2f5fa8); transform: rotate(-14deg); }
+.badge__rosette[data-tier='platinum']::before { background: var(--blue-deep); }
+.badge__rosette[data-tier='platinum']::after { background: var(--edge-deep); }
 .badge__icon { width: 34px; }
+.badge__secret { font-family: var(--font-display); font-size: 1.9rem; line-height: 1; color: var(--ink-soft); }
 .badge__text { display: grid; gap: 1px; min-width: 0; }
 .badge__name { font-family: var(--font-display); font-weight: 400; font-size: 1.1rem; }
 .badge__desc { font-size: 0.9rem; line-height: 1.25; }
+.badge__tier { font-size: 0.72rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; color: var(--tier-ink, var(--ink-soft)); }
 .badge__earned { font-size: 0.8rem; font-weight: 800; color: var(--ink-soft); overflow-wrap: anywhere; }
+.badge__progress { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+.badge__bar { flex: 0 1 120px; height: 9px; overflow: hidden; background: #efe4c8; border: 2px solid var(--ink); border-radius: 999px; }
+.badge__fill { display: block; height: 100%; background: var(--grass); }
+.badge__count { font-size: 0.78rem; font-weight: 900; font-variant-numeric: tabular-nums; }
 .badge.is-locked .badge__rosette {
   background: radial-gradient(circle, #ece4d0 0 55%, transparent 56%), repeating-conic-gradient(#c9bfa8 0 12deg, #b5aa91 12deg 24deg);
   border-style: dashed;
@@ -319,11 +387,17 @@
 .badge.is-locked .badge__rosette::before,
 .badge.is-locked .badge__rosette::after { background: #b5aa91; }
 .badge.is-locked .badge__name { color: var(--ink-soft); }
+.badge.is-secret .badge__desc { font-style: italic; color: var(--ink-soft); }
 .badge.is-earned .badge__rosette { animation: badge-pop var(--t-med) var(--ease-pop); }
 @keyframes badge-pop { from { transform: rotate(-4deg) scale(0.7); } }
-.badges--compact { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.badges--compact { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 12px; }
+.badges--compact .badge { padding-block: 2px 12px; }
+.badges--compact .badge__rosette { width: 52px; height: 52px; }
+.badges--compact .badge__rosette::before, .badges--compact .badge__rosette::after { width: 13px; height: 20px; bottom: -12px; }
+.badges--compact .badge__icon { width: 28px; }
 .results__unlocked { margin-top: 14px; }
 .results__unlocked .badge__text { text-align: left; }
+.results__unlocked-count { font-family: var(--font-body); font-size: 0.85rem; font-weight: 900; color: var(--ink-soft); }
 
 /* Setup: city seed */
 .setup__seed { display: grid; gap: 8px; padding: 14px 16px; }

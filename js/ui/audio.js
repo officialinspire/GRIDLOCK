@@ -25,7 +25,7 @@ import { createMusicController } from './music.js';
 const FADE = 0.35; // seconds (time constant) for ambience fades
 const QUICK = 0.06; // seconds for volume/mute changes
 
-export const SOUND_NAMES = Object.freeze(['tick', 'click', 'select', 'turn', 'pave', 'capture', 'build', 'upgrade', 'coins', 'event', 'error', 'win']);
+export const SOUND_NAMES = Object.freeze(['tick', 'click', 'select', 'turn', 'pave', 'capture', 'build', 'upgrade', 'coins', 'event', 'error', 'win', 'achievement']);
 
 /** Music themes (js/ui/music.js) and which screens use them. */
 export const MUSIC_TRACKS = Object.freeze({ menu: 'assets/media/cardboard-city.mp3', game: 'assets/media/paper-blocks.mp3' });
@@ -226,6 +226,17 @@ const RECIPES = {
   error(v, out, t) {
     v.noise(out, t, { gain: 0.05, attack: 0.002, release: 0.06, filter: { type: 'lowpass', freq: 500 } });
     return v.tone(out, t, { freq: 220, to: 130, type: 'square', gain: 0.07, attack: 0.004, release: 0.17, filter: { type: 'lowpass', freq: 900 } });
+  },
+  // An achievement: a paper rosette pinned on, then three bright bells climbing to a shimmer
+  // (shorter and lighter than the win fanfare, so it sits on top of play without stopping it).
+  achievement(v, out, t, { reduced }) {
+    v.noise(out, t, { gain: 0.04, attack: 0.002, release: 0.04, filter: { type: 'bandpass', freq: 1800, q: 1.5 } });
+    let end = t;
+    [1318.51, 1567.98, 2093].forEach((f, i) => {
+      end = Math.max(end, v.bell(out, t + 0.06 + i * 0.09, { freq: f, gain: 0.05, release: i === 2 ? 1 : 0.5 }));
+    });
+    if (!reduced) v.noise(out, t + 0.3, { gain: 0.018, attack: 0.04, hold: 0.1, release: 0.5, filter: { type: 'highpass', freq: 7500 } });
+    return end;
   },
   // Fanfare, a held chord and a little sparkle.
   win(v, out, t, { reduced }) {

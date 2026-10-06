@@ -167,6 +167,7 @@ export function takeoverBlock(game, blockId) {
   game.lastDevelopment = { block: block.id, seat: attacker.seat, type: block.type, level: block.level, takeover: defender.seat };
   game.log.push({
     type: 'takeover', round: game.round, seat: attacker.seat, from: defender.seat, block: block.id, label: block.label,
+    category: block.type, level: block.level,
     cost: quote.cost, marketValue: quote.marketValue, premium: quote.premium, pressure: quote.pressure, control: quote.control,
   });
   return {

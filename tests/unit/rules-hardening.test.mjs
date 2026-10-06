@@ -435,8 +435,8 @@ test('level achievements name the configured top level', () => {
 
 /* ---------------- version ---------------- */
 
-test('the app, package and title screen all say V1.4.1', async () => {
-  assert.equal(APP_VERSION, '1.4.1');
+test('the app, package and title screen all say V1.5.0', async () => {
+  assert.equal(APP_VERSION, '1.5.0');
   const read = async (path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
   const pkg = JSON.parse(await read('package.json'));
   const lock = JSON.parse(await read('package-lock.json'));

@@ -2009,11 +2009,30 @@ const recordVibration = () => {
     await page.click('#results-dialog [data-results-action="title"]');
     await page.getByRole('button', { name: 'Statistics' }).click();
     assert.equal(await page.isVisible('#career-empty'), true, 'empty career');
-    assert.equal(await page.textContent('#career-badge-count'), '0 / 24');
+    assert.equal(await page.textContent('#career-badge-count'), '0 / 100');
     await page.locator('[data-screen="stats"] [data-nav="back"]').click();
 
     // 2. A real match, played to the end through the game's own controls (Classic, 2 mayors).
     await newGame('Classic', 2);
+    // The first capture unlocks Groundbreaking mid-match: a pop-up once the capture choice is made.
+    await page.evaluate(() => {
+      window.__pops = [];
+      new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => {
+        if (n.classList?.contains('achievement-pop')) window.__pops.push(n.querySelector('.achievement-pop__name').textContent);
+      }))).observe(document.querySelector('#achievement-pops'), { childList: true });
+    });
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) await page.click(`#board [data-road="${id}"]`); // Player 2 closes A1
+    await page.locator('#capture-choice-dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.achievement-pop').count(), 0, 'no pop-up over the capture choice');
+    await page.click('[data-capture-choice="vacant"]');
+    const pop = page.locator('.achievement-pop', { hasText: 'Groundbreaking' });
+    await pop.waitFor({ state: 'visible' });
+    assert.match(await pop.textContent(), /Bronze achievement · \+10 pts.*Groundbreaking.*Player 2 · Capture your first block\./);
+    assert.deepEqual(await page.evaluate(() => {
+      const box = document.querySelector('#achievement-pops');
+      return [box.getAttribute('role'), getComputedStyle(box).pointerEvents];
+    }), ['status', 'none'], 'announced politely, never in the way of a click');
+    assert.equal((await career()).achievements.groundbreaking.by, 'Player 2', 'saved the moment it was earned');
     await page.evaluate(async () => {
       // Each tap in its own task, as a player's are: the screen is redrawn at the end of each action.
       const nextTap = () => new Promise((r) => setTimeout(r, 0));
@@ -2034,10 +2053,15 @@ const recordVibration = () => {
     await page.locator('#results-dialog').waitFor({ state: 'visible' });
     await page.locator('#results-unlocked').waitFor({ state: 'visible' });
     const unlocked = await page.locator('#results-badges .badge__name').allTextContents();
-    for (const name of ['Ribbon Cutting', 'Mayor of the Year', 'Purist']) assert.ok(unlocked.includes(name), `${name} unlocked (${unlocked})`);
+    for (const name of ['Ribbon Cutting', 'Mayor of the Year', 'Purist', 'Groundbreaking']) assert.ok(unlocked.includes(name), `${name} unlocked (${unlocked})`);
+    assert.match(await page.textContent('#unlocked-count'), new RegExp(`^\\(${unlocked.length} · \\+\\d+ pts\\)$`));
+    assert.equal(await page.locator('.achievement-pop').count(), 0, 'the results list replaces pending pop-ups');
+    assert.ok((await page.evaluate(() => window.__pops)).includes('Groundbreaking'));
     await page.screenshot({ path: 'test-results/career-results.png' });
     const saved = await career();
-    assert.equal(saved.version, 1);
+    assert.equal(saved.version, 2);
+    assert.equal(saved.today.matches, 1);
+    assert.equal(saved.streaks.day.current, 1, 'the daily streak has begun');
     assert.equal(saved.totals.matches, 1);
     assert.equal(saved.totals.eventsSurvived, 0, 'Classic: no events');
     assert.equal(Object.keys(saved.mayors).length, 2);
@@ -2050,9 +2074,23 @@ const recordVibration = () => {
     assert.equal(await page.isVisible('#career-empty'), false);
     assert.match(await page.textContent('#career-stats'), /Matches completed\s*1/);
     assert.equal(await page.locator('#career-mayors tbody tr').count(), 2);
-    assert.equal(await page.locator('#career-badges .badge').count(), 24);
-    assert.ok(await page.locator('#career-badges .badge.is-earned').count() >= 3);
-    assert.match(await page.textContent('#career-badge-count'), /^\d+ \/ 24$/);
+    assert.equal(await page.locator('#career-badges .badge').count(), 100);
+    const earnedCount = await page.locator('#career-badges .badge.is-earned').count();
+    assert.ok(earnedCount >= 4);
+    assert.equal(await page.textContent('#career-badge-count'), `${earnedCount} / 100`);
+    assert.match(await page.textContent('#career-stats'), /Daily streak\s*1 day/);
+    assert.equal(await page.locator('#career-badges .badge-group').count(), 10, 'ten groups');
+    assert.ok(await page.locator('#career-badges .badge.is-secret').count() > 0, 'secret badges stay hidden until earned');
+    await page.click('[data-badge-filter="earned"]');
+    assert.equal(await page.locator('#career-badges .badge:visible').count(), earnedCount, 'Earned shows only earned badges');
+    await page.click('[data-badge-filter="locked"]');
+    assert.equal(await page.locator('#career-badges .badge:visible').count(), 100 - earnedCount);
+    await page.click('[data-badge-filter="all"]');
+    // Pop-ups can be switched off here; the choice is a saved setting.
+    assert.equal(await page.isChecked('#achievement-popups'), true);
+    await page.locator('label:has(#achievement-popups)').click();
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('gridlock.settings.v1')).achievementPopups), false);
+    await page.locator('label:has(#achievement-popups)').click();
     await noHorizontalScroll(page, 'statistics');
     await page.screenshot({ path: 'test-results/career-stats.png', fullPage: true });
 

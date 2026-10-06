@@ -359,7 +359,7 @@ export function resolveRedevelopmentAuction(game, blockId, mode, bids) {
   shieldOwnersTurns(game, block, winner.player.seat);
   refreshBonuses(game.board);
   game.lastDevelopment = { block: block.id, seat: winner.player.seat, type: block.type, level: block.level, acquired: mode };
-  game.log.push({ type: 'redevelopment-auction', seat: winner.player.seat, block: block.id, mode, bid: winner.bid });
+  game.log.push({ type: 'redevelopment-auction', seat: winner.player.seat, block: block.id, mode, bid: winner.bid, bids: valid.length });
   return {
     ok: true, block: block.id, mode, winnerSeat: winner.player.seat, cost: winner.bid, reserve, land, restore, rejected,
     shieldedUntil: block.shieldedUntil, tied, bidCount: valid.length,
