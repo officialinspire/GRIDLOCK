@@ -50,8 +50,12 @@ const browser = await browserType.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
     const context = await newContext(options);
-    // Keep offline/update checks independent of the analytics service and production data.
-    await context.route('https://us.i.posthog.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"status":"Ok"}' }));
+    // Stub only analytics fetch calls. Request routing can interfere with offline navigation.
+    await context.addInitScript(() => {
+      const fetch = window.fetch.bind(window);
+      window.fetch = (url, ...args) => String(url).startsWith('https://us.i.posthog.com/')
+        ? Promise.resolve(new Response('{"status":"Ok"}', { status: 200 })) : fetch(url, ...args);
+    });
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };
