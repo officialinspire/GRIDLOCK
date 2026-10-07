@@ -15,6 +15,7 @@ import { createSprite } from '../assets.js';
 import { play } from './audio.js';
 import { TIERS, getAchievement, pointsOf } from '../core/achievements.js';
 import { loadCareer, saveCareer, unlockLive } from '../core/career.js';
+import { trackGameEvent } from '../analytics.js';
 
 const SHOW_MS = 3600;
 const BUSY_SHOW_MS = 2200; // when more are waiting
@@ -153,7 +154,9 @@ export function watchAchievements(game) {
     const { career } = loadCareer();
     const result = unlockLive(career, game);
     if (!result.unlocked.length) return;
-    saveCareer(result.career);
+    if (saveCareer(result.career)) {
+      for (const item of result.unlocked) trackGameEvent('achievement_unlocked', { achievement: item.id }, item.id);
+    }
     watched.unlocked.push(...result.unlocked);
     announceAchievements(result.unlocked);
   } catch {
