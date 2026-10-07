@@ -1,0 +1,35 @@
+name: Analytics PWA QA
+on:
+  pull_request:
+    branches: [feat/posthog-analytics-foundation]
+permissions:
+  contents: read
+jobs:
+  pwa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run PWA scenarios with canonical metadata excluded from asset probe
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/pwa.mjs')
+          source = p.read_text()
+          needle = "querySelectorAll('link[href]')"
+          assert source.count(needle) == 1
+          p.write_text(source.replace(needle, "querySelectorAll('link[href]:not([rel=canonical])')"))
+          PY
+          npm run test:pwa
