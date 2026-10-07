@@ -30,6 +30,7 @@ import { audio, play } from './audio.js';
 import { buzz } from './haptics.js';
 import { modeName } from '../core/modes.js';
 import { recordFinishedMatch } from './careerView.js';
+import { watchAchievements, clearAchievementPops, initAchievementView } from './achievementView.js';
 import { blockDetails } from '../core/forecast.js';
 import { ECONOMY } from '../config.js';
 import { modifierText } from './forecastView.js';
@@ -263,6 +264,8 @@ function drawGame() {
     measure('applyCityView', applyCityView);
     updateTutorial();
   }));
+  // Live achievements a person has just earned: saved and announced once the table is clear.
+  measure('achievements', () => watchAchievements(game));
   kickCpu(); // may plan the CPU's next step: timed as cpuPlan, not as part of render
   if (botTurn) tutorialMoment('cpu');
 }
@@ -866,6 +869,7 @@ function startGame(setup) {
   preloadSheets(['roads', 'buildings', 'civic', 'parks', 'props', 'effects', 'markers', 'icons']);
   stopCpu();
   cancelAuction();
+  clearAchievementPops();
   lastSetup = setup;
   clearActiveGame();
   tutorialNewGame();
@@ -890,6 +894,7 @@ function leaveForTitle() {
   cancelCityIntro();
   for (const d of document.querySelectorAll('dialog[open]')) d.close();
   clearToasts();
+  clearAchievementPops();
   disarm();
   clearSelection();
   game = null;
@@ -918,6 +923,7 @@ function continueGame(saved = loadActiveGame()) {
   clearSelection();
   stopCpu();
   cancelAuction();
+  clearAchievementPops();
   game = saved.game;
   lastSetup = saved.setup;
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
@@ -1038,6 +1044,7 @@ export function initGameView() {
     ready?.();
   });
   initDialogs();
+  initAchievementView({ getSettings });
   initCpuDriver({
     getGame: () => game,
     canAct: cpuCanAct,

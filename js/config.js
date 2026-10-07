@@ -1,7 +1,7 @@
 /** Shared constants for Grid Lock City. Pure data, no DOM. */
 
 /** App release (kept equal to package.json "version"; shown on the title screen, stored in saves). */
-export const APP_VERSION = '1.4.1';
+export const APP_VERSION = '1.5.0';
 
 export const BOARD_ROWS = 6;
 export const BOARD_COLS = 6;
@@ -40,6 +40,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // run at once; major events are still announced, briefly).
   cpuPlayback: 'full',
   cityView: false, // the CITY VIEW / influence overlay on the board
+  achievementPopups: true, // announce achievements the moment they're earned in play (js/ui/achievementView.js)
 });
 
 /**

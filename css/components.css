@@ -209,6 +209,43 @@
 .toast--leaving { opacity: 0; transform: translateY(-8px); transition: all 300ms ease; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.9); } }
 
+/* ---------- Achievement pop-ups (js/ui/achievementView.js) ---------- */
+/* A rosette card that slides in when a person earns an achievement in play. Never clickable. */
+.achievement-pops {
+  position: fixed;
+  top: calc(max(10px, env(safe-area-inset-top)) + 62px);
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 55;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.achievement-pop {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px 14px 12px;
+  color: var(--ink);
+  background: var(--paper-hi);
+  border: var(--outline) solid var(--ink);
+  border-left-width: 10px;
+  border-left-color: var(--edge-deep, var(--gold-deep));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--drop-sm);
+  animation: achievement-in 320ms var(--ease-pop);
+}
+.achievement-pop .badge__rosette { width: 54px; height: 54px; }
+.achievement-pop .badge__rosette::before, .achievement-pop .badge__rosette::after { width: 13px; height: 20px; bottom: -12px; }
+.achievement-pop .badge__icon { width: 30px; }
+.achievement-pop__text { display: grid; gap: 1px; min-width: 0; }
+.achievement-pop__kicker { font-size: 0.72rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; color: var(--tier-ink, var(--ink-soft)); }
+.achievement-pop__name { font-family: var(--font-display); font-weight: 400; font-size: 1.25rem; line-height: 1.1; }
+.achievement-pop__desc { font-size: 0.86rem; line-height: 1.25; overflow-wrap: anywhere; }
+.achievement-pop.is-leaving { opacity: 0; transform: translateX(18px); transition: opacity 280ms ease, transform 280ms ease; }
+@keyframes achievement-in { from { opacity: 0; transform: translateX(28px) scale(0.92); } }
+html[data-effects='reduced'] .achievement-pop { box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35); }
+
 /* ---------- First-game tutorial coach marks (js/ui/tutorial.js) ---------- */
 /* A taped sticky note beside the control it explains; non-modal, so play continues underneath. */
 .coach-mark {

@@ -184,9 +184,14 @@ html, body { touch-action: manipulation; } /* no double-tap zoom anywhere (pinch
 /* The game screen never scrolls the page (its own entrance slide included). */
 body[data-active-screen='game'] { overflow: hidden; height: 100dvh; }
 
-/* Toasts sit over the board, not the HUD, on compact layouts. */
+/* Toasts sit over the board, not the HUD, on compact layouts; achievement pop-ups centre at the top. */
 @media (orientation: portrait) and (max-width: 1100px), (max-width: 600px) {
   .toast-stack { top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom)) + 96px); }
+  .achievement-pops { right: auto; left: 50%; transform: translateX(-50%); }
+  .achievement-pop { gap: 10px; padding: 8px 12px 12px 10px; }
+  .achievement-pop .badge__rosette { width: 46px; height: 46px; }
+  .achievement-pop .badge__icon { width: 26px; }
+  .achievement-pop__name { font-size: 1.1rem; }
 }
 @media (max-width: 400px) {
   .turn-banner { font-size: 0.85rem; letter-spacing: -0.01em; }

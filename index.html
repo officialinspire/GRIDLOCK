@@ -127,7 +127,7 @@
       <aside class="title-note sticky-note" aria-label="Game info">
         <strong>Solo or local play</strong>
         <span>1–4 people, one device</span>
-        <span class="title-note__ver">v1.4.1</span>
+        <span class="title-note__ver">v1.5.0</span>
       </aside>
     </section>
 
@@ -152,9 +152,25 @@
             <tbody></tbody>
           </table>
         </section>
-        <section class="paper career__panel" aria-labelledby="career-badges-heading">
-          <h3 id="career-badges-heading" class="career__heading">Achievements <span class="career__count" id="career-badge-count"></span></h3>
-          <ul class="badges" id="career-badges"></ul>
+        <section class="paper career__panel career__achievements" aria-labelledby="career-badges-heading">
+          <div class="achievements-head">
+            <h3 id="career-badges-heading" class="career__heading">Achievements <span class="career__count" id="career-badge-count"></span></h3>
+            <p class="achievements-head__score"><span class="visually-hidden">Achievement score: </span><strong id="career-score"></strong></p>
+          </div>
+          <progress class="achievements-progress" id="career-progress" max="100" value="0" aria-label="Achievements earned"></progress>
+          <ul class="tier-tally" id="career-tiers" aria-label="Earned by tier"></ul>
+          <p class="achievements-latest" id="career-latest" hidden>Latest: <span id="career-latest-list" class="achievements-latest__list"></span></p>
+          <label class="setting-row achievements-popups">
+            <span class="setting-row__label"><span class="setting-row__icon" data-sprite="icons:trophy"></span>
+              <span>Pop-ups during play<small class="setting-row__hint" id="achievement-popups-hint">Announce achievements the moment they're earned</small></span></span>
+            <input type="checkbox" class="toggle" id="achievement-popups" aria-describedby="achievement-popups-hint">
+          </label>
+          <div class="achievement-filters" role="group" aria-label="Show achievements">
+            <button type="button" class="chip" data-badge-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="chip" data-badge-filter="earned" aria-pressed="false">Earned</button>
+            <button type="button" class="chip" data-badge-filter="locked" aria-pressed="false">Locked</button>
+          </div>
+          <div class="badge-groups" id="career-badges"></div>
         </section>
         <p class="career__note" id="career-note">Saved on this device. Only completed matches count.</p>
       </div>
@@ -568,7 +584,7 @@
         <ol class="results__grid" id="results-list"></ol>
         <dl class="match-stats" id="match-stats" aria-label="Match statistics"></dl>
         <section class="results__unlocked" id="results-unlocked" aria-labelledby="unlocked-heading" hidden>
-          <h4 id="unlocked-heading" class="results__awards-title">New achievements</h4>
+          <h4 id="unlocked-heading" class="results__awards-title">New achievements <span class="results__unlocked-count" id="unlocked-count"></span></h4>
           <ul class="badges badges--compact" id="results-badges"></ul>
         </section>
         <section class="results__awards" aria-labelledby="awards-heading">
@@ -636,6 +652,8 @@
   </main>
 
   <div class="toast-stack" id="toasts" role="status" aria-live="polite"></div>
+  <!-- Achievements earned during play (js/ui/achievementView.js): never focusable or clickable. -->
+  <div class="achievement-pops" id="achievement-pops" role="status" aria-live="polite"></div>
   <div class="update-banner paper" id="update-banner" role="status" aria-live="polite" hidden>
     <span class="update-banner__text">A new version of Grid Lock City is ready.</span>
     <span class="update-banner__actions">
