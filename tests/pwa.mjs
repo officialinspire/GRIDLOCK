@@ -50,6 +50,8 @@ const browser = await browserType.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
     const context = await newContext(options);
+    // Keep offline/update checks independent of the analytics service and production data.
+    await context.route('https://us.i.posthog.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"status":"Ok"}' }));
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };

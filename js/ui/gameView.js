@@ -52,7 +52,7 @@ import { measure } from '../core/perf.js';
 import { createAutosave } from './autosave.js';
 import { createRenderScheduler } from './renderScheduler.js';
 import { readPass } from '../core/passCache.js';
-import { trackGameEvent } from '../analytics.js';
+import { trackGameEvent, setAnalyticsContext } from '../analytics.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -936,6 +936,7 @@ function continueGame(saved = loadActiveGame()) {
   cancelAuction();
   clearAchievementPops();
   game = saved.game;
+  analyticsMatchSerial += 1;
   lastSetup = saved.setup;
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
   chain = 0;
@@ -1008,6 +1009,10 @@ function initDialogs() {
 }
 
 export function initGameView() {
+  setAnalyticsContext(() => game ? {
+    mode: game.mode, round: game.round, match_id: analyticsMatchSerial,
+    game_state: game.phase, era: game.era, turn_phase: game.turnPhase,
+  } : { game_state: 'menu' });
   initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad, onRoadArmed: handleRoadArmed });
   const info = $('#info-dialog');
   info.addEventListener('click', (e) => {
