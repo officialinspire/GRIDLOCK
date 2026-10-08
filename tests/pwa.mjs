@@ -185,7 +185,7 @@ try {
     return document.fonts.check('24px "Lilita One"') && document.fonts.check('800 16px Nunito');
   }), 'self-hosted fonts load offline');
   const offlineAssets = await page.evaluate(async () => {
-    const urls = [...document.querySelectorAll('link[href]')].map((l) => l.href)
+    const urls = [...document.querySelectorAll('link[href]')].filter((l) => !l.relList.contains('canonical')).map((l) => l.href)
       .concat(['assets/generated/effects.webp', 'assets/generated/roads-infrastructure.webp', 'js/core/board.js'].map((u) => new URL(u, document.baseURI).href));
     const results = await Promise.all(urls.map(async (u) => [u, (await fetch(u)).ok]));
     return results.filter(([, ok]) => !ok).map(([u]) => u);
