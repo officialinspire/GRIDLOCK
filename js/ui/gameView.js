@@ -52,6 +52,7 @@ import { measure } from '../core/perf.js';
 import { createAutosave } from './autosave.js';
 import { createRenderScheduler } from './renderScheduler.js';
 import { readPass } from '../core/passCache.js';
+import { trackGameEvent, setAnalyticsContext } from '../analytics.js';
 
 /** Must match the portrait/compact breakpoint in css/mobile.css. */
 export const COMPACT_LAYOUT = '(orientation: portrait) and (max-width: 1100px), (max-width: 600px)';
@@ -60,6 +61,7 @@ let armHintShown = false;
 
 let game = null;
 let lastSetup = null;
+let analyticsMatchSerial = 0;
 let chain = 0; // blocks claimed by the current player during this turn
 let lastHuman = null; // seat of the last person to have the device (for handoffs)
 
@@ -569,6 +571,13 @@ function finishMatch(delay) {
   $('#board-frame').classList.add('is-city-complete');
   // Career stats/achievements: counted only if this match was genuinely played to the end.
   recordFinishedMatch(game);
+  // GRIDLOCK always ends with ranked results; the winning City Value is the match score.
+  // Never send the locally chosen mayor names, seed, or saved board.
+  trackGameEvent('game_completed', {
+    mode: game.mode,
+    round: game.round,
+    score: game.results?.rows?.[0]?.cityValue,
+  }, analyticsMatchSerial);
   autosaver.cancel(); // a pending save must not bring the finished match back
   clearActiveGame();
   refreshSavedGameControls();
@@ -875,6 +884,8 @@ function startGame(setup) {
   tutorialNewGame();
   // setup.seed (from the seed box, a challenge link or Replay Same City) deals a specific city; none = random.
   game = createGame(setup);
+  analyticsMatchSerial += 1;
+  trackGameEvent('game_started', { mode: game.mode }, analyticsMatchSerial);
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
   $('#board-frame').classList.remove('is-city-complete');
   chain = 0;
@@ -925,6 +936,7 @@ function continueGame(saved = loadActiveGame()) {
   cancelAuction();
   clearAchievementPops();
   game = saved.game;
+  analyticsMatchSerial += 1;
   lastSetup = saved.setup;
   lastHuman = isCpu(currentPlayer(game)) ? null : currentPlayer(game).seat;
   chain = 0;
@@ -997,6 +1009,10 @@ function initDialogs() {
 }
 
 export function initGameView() {
+  setAnalyticsContext(() => game ? {
+    mode: game.mode, round: game.round, match_id: analyticsMatchSerial,
+    game_state: game.phase, era: game.era, turn_phase: game.turnPhase,
+  } : { game_state: 'menu' });
   initBoardView({ onBlockSelect: handleBlockSelect, onRoadSelect: handleRoad, onRoadArmed: handleRoadArmed });
   const info = $('#info-dialog');
   info.addEventListener('click', (e) => {

@@ -73,6 +73,12 @@ const browser = await browserType.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
     const context = await newContext({ serviceWorkers: 'block', ...options });
+    // Game smoke tests must not depend on PostHog availability or send CI traffic to production.
+    context.analyticsEvents = [];
+    await context.route('https://us.i.posthog.com/**', (route) => {
+      if (route.request().method() === 'POST') context.analyticsEvents.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '{"status":"Ok"}' });
+    });
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };
@@ -292,6 +298,12 @@ for (const vp of VIEWPORTS) {
     assert.match(await banner(), /Ada's turn/);
     assert.equal(await page.textContent('#hud-roads'), '0/84');
     assert.ok((await page.textContent('#hud-left')).includes('$12,000'));
+    // Synthetic errors exercise the real listeners without creating a console error.
+    await page.evaluate(async () => {
+      const { initAnalytics } = await import('./js/analytics.js');
+      initAnalytics();
+      for (let i = 0; i < 2; i++) window.dispatchEvent(new ErrorEvent('error', { error: new TypeError('Private mayor message') }));
+    });
 
     const firstTabStop = page.locator('#board [tabindex="0"]');
     assert.equal(await firstTabStop.count(), 1, 'board uses one roving tab stop');
@@ -373,6 +385,7 @@ for (const vp of VIEWPORTS) {
     assert.equal(await page.locator('#board .block--owned').count(), 36);
     assert.equal(await page.textContent('#hud-roads'), '84/84');
     const cards = page.locator('#results-list .result-card');
+    const expectedScore = Number(await cards.first().getAttribute('data-city-value'));
     assert.equal(await cards.count(), 4);
     assert.ok(await page.locator('#results-awards .award').count() >= 1);
     for (const label of ['Longest Capture Chain', 'Biggest District', 'Best Single Block', 'Events Survived', 'Bankruptcies']) {
@@ -390,6 +403,31 @@ for (const vp of VIEWPORTS) {
     await page.getByRole('button', { name: 'Save & Quit' }).click();
     assert.ok(await page.isVisible('#continue-game'));
 
+    const events = context.analyticsEvents;
+    const of = (event) => events.filter((e) => e.event === event);
+    assert.equal(of('game_opened').length, 2, 'one opened event per navigation');
+    assert.equal(of('game_started').length, 2, 'one started event per new match, including rematch');
+    assert.equal(of('game_completed').length, 1, 'viewing results again never duplicates completion');
+    assert.equal(of('game_completed')[0].properties.score, expectedScore);
+    assert.ok(of('achievement_unlocked').length > 0, 'real gameplay emits earned achievements');
+    assert.equal(new Set(of('achievement_unlocked').map((e) => e.properties.achievement)).size, of('achievement_unlocked').length);
+    assert.equal(of('error_encountered').length, 1, 'repeated error category is capped');
+    const error = of('error_encountered')[0];
+    assert.equal(error.properties.error_name, 'TypeError');
+    assert.equal(error.properties.game_state, 'playing');
+    assert.equal(error.properties.match_id, 1);
+    assert.equal(error.properties.round, 1);
+    assert.equal(error.distinct_id, of('game_started')[0].distinct_id);
+    for (const e of events) {
+      assert.equal(e.properties.brand, 'inspire');
+      assert.equal(e.properties.game, 'GRIDLOCK');
+      assert.ok(e.properties.game_version);
+      assert.equal(e.properties.$process_person_profile, false);
+      assert.equal(e.properties.$geoip_disable, true);
+      assert.equal(e.properties.$session_id, e.distinct_id);
+      assert.ok(!JSON.stringify(e).includes('Private mayor'));
+      for (const key of ['name', 'seed', 'stack', 'message', '$current_url', '$referrer']) assert.equal(e.properties[key], undefined);
+    }
     assert.deepEqual(errors, [], 'no runtime errors');
     console.log(`✔ ${vp.name} (${vp.width}×${vp.height})`);
   } catch (err) {
@@ -3384,6 +3422,58 @@ for (const [w, h] of [[1366, 650], [1920, 940]]) {
   } finally {
     await context.close();
   }
+}
+
+// PostHog rejecting or never answering must not block startup, play, sound, or saves.
+for (const failure of ['reject', 'pending']) {
+  const phone = failure === 'pending';
+  const context = await browser.newContext({ viewport: phone ? { width: 390, height: 844 } : { width: 1280, height: 800 }, hasTouch: phone, reducedMotion: 'reduce' });
+  await context.addInitScript((kind) => {
+    sessionStorage.setItem('gridlock.session.v1', 'started');
+    localStorage.setItem('gridlock.tutorial.v1', '{"status":"done","seen":["city","actions","takeover","redevelop","recovery"]}');
+    if (!localStorage.getItem('gridlock.settings.v1')) localStorage.setItem('gridlock.settings.v1', JSON.stringify({ confirmTaps: false, quickHandoff: true }));
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: () => { throw new Error('blocked crypto'); } });
+    const originalFetch = window.fetch;
+    window.__qaAnalyticsAttempts = 0;
+    window.fetch = (...args) => {
+      if (String(args[0]).startsWith('https://us.i.posthog.com/')) {
+        window.__qaAnalyticsAttempts++;
+        return kind === 'reject' ? Promise.reject(new Error('unavailable')) : new Promise(() => {});
+      }
+      return originalFetch(...args);
+    };
+  }, failure);
+  const page = await context.newPage();
+  const errors = watchForBrowserErrors(page);
+  try {
+    await page.goto(`${base}?debug`, { waitUntil: 'load' });
+    await page.waitForSelector('html.is-ready');
+    await page.getByRole('button', { name: 'Local Multiplayer' }).click();
+    await page.click('#setup-start');
+    for (const id of ['h-0-0', 'v-0-0', 'h-1-0', 'v-0-1']) {
+      await pave(page, page.locator(`#board [data-road="${id}"]`));
+      await dismissEvent(page);
+    }
+    while (await page.locator('#capture-choice-dialog[open]').count()) await page.click('[data-capture-choice="vacant"]');
+    assert.equal(await page.textContent('#hud-roads'), '4/84');
+    await page.click('#mute-btn');
+    assert.equal(await page.getAttribute('#mute-btn', 'aria-pressed'), 'true');
+    await page.click('#game-menu-btn');
+    await page.getByRole('button', { name: 'Save & Quit' }).click();
+    assert.ok(await page.evaluate(() => localStorage.getItem('gridlock.active-game')));
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('html.is-ready');
+    await page.click('#continue-game');
+    assert.equal(await page.textContent('#hud-roads'), '4/84', 'save survives analytics failure and reload');
+    assert.equal(await page.getAttribute('#mute-btn', 'aria-pressed'), 'true', 'audio setting survives');
+    await noHorizontalScroll(page, `analytics ${failure}`);
+    assert.ok(await page.evaluate(() => window.__qaAnalyticsAttempts > 0 && window.__qaAnalyticsAttempts <= 4));
+    assert.deepEqual(errors, [], 'analytics failures cause no application console errors');
+    console.log(`✔ analytics ${failure}: startup, gameplay, audio settings, save/reload${phone ? ' on phone' : ''}`);
+  } catch (err) {
+    failures++;
+    console.error(`✘ analytics ${failure}: ${err.message}`);
+  } finally { await context.close(); }
 }
 
 await browser.close();

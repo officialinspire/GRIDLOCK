@@ -12,6 +12,7 @@ import {
 import { loadCareer, saveCareer, recordMatch, favoriteCategory } from '../core/career.js';
 import { badge, unlockedThisMatch, clearAchievementPops } from './achievementView.js';
 import { getSettings, updateSettings } from './settingsView.js';
+import { trackGameEvent } from '../analytics.js';
 
 const FILTERS = ['all', 'earned', 'locked'];
 let filter = 'all';
@@ -124,7 +125,9 @@ export function recordFinishedMatch(game) {
   try {
     const { career } = loadCareer();
     const result = recordMatch(career, game);
-    if (result.recorded) saveCareer(result.career);
+    if (result.recorded && saveCareer(result.career)) {
+      for (const item of result.unlocked) trackGameEvent('achievement_unlocked', { achievement: item.id }, item.id);
+    }
     unlocked = result.unlocked;
   } catch {
     unlocked = [];

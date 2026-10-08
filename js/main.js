@@ -20,6 +20,7 @@ import { initCareerView } from './ui/careerView.js';
 import { loadSettings } from './core/settings.js';
 import { bus } from './core/bus.js';
 import { DEBUG_PERF, perfReport, perfReset, perfStats } from './core/perf.js';
+import { initAnalytics } from './analytics.js';
 
 /** Fills `[data-econ="KEY"]` text from ECONOMY so copy never drifts from the constants. */
 function fillEconomyCopy(root = document) {
@@ -96,6 +97,7 @@ function boot() {
   if (DEBUG_PERF) window.__GRIDLOCK_PERF__ = { report: perfReport, reset: perfReset, stats: perfStats };
   document.documentElement.classList.add('is-ready');
   initPwa({ beforeReload: saveGameNow });
+  initAnalytics();
 }
 
 if (document.readyState === 'loading') {

@@ -46,7 +46,8 @@ test('the precache holds every file the game loads, and nothing outside the site
   }
 
   // Entry page, manifest and everything index.html links to.
-  const html = await read('index.html');
+  // Canonical metadata does not load a runtime asset.
+  const html = (await read('index.html')).replace(/<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>/gi, '');
   for (const [, url] of html.matchAll(/(?:src|href)=["']([^"'#?]+)["']/g)) {
     assert.ok(files.has(decodeURI(url)), `index.html → ${url} is precached`);
   }
@@ -81,7 +82,7 @@ test('precache stays lean: PNG sheet fallbacks (browsers without WebP) are fetch
 test('the game needs no network: no external URLs in the page, styles or scripts', async () => {
   for (const file of await precacheFiles()) {
     if (!/\.(?:html|css|js|webmanifest)$/.test(file)) continue;
-    const src = await read(file);
+    const src = (await read(file)).replace(/<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>/gi, '');
     const external = [...src.matchAll(/(?:src|href)=["'](https?:[^"']+)|url\(['"]?(https?:[^'")]+)|@import\s+['"]?(https?:[^'")]+)|import\(?\s*['"](https?:[^'"]+)/g)];
     assert.deepEqual(external.map((m) => m.slice(1).find(Boolean)), [], `${file} loads nothing from the network`);
   }

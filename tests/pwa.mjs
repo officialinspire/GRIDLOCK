@@ -50,6 +50,12 @@ const browser = await browserType.launch(launchOpts);
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async ({ freshStart = false, ...options } = {}) => {
     const context = await newContext(options);
+    // Stub only analytics fetch calls. Request routing can interfere with offline navigation.
+    await context.addInitScript(() => {
+      const fetch = window.fetch.bind(window);
+      window.fetch = (url, ...args) => String(url).startsWith('https://us.i.posthog.com/')
+        ? Promise.resolve(new Response('{"status":"Ok"}', { status: 200 })) : fetch(url, ...args);
+    });
     if (!freshStart) await context.addInitScript(() => { try { sessionStorage.setItem('gridlock.session.v1', 'started'); } catch { /* ignore */ } });
     return context;
   };
@@ -179,7 +185,7 @@ try {
     return document.fonts.check('24px "Lilita One"') && document.fonts.check('800 16px Nunito');
   }), 'self-hosted fonts load offline');
   const offlineAssets = await page.evaluate(async () => {
-    const urls = [...document.querySelectorAll('link[href]')].map((l) => l.href)
+    const urls = [...document.querySelectorAll('link[href]')].filter((l) => !l.relList.contains('canonical')).map((l) => l.href)
       .concat(['assets/generated/effects.webp', 'assets/generated/roads-infrastructure.webp', 'js/core/board.js'].map((u) => new URL(u, document.baseURI).href));
     const results = await Promise.all(urls.map(async (u) => [u, (await fetch(u)).ok]));
     return results.filter(([, ok]) => !ok).map(([u]) => u);
